@@ -1,15 +1,16 @@
 <!-- ========================================
-     HTML STARTS HERE
+     ENHANCED STORM SURGE WEATHER DASHBOARD
      File: index.html
-     Storm Surge Weather Dashboard - Fixed Version
+     Version 3.0
 ======================================== -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Storm Surge Weather — NEXRAD Level II Radar</title>
+  <title>Storm Surge Weather — Real-Time Radar & Alerts</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="description" content="Real-time weather radar, live alerts, and forecast data" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
@@ -25,9 +26,9 @@
   <div class="top-bar">
     <button id="settingsBtn" class="top-btn" title="Settings">⚙️</button>
     <div class="location-display">
-      <span id="currentLocation">San Francisco, CA</span>
+      <span id="currentLocation">United States</span>
     </div>
-    <button id="searchBtn" class="top-btn" title="Search">🔍</button>
+    <button id="searchBtn" class="top-btn" title="Search Location">🔍</button>
   </div>
 
   <!-- Map Container -->
@@ -40,10 +41,10 @@
     </svg>
   </div>
 
-  <!-- Detailed Weather Panel (Left Side - Original Style) -->
+  <!-- Detailed Weather Panel (Left Side) -->
   <div id="weatherPanel" class="weather-panel-detailed hidden">
     <div class="panel-header-detailed">
-      <h3 id="panelLocationName">Weather Details</h3>
+      <h3>Weather Details</h3>
       <button id="closeWeatherPanel" class="close-btn">×</button>
     </div>
     
@@ -62,11 +63,14 @@
       <!-- Current Weather -->
       <div class="current-weather-detailed">
         <div class="temp-display-detailed">
-          <span id="panelCurrentTemp">--°</span>
-          <div class="temp-details-detailed">
-            <div id="panelFeelsLike">Feels like --°</div>
-            <div id="panelConditions">Loading...</div>
-            <div id="panelPrecipType" class="precip-type"></div>
+          <span id="panelWeatherIcon" class="weather-icon-large">🌤️</span>
+          <div>
+            <span id="panelCurrentTemp" class="current-temp">--°</span>
+            <div class="temp-details-detailed">
+              <div id="panelFeelsLike">Feels like --°</div>
+              <div id="panelConditions">Loading...</div>
+              <div id="panelPrecipType" class="precip-type"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -74,36 +78,36 @@
       <!-- Weather Details Grid -->
       <div class="weather-details-grid">
         <div class="detail-item-grid">
-          <span class="label">Humidity</span>
+          <span class="label">💧 Humidity</span>
           <span id="panelHumidity" class="value">--%</span>
         </div>
         <div class="detail-item-grid">
-          <span class="label">Wind</span>
+          <span class="label">💨 Wind Speed</span>
           <span id="panelWindSpeed" class="value">-- mph</span>
         </div>
         <div class="detail-item-grid">
-          <span class="label">Wind Direction</span>
+          <span class="label">🧭 Direction</span>
           <span id="panelWindDirection" class="value">--</span>
         </div>
         <div class="detail-item-grid">
-          <span class="label">Pressure</span>
+          <span class="label">🎚️ Pressure</span>
           <span id="panelPressure" class="value">-- mb</span>
         </div>
         <div class="detail-item-grid">
-          <span class="label">Visibility</span>
+          <span class="label">👁️ Visibility</span>
           <span id="panelVisibility" class="value">-- mi</span>
         </div>
         <div class="detail-item-grid">
-          <span class="label">UV Index</span>
-          <span id="panelUvIndex" class="value">--</span>
-        </div>
-        <div class="detail-item-grid">
-          <span class="label">Dew Point</span>
+          <span class="label">💧 Dew Point</span>
           <span id="panelDewPoint" class="value">--°</span>
         </div>
         <div class="detail-item-grid">
-          <span class="label">Cloud Cover</span>
+          <span class="label">☁️ Cloud Cover</span>
           <span id="panelCloudCover" class="value">--%</span>
+        </div>
+        <div class="detail-item-grid">
+          <span class="label">🌧️ Precipitation</span>
+          <span id="panelPrecipitation" class="value">0 in</span>
         </div>
       </div>
       
@@ -128,7 +132,7 @@
   <!-- Warnings List (Top Right) -->
   <div id="warningsList" class="warnings-list hidden">
     <div class="warnings-header">
-      <h3>⚠️ Alerts (<span id="alertCount">0</span>)</h3>
+      <h3>⚠️ Live Alerts (<span id="alertCount">0</span>)</h3>
       <button id="closeWarnings" class="close-warnings-btn">×</button>
     </div>
     <div id="warningsContent" class="warnings-content">
@@ -136,43 +140,28 @@
     </div>
   </div>
 
-  <!-- Skywarn Reports Panel -->
-  <div id="skywarnPanel" class="skywarn-panel hidden">
-    <div class="panel-header">
-      <h3>👁️ Skywarn Reports</h3>
-      <button class="close-panel-btn" onclick="document.getElementById('skywarnPanel').classList.add('hidden')">×</button>
-    </div>
-    <div id="skywarnContent" class="panel-content">
-      <!-- Populated by JS -->
-    </div>
-  </div>
-
   <!-- Radar Legend (Side) -->
   <div class="radar-legend">
-    <div class="legend-title" id="legendTitle">Reflectivity (dBZ)</div>
-    <div class="legend-gradient" id="legendGradient">
-      <!-- Color gradient -->
-    </div>
+    <div class="legend-title">Radar Reflectivity</div>
+    <div class="legend-gradient"></div>
     <div class="legend-labels">
-      <span>0</span>
-      <span>20</span>
-      <span>40</span>
-      <span>60</span>
-      <span>80</span>
+      <span>Heavy</span>
+      <span>Moderate</span>
+      <span>Light</span>
     </div>
   </div>
 
   <!-- Bottom Control Bar -->
   <div class="bottom-controls">
     <div class="time-display">
-      <span id="currentTime">12:00 PM</span>
+      <span id="currentTime">Loading...</span>
       <span id="timeMode" class="time-badge">LIVE</span>
     </div>
     
     <div class="playback-controls">
-      <button id="playPauseBtn" class="play-btn">⏸️</button>
+      <button id="playPauseBtn" class="play-btn">▶️</button>
       <div class="time-slider-wrapper">
-        <input type="range" id="timeSlider" min="0" max="11" value="11" step="1" />
+        <input type="range" id="timeSlider" min="0" max="11" value="0" step="1" />
       </div>
       <button id="alertsBtn" class="alerts-btn">
         <span class="alerts-icon">⚠️</span>
@@ -181,7 +170,7 @@
     </div>
   </div>
 
-  <!-- Settings Modal (SCROLLABLE) -->
+  <!-- Settings Modal -->
   <div id="settingsModal" class="modal hidden">
     <div class="modal-content settings-modal-scrollable">
       <div class="modal-header-fixed">
@@ -192,45 +181,20 @@
       <div class="modal-body-scrollable">
         <div class="settings-section">
           <h3>Radar Settings</h3>
-          
-          <div class="setting-item">
-            <label>Radar Product</label>
-            <select id="radarProductSelect">
-              <option value="base-reflectivity">Base Reflectivity</option>
-              <option value="composite-reflectivity" selected>Composite Reflectivity</option>
-              <option value="base-velocity">Base Velocity</option>
-              <option value="storm-relative-velocity">Storm Relative Velocity</option>
-              <option value="correlation-coefficient">Correlation Coefficient</option>
-              <option value="differential-reflectivity">Differential Reflectivity</option>
-              <option value="specific-differential-phase">Specific Differential Phase</option>
-              <option value="one-hour-precipitation">One Hour Precipitation</option>
-              <option value="storm-total-precipitation">Storm Total Precipitation</option>
-            </select>
-          </div>
-
-          <div class="setting-item">
-            <label>Tilt Angle</label>
-            <select id="tiltAngleSelect">
-              <option value="0.5" selected>0.5°</option>
-              <option value="0.9">0.9°</option>
-              <option value="1.3">1.3°</option>
-              <option value="1.8">1.8°</option>
-              <option value="2.4">2.4°</option>
-              <option value="3.1">3.1°</option>
-              <option value="4.0">4.0°</option>
-              <option value="5.1">5.1°</option>
-              <option value="6.4">6.4°</option>
-              <option value="8.0">8.0°</option>
-              <option value="10.0">10.0°</option>
-              <option value="12.0">12.0°</option>
-              <option value="14.6">14.6°</option>
-              <option value="19.5">19.5°</option>
-            </select>
-          </div>
 
           <div class="setting-item">
             <label>Radar Opacity: <span id="opacityDisplay">70%</span></label>
             <input type="range" id="radarOpacity" min="0" max="100" value="70" />
+          </div>
+
+          <div class="setting-item">
+            <label>Animation Speed</label>
+            <select id="animationSpeed">
+              <option value="300">Fast (300ms)</option>
+              <option value="500" selected>Normal (500ms)</option>
+              <option value="800">Slow (800ms)</option>
+              <option value="1200">Very Slow (1200ms)</option>
+            </select>
           </div>
         </div>
 
@@ -252,116 +216,39 @@
               <span class="toggle-slider"></span>
             </div>
           </div>
-
-          <div class="setting-item toggle-item">
-            <label>Show Lightning</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="lightningToggle" checked />
-              <span class="toggle-slider"></span>
-            </div>
-          </div>
-
-          <div class="setting-item toggle-item">
-            <label>Show Storm Fronts</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="frontsToggle" checked />
-              <span class="toggle-slider"></span>
-            </div>
-          </div>
-
-          <div class="setting-item toggle-item">
-            <label>Show SPC Outlooks</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="spcToggle" checked />
-              <span class="toggle-slider"></span>
-            </div>
-          </div>
-
-          <div class="setting-item toggle-item">
-            <label>Show TVS Signatures</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="tvsToggle" checked />
-              <span class="toggle-slider"></span>
-            </div>
-          </div>
-
-          <div class="setting-item toggle-item">
-            <label>Show Storm Tracks</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="tracksToggle" checked />
-              <span class="toggle-slider"></span>
-            </div>
-          </div>
-
-          <div class="setting-item toggle-item">
-            <label>Show Skywarn Reports</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="skywarnToggle" checked />
-              <span class="toggle-slider"></span>
-            </div>
-          </div>
-
-          <div class="setting-item toggle-item">
-            <label>Show TDWR Radars</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="tdwrToggle" />
-              <span class="toggle-slider"></span>
-            </div>
-          </div>
         </div>
 
         <div class="settings-section">
-          <h3>Warning Types to Show</h3>
-          
-          <div class="warning-types-grid">
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Tornado Warning" />
-              <span>Tornado Warning</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Severe Thunderstorm Warning" />
-              <span>Severe T-Storm</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Flash Flood Warning" />
-              <span>Flash Flood</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Flood Warning" />
-              <span>Flood Warning</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Winter Storm Warning" />
-              <span>Winter Storm</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Winter Weather Advisory" />
-              <span>Winter Weather</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="High Wind Warning" />
-              <span>High Wind</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Gale Warning" />
-              <span>Gale Warning</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Dense Fog Advisory" />
-              <span>Dense Fog</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Special Weather Statement" />
-              <span>Special Weather</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Heat Advisory" />
-              <span>Heat Advisory</span>
-            </label>
-            <label class="warning-type-checkbox">
-              <input type="checkbox" checked data-warning-type="Excessive Heat Warning" />
-              <span>Excessive Heat</span>
-            </label>
+          <h3>Data Sources</h3>
+          <div class="data-sources-info">
+            <div class="source-item">
+              <span class="source-icon">🛰️</span>
+              <div>
+                <div class="source-name">RainViewer API</div>
+                <div class="source-desc">Real-time radar imagery</div>
+              </div>
+            </div>
+            <div class="source-item">
+              <span class="source-icon">⚠️</span>
+              <div>
+                <div class="source-name">NOAA/NWS Alerts</div>
+                <div class="source-desc">Live weather warnings</div>
+              </div>
+            </div>
+            <div class="source-item">
+              <span class="source-icon">🌡️</span>
+              <div>
+                <div class="source-name">Open-Meteo</div>
+                <div class="source-desc">Weather forecasts</div>
+              </div>
+            </div>
+            <div class="source-item">
+              <span class="source-icon">🗺️</span>
+              <div>
+                <div class="source-name">Mapbox</div>
+                <div class="source-desc">Maps & geocoding</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -372,8 +259,6 @@
             <div class="shortcut-row"><kbd>←/→</kbd> Navigate Frames</div>
             <div class="shortcut-row"><kbd>W</kbd> Toggle Warnings Panel</div>
             <div class="shortcut-row"><kbd>S</kbd> Open Settings</div>
-            <div class="shortcut-row"><kbd>L</kbd> Toggle Lightning</div>
-            <div class="shortcut-row"><kbd>F</kbd> Toggle Fronts</div>
             <div class="shortcut-row"><kbd>Esc</kbd> Close Modals</div>
           </div>
         </div>
@@ -382,12 +267,9 @@
           <h3>About</h3>
           <div class="about-info">
             <p><strong>Storm Surge Weather</strong></p>
-            <p>Version 2.1</p>
-            <p>NEXRAD Level II Dual-Pol Radar</p>
-            <p>Data: NOAA, NWS, AWS NEXRAD</p>
-            <button id="feedbackBtnInSettings" class="action-btn secondary full-width" style="margin-top: 15px;">
-              💬 Send Feedback
-            </button>
+            <p>Version 3.0 - Enhanced Edition</p>
+            <p>Real-time radar & live weather alerts</p>
+            <p class="email-contact">📧 stormsurgee025@gmail.com</p>
           </div>
         </div>
       </div>
@@ -407,7 +289,7 @@
           <input type="text" id="searchInput" placeholder="City, address, or zip code..." />
         </div>
         <div id="searchResults" class="search-results-list">
-          <!-- Populated by JS -->
+          <div style="text-align: center; color: #999; padding: 20px;">Enter a location to search</div>
         </div>
       </div>
     </div>
@@ -436,6 +318,10 @@
             <span id="warningSeverity" class="detail-value">--</span>
           </div>
           <div class="detail-row">
+            <span class="detail-label">Urgency:</span>
+            <span id="warningUrgency" class="detail-value">--</span>
+          </div>
+          <div class="detail-row">
             <span class="detail-label">Source:</span>
             <span id="warningSource" class="detail-value">--</span>
           </div>
@@ -443,7 +329,7 @@
 
         <div class="warning-detail-section">
           <h3>Description</h3>
-          <p id="warningDescription">--</p>
+          <p id="warningDescription" class="warning-description-text">--</p>
         </div>
 
         <div class="warning-detail-section">
@@ -452,31 +338,10 @@
         </div>
 
         <div class="warning-actions">
-          <button id="playWeatherRadioBtn" class="action-btn primary">
-            🔊 Play Weather Radio
-          </button>
-          <button id="shareWarningBtn" class="action-btn secondary">
-            📤 Share
+          <button id="shareWarningBtn" class="action-btn primary full-width">
+            📤 Share Alert
           </button>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Feedback Modal -->
-  <div id="feedbackModal" class="modal hidden">
-    <div class="modal-content feedback-modal">
-      <div class="modal-header">
-        <h2>💬 Send Feedback</h2>
-        <button class="close-modal-btn" onclick="closeFeedback()">×</button>
-      </div>
-      
-      <div class="modal-body">
-        <textarea id="feedbackText" placeholder="Tell us what you think, report bugs, or suggest features..." rows="6"></textarea>
-        <button id="submitFeedbackBtn" class="action-btn primary full-width">
-          Send Feedback
-        </button>
-        <p class="feedback-note">Feedback will be sent to stormsurgee025@gmail.com</p>
       </div>
     </div>
   </div>
@@ -484,7 +349,7 @@
   <!-- Loading Indicator -->
   <div id="loadingIndicator" class="loading-indicator hidden">
     <div class="spinner"></div>
-    <p>Loading radar data...</p>
+    <p>Loading...</p>
   </div>
 
   <!-- Toast Notifications -->
