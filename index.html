@@ -1,13 +1,13 @@
 <!-- ========================================
-     ENHANCED STORM SURGE WEATHER DASHBOARD
+     STORM SURGE WEATHER - ADVANCED EDITION
      File: index.html
-     Version 3.0
+     Version 4.0
 ======================================== -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Storm Surge Weather — Real-Time Radar & Alerts</title>
+  <title>Storm Surge Weather — Advanced Radar & Alerts</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <meta name="description" content="Real-time weather radar, live alerts, and forecast data" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,6 +15,9 @@
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  
+  <!-- Three.js for 3D Radar (Optional - for future 3D features) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   
   <!-- Local CSS -->
   <link rel="stylesheet" href="style.css">
@@ -33,6 +36,9 @@
 
   <!-- Map Container -->
   <div id="map"></div>
+
+  <!-- 3D Radar Container (Hidden by default) -->
+  <div id="radar3DContainer" class="radar-3d-container hidden"></div>
 
   <!-- Click Marker (Red Pin) -->
   <div id="clickMarker" class="click-marker hidden">
@@ -219,6 +225,22 @@
         </div>
 
         <div class="settings-section">
+          <h3>Warning Filters</h3>
+          
+          <div class="setting-item">
+            <label>Country/Region Filter</label>
+            <select id="warningCountryFilter">
+              <option value="all" selected>All Regions</option>
+              <option value="us">🇺🇸 United States Only</option>
+              <option value="canada">🇨🇦 Canada Only</option>
+            </select>
+            <div class="setting-note">
+              Filter weather alerts by geographic region
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <h3>Data Sources</h3>
           <div class="data-sources-info">
             <div class="source-item">
@@ -267,7 +289,7 @@
           <h3>About</h3>
           <div class="about-info">
             <p><strong>Storm Surge Weather</strong></p>
-            <p>Version 3.0 - Enhanced Edition</p>
+            <p>Version 4.0 - Advanced Edition</p>
             <p>Real-time radar & live weather alerts</p>
             <p class="email-contact">📧 stormsurgee025@gmail.com</p>
           </div>

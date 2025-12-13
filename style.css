@@ -1,7 +1,7 @@
 /* ========================================
-     ENHANCED STORM SURGE WEATHER DASHBOARD
+     STORM SURGE WEATHER - ADVANCED EDITION
      File: style.css
-     Version 3.0
+     Version 4.0
 ======================================== */
 
 /* ============================
@@ -59,6 +59,33 @@ html, body {
 
 .mapboxgl-canvas {
     outline: none;
+}
+
+/* ============================
+   3D RADAR CONTAINER
+============================ */
+.radar-3d-container {
+    position: absolute;
+    top: 70px;
+    right: 15px;
+    width: 400px;
+    height: 300px;
+    background: rgba(15, 15, 20, 0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 16px;
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    overflow: hidden;
+    z-index: 85;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+
+.radar-3d-container.hidden {
+    display: none;
+}
+
+.radar-3d-container canvas {
+    width: 100% !important;
+    height: 100% !important;
 }
 
 /* ============================
@@ -480,6 +507,9 @@ html, body {
     text-align: right;
 }
 
+/* ============================
+   WARNINGS LIST (TOP RIGHT)
+============================ */
 .warnings-list {
     position: absolute;
     top: 70px;
@@ -608,6 +638,12 @@ html, body {
     border: 1px solid #4ade80;
 }
 
+.warning-severity-badge.unknown {
+    background: rgba(148, 163, 184, 0.3);
+    color: #cbd5e1;
+    border: 1px solid #94a3b8;
+}
+
 .warning-area {
     font-size: 12px;
     color: #ccc;
@@ -619,6 +655,9 @@ html, body {
     color: #999;
 }
 
+/* ============================
+   RADAR LEGEND (SIDE)
+============================ */
 .radar-legend {
     position: absolute;
     right: 15px;
@@ -679,6 +718,9 @@ html, body {
     font-weight: 600;
 }
 
+/* ============================
+   BOTTOM CONTROLS
+============================ */
 .bottom-controls {
     position: absolute;
     bottom: 0;
@@ -848,6 +890,9 @@ html, body {
     display: none;
 }
 
+/* ============================
+   MODALS
+============================ */
 .modal {
     position: fixed;
     top: 0;
@@ -1011,6 +1056,13 @@ html, body {
     padding: 0;
     height: 6px;
     accent-color: #4ade80;
+}
+
+.setting-note {
+    font-size: 12px;
+    color: #999;
+    margin-top: 6px;
+    font-style: italic;
 }
 
 .toggle-item {
@@ -1432,6 +1484,11 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     }
     
     .warnings-list {
+        width: calc(100vw - 20px);
+        right: 10px;
+    }
+    
+    .radar-3d-container {
         width: calc(100vw - 20px);
         right: 10px;
     }
