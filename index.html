@@ -1,8 +1,3 @@
-<!-- ========================================
-     STORM SURGE WEATHER - ULTIMATE EDITION
-     File: index.html
-     Version 5.0
-======================================== -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -19,7 +14,6 @@
   <!-- Three.js for 3D Radar -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   
-  <!-- Local CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -30,8 +24,10 @@
     <button id="settingsBtn" class="top-btn" title="Settings">⚙️</button>
     <div class="location-display">
       <span id="currentLocation">United States</span>
+      <span id="lastUpdateTime" class="last-update-badge">Updated: --</span>
     </div>
     <button id="searchBtn" class="top-btn" title="Search Location">🔍</button>
+    <button id="myLocationBtn" class="top-btn" title="My Location">📍</button>
   </div>
 
   <!-- Map Container -->
@@ -41,7 +37,19 @@
   <div id="radar3DContainer" class="radar-3d-container hidden">
     <div class="radar-3d-header">
       <span class="radar-3d-title">🎯 3D Radar Volume</span>
-      <button class="radar-3d-close" onclick="toggle3DRadar()">×</button>
+      <div class="radar-3d-controls">
+        <button class="radar-control-btn" id="resetCamera3D" title="Reset Camera">🔄</button>
+        <button class="radar-3d-close" onclick="toggle3DRadar()">×</button>
+      </div>
+    </div>
+    <div class="radar-3d-info">
+      <div class="radar-height-scale">
+        <div class="height-label">20,000 ft</div>
+        <div class="height-label">15,000 ft</div>
+        <div class="height-label">10,000 ft</div>
+        <div class="height-label">5,000 ft</div>
+        <div class="height-label">Ground</div>
+      </div>
     </div>
   </div>
 
@@ -69,6 +77,12 @@
       <div id="panelWarningsSection" class="panel-warnings-section hidden">
         <h4>⚠️ Active Alerts</h4>
         <div id="panelWarningsList" class="panel-warnings-list"></div>
+      </div>
+
+      <!-- Tomorrow.io Severe Weather -->
+      <div id="panelSevereWeather" class="panel-severe-weather hidden">
+        <h4>⚡ Severe Weather Risk</h4>
+        <div id="severeWeatherContent"></div>
       </div>
 
       <!-- Current Weather -->
@@ -120,6 +134,14 @@
           <span class="label">🌧️ Precipitation</span>
           <span id="panelPrecipitation" class="value">0 in</span>
         </div>
+        <div class="detail-item-grid">
+          <span class="label">☀️ UV Index</span>
+          <span id="panelUVIndex" class="value">--</span>
+        </div>
+        <div class="detail-item-grid">
+          <span class="label">🌫️ Air Quality</span>
+          <span id="panelAirQuality" class="value">--</span>
+        </div>
       </div>
       
       <!-- Hourly Forecast -->
@@ -144,7 +166,11 @@
   <div id="warningsList" class="warnings-list hidden">
     <div class="warnings-header">
       <h3>⚠️ Live Alerts (<span id="alertCount">0</span>)</h3>
-      <button id="closeWarnings" class="close-warnings-btn">×</button>
+      <div class="warnings-header-controls">
+        <button id="sortWarningsBtn" class="control-icon-btn" title="Sort by Severity">⚡</button>
+        <button id="refreshWarningsBtn" class="control-icon-btn" title="Refresh">🔄</button>
+        <button id="closeWarnings" class="close-warnings-btn">×</button>
+      </div>
     </div>
     <div id="warningsContent" class="warnings-content">
       <!-- Populated by JS -->
@@ -219,6 +245,14 @@
           <div class="setting-note">
             Displays animated 3D radar volume with particle effects. Press '3' key to toggle.
           </div>
+
+          <div class="setting-item toggle-item">
+            <label>🌩️ Auto-zoom to Severe Weather</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="autoZoomToggle" />
+              <span class="toggle-slider"></span>
+            </div>
+          </div>
         </div>
 
         <div class="settings-section">
@@ -250,15 +284,37 @@
           <div class="setting-item">
             <label>Geographic Region</label>
             <select id="warningCountryFilter">
-              <option value="all" selected>🌎 All Regions</option>
-              <option value="us">🇺🇸 United States</option>
-              <option value="canada">🇨🇦 Canada</option>
-              <option value="mexico">🇲🇽 Mexico</option>
-              <option value="caribbean">🏝️ Caribbean (PR, VI)</option>
+              <option value="all" selected>🌎 All US Regions</option>
+              <option value="states">📍 By State</option>
             </select>
             <div class="setting-note">
               Filter weather alerts by geographic region. Color-coded polygons show alert severity.
             </div>
+          </div>
+
+          <div class="setting-item">
+            <label>Minimum Severity</label>
+            <select id="severityFilter">
+              <option value="all" selected>All Alerts</option>
+              <option value="extreme">Extreme Only</option>
+              <option value="severe">Severe & Above</option>
+              <option value="moderate">Moderate & Above</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Data Refresh</h3>
+          
+          <div class="setting-item">
+            <label>Auto-refresh Interval</label>
+            <select id="refreshInterval">
+              <option value="60000">1 minute</option>
+              <option value="120000" selected>2 minutes</option>
+              <option value="300000">5 minutes</option>
+              <option value="600000">10 minutes</option>
+              <option value="0">Manual only</option>
+            </select>
           </div>
         </div>
 
@@ -307,7 +363,7 @@
               <span class="source-icon">🌐</span>
               <div>
                 <div class="source-name">Tomorrow.io API</div>
-                <div class="source-desc">Advanced weather forecasts & nowcasting</div>
+                <div class="source-desc">Advanced weather forecasts & severe weather data</div>
               </div>
             </div>
             <div class="source-item">
@@ -342,6 +398,7 @@
             <div class="shortcut-row"><kbd>W</kbd> Toggle Warnings Panel</div>
             <div class="shortcut-row"><kbd>S</kbd> Open Settings</div>
             <div class="shortcut-row"><kbd>3</kbd> Toggle 3D Radar</div>
+            <div class="shortcut-row"><kbd>L</kbd> My Location</div>
             <div class="shortcut-row"><kbd>Esc</kbd> Close Modals</div>
           </div>
         </div>
@@ -442,11 +499,7 @@
   <div id="toastContainer" class="toast-container"></div>
 </div>
 
-<!-- Local JavaScript -->
 <script src="script.js"></script>
 
 </body>
 </html>
-<!-- ======================================== 
-     HTML ENDS HERE
-======================================== -->
