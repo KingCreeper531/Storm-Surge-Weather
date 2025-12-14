@@ -1,22 +1,22 @@
 <!-- ========================================
-     STORM SURGE WEATHER - ADVANCED EDITION
+     STORM SURGE WEATHER - ULTIMATE EDITION
      File: index.html
-     Version 4.0
+     Version 5.0
 ======================================== -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Storm Surge Weather — Advanced Radar & Alerts</title>
+  <title>Storm Surge Weather — Ultimate Radar & Alerts</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <meta name="description" content="Real-time weather radar, live alerts, and forecast data" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <meta name="description" content="Real-time 3D weather radar, live alerts, and advanced forecasts" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   
-  <!-- Three.js for 3D Radar (Optional - for future 3D features) -->
+  <!-- Three.js for 3D Radar -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   
   <!-- Local CSS -->
@@ -37,8 +37,13 @@
   <!-- Map Container -->
   <div id="map"></div>
 
-  <!-- 3D Radar Container (Hidden by default) -->
-  <div id="radar3DContainer" class="radar-3d-container hidden"></div>
+  <!-- 3D Radar Container -->
+  <div id="radar3DContainer" class="radar-3d-container hidden">
+    <div class="radar-3d-header">
+      <span class="radar-3d-title">🎯 3D Radar Volume</span>
+      <button class="radar-3d-close" onclick="toggle3DRadar()">×</button>
+    </div>
+  </div>
 
   <!-- Click Marker (Red Pin) -->
   <div id="clickMarker" class="click-marker hidden">
@@ -148,9 +153,10 @@
 
   <!-- Radar Legend (Side) -->
   <div class="radar-legend">
-    <div class="legend-title">Radar Reflectivity</div>
+    <div class="legend-title">Radar Intensity</div>
     <div class="legend-gradient"></div>
     <div class="legend-labels">
+      <span>Extreme</span>
       <span>Heavy</span>
       <span>Moderate</span>
       <span>Light</span>
@@ -202,13 +208,24 @@
               <option value="1200">Very Slow (1200ms)</option>
             </select>
           </div>
+
+          <div class="setting-item toggle-item">
+            <label>🎯 Enable 3D Radar Visualization</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="radar3DToggle" />
+              <span class="toggle-slider"></span>
+            </div>
+          </div>
+          <div class="setting-note">
+            Displays animated 3D radar volume with particle effects. Press '3' key to toggle.
+          </div>
         </div>
 
         <div class="settings-section">
           <h3>Map Settings</h3>
           
           <div class="setting-item toggle-item">
-            <label>Satellite Imagery</label>
+            <label>🛰️ Satellite Imagery</label>
             <div class="toggle-switch">
               <input type="checkbox" id="satelliteToggle" />
               <span class="toggle-slider"></span>
@@ -222,20 +239,63 @@
               <span class="toggle-slider"></span>
             </div>
           </div>
+          <div class="setting-note">
+            Display color-coded warning polygons based on alert severity
+          </div>
         </div>
 
         <div class="settings-section">
           <h3>Warning Filters</h3>
           
           <div class="setting-item">
-            <label>Country/Region Filter</label>
+            <label>Geographic Region</label>
             <select id="warningCountryFilter">
-              <option value="all" selected>All Regions</option>
-              <option value="us">🇺🇸 United States Only</option>
-              <option value="canada">🇨🇦 Canada Only</option>
+              <option value="all" selected>🌎 All Regions</option>
+              <option value="us">🇺🇸 United States</option>
+              <option value="canada">🇨🇦 Canada</option>
+              <option value="mexico">🇲🇽 Mexico</option>
+              <option value="caribbean">🏝️ Caribbean (PR, VI)</option>
             </select>
             <div class="setting-note">
-              Filter weather alerts by geographic region
+              Filter weather alerts by geographic region. Color-coded polygons show alert severity.
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Warning Color Legend</h3>
+          <div class="warning-color-legend">
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #FF0000;"></span>
+              <span>Tornado Warning</span>
+            </div>
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #FFA500;"></span>
+              <span>Severe Thunderstorm</span>
+            </div>
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #8B0000;"></span>
+              <span>Flash Flood Warning</span>
+            </div>
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #00FF00;"></span>
+              <span>Flood Warning</span>
+            </div>
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #FF1493;"></span>
+              <span>Winter Storm</span>
+            </div>
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #FF4500;"></span>
+              <span>Blizzard Warning</span>
+            </div>
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #DAA520;"></span>
+              <span>High Wind</span>
+            </div>
+            <div class="legend-color-item">
+              <span class="legend-color-box" style="background: #C71585;"></span>
+              <span>Excessive Heat</span>
             </div>
           </div>
         </div>
@@ -244,31 +304,31 @@
           <h3>Data Sources</h3>
           <div class="data-sources-info">
             <div class="source-item">
+              <span class="source-icon">🌐</span>
+              <div>
+                <div class="source-name">Tomorrow.io API</div>
+                <div class="source-desc">Advanced weather forecasts & nowcasting</div>
+              </div>
+            </div>
+            <div class="source-item">
               <span class="source-icon">🛰️</span>
               <div>
                 <div class="source-name">RainViewer API</div>
-                <div class="source-desc">Real-time radar imagery</div>
+                <div class="source-desc">Real-time radar imagery & animation</div>
               </div>
             </div>
             <div class="source-item">
               <span class="source-icon">⚠️</span>
               <div>
                 <div class="source-name">NOAA/NWS Alerts</div>
-                <div class="source-desc">Live weather warnings</div>
-              </div>
-            </div>
-            <div class="source-item">
-              <span class="source-icon">🌡️</span>
-              <div>
-                <div class="source-name">Open-Meteo</div>
-                <div class="source-desc">Weather forecasts</div>
+                <div class="source-desc">Live weather warnings & watches</div>
               </div>
             </div>
             <div class="source-item">
               <span class="source-icon">🗺️</span>
               <div>
                 <div class="source-name">Mapbox</div>
-                <div class="source-desc">Maps & geocoding</div>
+                <div class="source-desc">Maps & geocoding services</div>
               </div>
             </div>
           </div>
@@ -281,6 +341,7 @@
             <div class="shortcut-row"><kbd>←/→</kbd> Navigate Frames</div>
             <div class="shortcut-row"><kbd>W</kbd> Toggle Warnings Panel</div>
             <div class="shortcut-row"><kbd>S</kbd> Open Settings</div>
+            <div class="shortcut-row"><kbd>3</kbd> Toggle 3D Radar</div>
             <div class="shortcut-row"><kbd>Esc</kbd> Close Modals</div>
           </div>
         </div>
@@ -289,9 +350,12 @@
           <h3>About</h3>
           <div class="about-info">
             <p><strong>Storm Surge Weather</strong></p>
-            <p>Version 4.0 - Advanced Edition</p>
-            <p>Real-time radar & live weather alerts</p>
+            <p>Version 5.0 - Ultimate Edition</p>
+            <p>3D radar visualization • Multi-source weather data • Color-coded alerts</p>
             <p class="email-contact">📧 stormsurgee025@gmail.com</p>
+            <p style="margin-top: 10px; font-size: 12px; color: #666;">
+              Data provided by Tomorrow.io, RainViewer, NOAA/NWS, and Mapbox
+            </p>
           </div>
         </div>
       </div>
