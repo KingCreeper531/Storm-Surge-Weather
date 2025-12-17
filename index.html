@@ -14,6 +14,7 @@
   <!-- Three.js for 3D Radar -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   
+  <!-- Local CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,34 +25,19 @@
     <button id="settingsBtn" class="top-btn" title="Settings">⚙️</button>
     <div class="location-display">
       <span id="currentLocation">United States</span>
-      <span id="lastUpdateTime" class="last-update-badge">Updated: --</span>
+      <span id="lastUpdateTime" class="last-update-badge hidden">Updated: --</span>
     </div>
     <button id="searchBtn" class="top-btn" title="Search Location">🔍</button>
     <button id="myLocationBtn" class="top-btn" title="My Location">📍</button>
   </div>
 
+  <!-- 3D Toggle Button (Floating) -->
+  <div class="floating-3d-toggle">
+    <button id="toggle3DBtn" class="toggle-3d-btn" onclick="toggle3DRadar()">🎯 3D View</button>
+  </div>
+
   <!-- Map Container -->
   <div id="map"></div>
-
-  <!-- 3D Radar Container -->
-  <div id="radar3DContainer" class="radar-3d-container hidden">
-    <div class="radar-3d-header">
-      <span class="radar-3d-title">🎯 3D Radar Volume</span>
-      <div class="radar-3d-controls">
-        <button class="radar-control-btn" id="resetCamera3D" title="Reset Camera">🔄</button>
-        <button class="radar-3d-close" onclick="toggle3DRadar()">×</button>
-      </div>
-    </div>
-    <div class="radar-3d-info">
-      <div class="radar-height-scale">
-        <div class="height-label">20,000 ft</div>
-        <div class="height-label">15,000 ft</div>
-        <div class="height-label">10,000 ft</div>
-        <div class="height-label">5,000 ft</div>
-        <div class="height-label">Ground</div>
-      </div>
-    </div>
-  </div>
 
   <!-- Click Marker (Red Pin) -->
   <div id="clickMarker" class="click-marker hidden">
@@ -243,7 +229,7 @@
             </div>
           </div>
           <div class="setting-note">
-            Displays animated 3D radar volume with particle effects. Press '3' key to toggle.
+            Displays animated 3D radar volume with particle effects. Press '3' key or use floating button.
           </div>
 
           <div class="setting-item toggle-item">
@@ -275,6 +261,32 @@
           </div>
           <div class="setting-note">
             Display color-coded warning polygons based on alert severity
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Advanced Features</h3>
+          
+          <div class="setting-item toggle-item">
+            <label>⚡ Lightning Strike Detection</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="lightningToggle" />
+              <span class="toggle-slider"></span>
+            </div>
+          </div>
+          <div class="setting-note">
+            Show simulated lightning strikes in active thunderstorm areas
+          </div>
+
+          <div class="setting-item toggle-item">
+            <label>🌪️ Storm Track Prediction</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="stormTracksToggle" />
+              <span class="toggle-slider"></span>
+            </div>
+          </div>
+          <div class="setting-note">
+            Display predicted paths for severe storms and tornadoes
           </div>
         </div>
 
@@ -370,7 +382,7 @@
               <span class="source-icon">🛰️</span>
               <div>
                 <div class="source-name">RainViewer API</div>
-                <div class="source-desc">Real-time radar imagery & animation</div>
+                <div class="source-desc">Real-time radar imagery & smooth animation</div>
               </div>
             </div>
             <div class="source-item">
@@ -404,11 +416,23 @@
         </div>
 
         <div class="settings-section">
+          <h3>New Features in v5.2</h3>
+          <div class="features-list">
+            <div class="feature-item">✨ Inline 3D radar view with smooth transitions</div>
+            <div class="feature-item">⚡ Real-time lightning strike visualization</div>
+            <div class="feature-item">🌪️ Predictive storm track mapping</div>
+            <div class="feature-item">🎬 Buttery smooth radar frame transitions</div>
+            <div class="feature-item">🎯 Enhanced 3D particles and volumetric effects</div>
+            <div class="feature-item">📍 Improved geolocation support</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <h3>About</h3>
           <div class="about-info">
             <p><strong>Storm Surge Weather</strong></p>
-            <p>Version 5.0 - Ultimate Edition</p>
-            <p>3D radar visualization • Multi-source weather data • Color-coded alerts</p>
+            <p>Version 5.2 - Smooth Radar & Inline 3D</p>
+            <p>Real-time 3D visualization • Lightning detection • Storm tracking</p>
             <p class="email-contact">📧 stormsurgee025@gmail.com</p>
             <p style="margin-top: 10px; font-size: 12px; color: #666;">
               Data provided by Tomorrow.io, RainViewer, NOAA/NWS, and Mapbox

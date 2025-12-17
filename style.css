@@ -1,7 +1,7 @@
 /* ========================================
      STORM SURGE WEATHER - ULTIMATE EDITION
      File: style.css
-     Version 5.0
+     Version 5.2
 ======================================== */
 
 /* ============================
@@ -46,6 +46,7 @@ html, body {
     width: 100%;
     height: 100%;
     z-index: 1;
+    transition: all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
 .mapboxgl-ctrl-bottom-left,
@@ -62,77 +63,55 @@ html, body {
 }
 
 /* ============================
-   3D RADAR CONTAINER
+   FLOATING 3D TOGGLE BUTTON
 ============================ */
-.radar-3d-container {
+.floating-3d-toggle {
     position: absolute;
-    top: 70px;
-    right: 15px;
-    width: 450px;
-    height: 350px;
-    background: rgba(10, 10, 15, 0.98);
-    backdrop-filter: blur(30px);
-    border-radius: 20px;
+    bottom: 100px;
+    right: 20px;
+    z-index: 95;
+}
+
+.toggle-3d-btn {
+    padding: 14px 24px;
+    background: rgba(10, 10, 15, 0.95);
+    backdrop-filter: blur(20px);
     border: 2px solid rgba(74, 222, 128, 0.4);
-    overflow: hidden;
-    z-index: 85;
-    box-shadow: 0 25px 80px rgba(74, 222, 128, 0.3);
-    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.radar-3d-container.hidden {
-    transform: translateX(120%) scale(0.8);
-    opacity: 0;
-    pointer-events: none;
-}
-
-.radar-3d-header {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 45px;
-    background: rgba(74, 222, 128, 0.1);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(74, 222, 128, 0.3);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 15px;
-    z-index: 10;
-}
-
-.radar-3d-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: #4ade80;
+    border-radius: 16px;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
     letter-spacing: 0.5px;
 }
 
-.radar-3d-close {
-    width: 30px;
-    height: 30px;
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    border-radius: 50%;
-    color: #fff;
-    font-size: 24px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
+.toggle-3d-btn:hover {
+    background: rgba(74, 222, 128, 0.2);
+    border-color: #4ade80;
+    transform: translateY(-4px) scale(1.05);
+    box-shadow: 0 15px 50px rgba(74, 222, 128, 0.4);
 }
 
-.radar-3d-close:hover {
-    background: rgba(239, 68, 68, 0.3);
-    transform: rotate(90deg);
+.toggle-3d-btn:active {
+    transform: translateY(-2px) scale(1.02);
 }
 
-.radar-3d-container canvas {
-    width: 100% !important;
-    height: 100% !important;
-    display: block;
+.toggle-3d-btn.active-3d {
+    background: rgba(74, 222, 128, 0.3);
+    border-color: #4ade80;
+    box-shadow: 0 15px 50px rgba(74, 222, 128, 0.5), 0 0 30px rgba(74, 222, 128, 0.3);
+    animation: pulse3D 2s infinite;
+}
+
+@keyframes pulse3D {
+    0%, 100% {
+        box-shadow: 0 15px 50px rgba(74, 222, 128, 0.5), 0 0 30px rgba(74, 222, 128, 0.3);
+    }
+    50% {
+        box-shadow: 0 15px 60px rgba(74, 222, 128, 0.7), 0 0 40px rgba(74, 222, 128, 0.5);
+    }
 }
 
 /* ============================
@@ -213,11 +192,31 @@ html, body {
 .location-display {
     flex: 1;
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.location-display > span:first-child {
     font-size: 16px;
     font-weight: 700;
     color: #fff;
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
     letter-spacing: 0.5px;
+}
+
+.last-update-badge {
+    font-size: 10px;
+    color: #999;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.3px;
+}
+
+.last-update-badge.hidden {
+    display: none;
 }
 
 /* ============================
@@ -348,6 +347,25 @@ html, body {
 .panel-warning-item:active {
     background: rgba(239, 68, 68, 0.25);
     transform: translateX(4px);
+}
+
+.panel-severe-weather {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: rgba(251, 146, 60, 0.12);
+    border-left: 4px solid #fb923c;
+    border-radius: 10px;
+}
+
+.panel-severe-weather.hidden {
+    display: none;
+}
+
+.panel-severe-weather h4 {
+    color: #fdba74;
+    margin-bottom: 12px;
+    font-size: 1rem;
+    font-weight: 800;
 }
 
 .current-weather-detailed {
@@ -488,7 +506,8 @@ html, body {
     font-size: 1rem;
 }
 
-.hourly-wind-detailed {
+.hourly-wind-detailed,
+.hourly-precip-detailed {
     font-size: 0.7rem;
     color: #ccc;
 }
@@ -600,6 +619,36 @@ html, body {
     font-size: 16px;
     color: #fca5a5;
     font-weight: 800;
+}
+
+.warnings-header-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.control-icon-btn {
+    width: 30px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.control-icon-btn:hover {
+    background: rgba(74, 222, 128, 0.3);
+    transform: scale(1.1);
+}
+
+.control-icon-btn:active {
+    transform: scale(0.95);
 }
 
 .close-warnings-btn {
@@ -858,6 +907,7 @@ html, body {
     background: rgba(255, 255, 255, 0.2);
     border-radius: 3px;
     outline: none;
+    transition: all 0.2s;
 }
 
 #timeSlider::-webkit-slider-thumb {
@@ -1264,6 +1314,21 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     font-weight: 700;
 }
 
+.features-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.feature-item {
+    padding: 12px;
+    background: rgba(74, 222, 128, 0.08);
+    border-left: 3px solid #4ade80;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #ccc;
+}
+
 .about-info {
     font-size: 14px;
     line-height: 2;
@@ -1537,6 +1602,9 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     background: rgba(74, 222, 128, 0.2) !important;
 }
 
+/* ============================
+   RESPONSIVE DESIGN
+============================ */
 @media (min-width: 768px) {
     .weather-panel-detailed {
         left: 20px;
@@ -1552,18 +1620,17 @@ input[type="checkbox"]:checked + .toggle-slider:before {
         right: 20px;
     }
     
-    .radar-3d-container {
-        right: 20px;
-        width: 500px;
-        height: 400px;
-    }
-    
     .bottom-controls {
         padding: 20px 40px;
     }
     
     .modal-content {
         max-width: 600px;
+    }
+
+    .floating-3d-toggle {
+        bottom: 120px;
+        right: 25px;
     }
 }
 
@@ -1580,12 +1647,6 @@ input[type="checkbox"]:checked + .toggle-slider:before {
         right: 10px;
     }
     
-    .radar-3d-container {
-        width: calc(100vw - 20px);
-        height: 250px;
-        right: 10px;
-    }
-    
     .top-bar {
         padding: 8px 10px;
     }
@@ -1596,8 +1657,12 @@ input[type="checkbox"]:checked + .toggle-slider:before {
         font-size: 18px;
     }
     
-    .location-display {
+    .location-display > span:first-child {
         font-size: 14px;
+    }
+
+    .last-update-badge {
+        font-size: 9px;
     }
     
     .time-display {
@@ -1637,8 +1702,26 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     .warning-color-legend {
         grid-template-columns: 1fr;
     }
+
+    .floating-3d-toggle {
+        bottom: 90px;
+        right: 10px;
+    }
+
+    .toggle-3d-btn {
+        padding: 12px 18px;
+        font-size: 14px;
+    }
+
+    .radar-legend {
+        right: 10px;
+        transform: translateY(-50%) scale(0.9);
+    }
 }
 
+/* ============================
+   UTILITY CLASSES
+============================ */
 .hidden {
     display: none !important;
 }
@@ -1647,6 +1730,9 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     overflow: hidden !important;
 }
 
+/* ============================
+   SCROLLBAR STYLING
+============================ */
 .warnings-content::-webkit-scrollbar,
 .panel-content-detailed::-webkit-scrollbar,
 .modal-body::-webkit-scrollbar,
@@ -1686,6 +1772,9 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     background: rgba(74, 222, 128, 0.7);
 }
 
+/* ============================
+   ANIMATIONS
+============================ */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -1706,6 +1795,9 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     }
 }
 
+/* ============================
+   SAFE AREA SUPPORT
+============================ */
 @supports (padding: max(0px)) {
     .top-bar {
         padding-top: max(10px, env(safe-area-inset-top));
@@ -1725,6 +1817,11 @@ input[type="checkbox"]:checked + .toggle-slider:before {
     
     .warnings-list {
         right: max(15px, env(safe-area-inset-right));
+    }
+
+    .floating-3d-toggle {
+        right: max(20px, env(safe-area-inset-right));
+        bottom: max(100px, calc(100px + env(safe-area-inset-bottom)));
     }
 }
 

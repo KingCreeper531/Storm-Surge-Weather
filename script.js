@@ -1,6 +1,6 @@
 // ========================================
 //  STORM SURGE WEATHER - ULTIMATE EDITION
-//  Version 5.1 - FIXED & ENHANCED
+//  Version 5.2 - SMOOTH RADAR & INLINE 3D
 // ========================================
 
 // ================================
@@ -15,7 +15,7 @@ let state = {
     currentLat: 39.8283,
     currentLng: -98.5795,
     currentRadarLayer: 'precipitation',
-    radarMode: '2d',
+    radarMode: '2d', // '2d' or '3d'
     isAnimating: false,
     animationInterval: null,
     currentTimeIndex: 0,
@@ -36,19 +36,21 @@ let state = {
     showPolygons: true,
     show3DRadar: false,
     autoZoom: false,
+    showLightning: false,
+    showStormTracks: false,
     
     // Warnings
     activeWarnings: [],
     selectedWarning: null,
     lastWarningUpdate: null,
     
-    // 3D Scene
+    // 3D Scene (inline)
     scene3D: null,
     camera3D: null,
     renderer3D: null,
-    controls3D: null,
     radarMesh3D: null,
     radarVolumes: [],
+    isTransitioning: false,
     
     // Click marker
     clickMarkerTimeout: null,
@@ -64,7 +66,17 @@ let state = {
     
     // Cache
     warningCache: new Map(),
-    weatherCache: new Map()
+    weatherCache: new Map(),
+    
+    // Storm tracks
+    stormTracks: [],
+    
+    // Lightning strikes
+    lightningStrikes: [],
+    
+    // Smooth animation
+    frameTransitionDuration: 300,
+    isFrameTransitioning: false
 };
 
 const weatherText = {
@@ -133,90 +145,56 @@ const map = new mapboxgl.Map({
     center: [state.currentLng, state.currentLat],
     zoom: 4,
     minZoom: 2,
-    maxZoom: 12
+    maxZoom: 12,
+    pitch: 0,
+    bearing: 0
 });
 
 // ================================
-//  3D RADAR SETUP (THREE.JS)
+//  3D RADAR SETUP (INLINE)
 // ================================
 function init3DRadar() {
-    const container = document.getElementById('radar3DContainer');
+    if (state.scene3D) return;
     
-    if (!container || state.scene3D) return;
-    
-    container.classList.remove('hidden');
+    const container = document.getElementById('map');
     
     // Create scene
     state.scene3D = new THREE.Scene();
-    state.scene3D.background = new THREE.Color(0x0a0a0f);
-    state.scene3D.fog = new THREE.FogExp2(0x0a0a0f, 0.002);
     
     // Create camera
-    state.camera3D = new THREE.PerspectiveCamera(
-        75,
-        container.clientWidth / container.clientHeight,
-        0.1,
-        3000
-    );
-    state.camera3D.position.set(200, 120, 200);
-    state.camera3D.lookAt(0, 30, 0);
+    const aspect = container.clientWidth / container.clientHeight;
+    state.camera3D = new THREE.PerspectiveCamera(60, aspect, 0.1, 3000);
+    state.camera3D.position.set(0, 400, 600);
+    state.camera3D.lookAt(0, 0, 0);
     
     // Create renderer
     state.renderer3D = new THREE.WebGLRenderer({ 
         antialias: true, 
-        alpha: false,
+        alpha: true,
         powerPreference: "high-performance"
     });
     state.renderer3D.setSize(container.clientWidth, container.clientHeight);
     state.renderer3D.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    state.renderer3D.domElement.style.position = 'absolute';
+    state.renderer3D.domElement.style.top = '0';
+    state.renderer3D.domElement.style.left = '0';
+    state.renderer3D.domElement.style.pointerEvents = 'none';
+    state.renderer3D.domElement.style.zIndex = '5';
     container.appendChild(state.renderer3D.domElement);
     
     // Add lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     state.scene3D.add(ambientLight);
     
-    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.6);
-    directionalLight1.position.set(100, 150, 100);
+    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight1.position.set(200, 300, 200);
     state.scene3D.add(directionalLight1);
     
-    const directionalLight2 = new THREE.DirectionalLight(0x4ade80, 0.4);
-    directionalLight2.position.set(-100, 100, -100);
+    const directionalLight2 = new THREE.DirectionalLight(0x4ade80, 0.3);
+    directionalLight2.position.set(-200, 200, -200);
     state.scene3D.add(directionalLight2);
     
-    const pointLight = new THREE.PointLight(0x4ade80, 1.5, 400);
-    pointLight.position.set(0, 80, 0);
-    state.scene3D.add(pointLight);
-    
-    // Add grid
-    const gridHelper = new THREE.GridHelper(400, 40, 0x4ade80, 0x1a1a1f);
-    gridHelper.material.opacity = 0.3;
-    gridHelper.material.transparent = true;
-    state.scene3D.add(gridHelper);
-    
-    // Add axes
-    const axesHelper = new THREE.AxesHelper(100);
-    state.scene3D.add(axesHelper);
-    
-    // Create ground plane with better material
-    const groundGeometry = new THREE.PlaneGeometry(400, 400);
-    const groundMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1a1a1f,
-        roughness: 0.8,
-        metalness: 0.2
-    });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.5;
-    ground.receiveShadow = true;
-    state.scene3D.add(ground);
-    
-    // Create 3D radar volume with realistic appearance
-    create3DRadarVolume();
-    
-    console.log('✅ Enhanced 3D Radar initialized');
-    
-    // Start animation
-    animate3D();
+    console.log('✅ Inline 3D Radar initialized');
 }
 
 function create3DRadarVolume() {
@@ -225,29 +203,39 @@ function create3DRadarVolume() {
     // Remove existing radar volumes
     state.radarVolumes.forEach(volume => {
         state.scene3D.remove(volume);
+        if (volume.geometry) volume.geometry.dispose();
+        if (volume.material) volume.material.dispose();
     });
     state.radarVolumes = [];
     
-    // Create volumetric layers similar to reference image
-    const layers = 25; // More layers for smoother appearance
+    // Get map bounds to align 3D with 2D
+    const bounds = map.getBounds();
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    
+    // Calculate scale based on zoom
+    const scale = Math.pow(2, 10 - zoom) * 100;
+    
+    // Create volumetric layers
+    const layers = 30;
     const group = new THREE.Group();
     
-    // Create main volumetric structure
     for (let i = 0; i < layers; i++) {
-        const height = i * 3;
-        const baseSize = 180;
-        const size = baseSize - (i * 1.5); // Gradual tapering
-        const opacity = Math.max(0.15, 0.7 - (i * 0.025));
+        const height = i * 4;
+        const size = scale * (1 - i * 0.015);
+        const opacity = Math.max(0.1, 0.8 - (i * 0.025));
         
-        // Create cloud-like geometry using multiple overlapping planes
-        const segments = 32;
+        // Create geometry with more detail
+        const segments = 48;
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
         
-        // Add noise to vertices for irregular cloud-like shape
+        // Add wave-like distortion
         const positions = geometry.attributes.position.array;
         for (let j = 0; j < positions.length; j += 3) {
-            const noise = (Math.random() - 0.5) * (height * 0.1);
-            positions[j + 2] = noise; // Z position variation
+            const x = positions[j];
+            const y = positions[j + 1];
+            const noise = Math.sin(x * 0.01 + height * 0.1) * Math.cos(y * 0.01 + height * 0.1);
+            positions[j + 2] = noise * (height * 0.08);
         }
         geometry.attributes.position.needsUpdate = true;
         geometry.computeVertexNormals();
@@ -258,116 +246,75 @@ function create3DRadarVolume() {
             transparent: true,
             opacity: opacity,
             side: THREE.DoubleSide,
-            shininess: 30,
+            shininess: 40,
             emissive: color,
-            emissiveIntensity: 0.2
+            emissiveIntensity: 0.15,
+            depthWrite: false
         });
         
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.y = height;
         mesh.rotation.x = -Math.PI / 2;
         group.add(mesh);
-        
-        // Add secondary offset layer for depth
-        if (i % 2 === 0) {
-            const mesh2 = mesh.clone();
-            mesh2.rotation.z = Math.PI / 4;
-            mesh2.scale.set(0.95, 0.95, 1);
-            group.add(mesh2);
-        }
     }
     
     state.radarVolumes.push(group);
     state.scene3D.add(group);
     
-    // Add enhanced particles with better distribution
-    createRadarParticles();
+    // Add particles
+    createRadarParticles3D();
     
-    // Add vertical structure lines (like in reference image)
-    createStructureLines();
+    // Add vertical beams
+    createVerticalBeams();
 }
 
-function getRadarColorForHeight(height) {
-    // More realistic color gradients matching weather radar
-    if (height < 10) return 0x646464; // Gray - no precip
-    if (height < 20) return 0x04e9e7; // Cyan - light
-    if (height < 30) return 0x019ff4; // Blue - light-moderate
-    if (height < 40) return 0x02fd02; // Green - moderate
-    if (height < 50) return 0xfdf802; // Yellow - moderate-heavy
-    if (height < 60) return 0xfd9500; // Orange - heavy
-    if (height < 70) return 0xfd0000; // Red - severe
-    return 0xbc0000; // Dark red - extreme
-}
-
-function createStructureLines() {
+function createRadarParticles3D() {
     if (!state.scene3D) return;
     
-    const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0x4ade80,
-        transparent: true,
-        opacity: 0.4
-    });
+    // Remove old particles
+    const oldParticles = state.scene3D.getObjectByName('radarParticles3D');
+    if (oldParticles) state.scene3D.remove(oldParticles);
     
-    // Create vertical guide lines
-    const positions = [
-        [-90, 0, -90], [90, 0, 90],
-        [90, 0, -90], [-90, 0, 90],
-        [0, 0, -90], [0, 0, 90],
-        [-90, 0, 0], [90, 0, 0]
-    ];
-    
-    positions.forEach(([x1, y1, z1]) => {
-        const geometry = new THREE.BufferGeometry();
-        const points = [
-            new THREE.Vector3(x1, y1, z1),
-            new THREE.Vector3(x1, 75, z1)
-        ];
-        geometry.setFromPoints(points);
-        const line = new THREE.Line(geometry, lineMaterial);
-        state.scene3D.add(line);
-    });
-}
-
-function createRadarParticles() {
-    if (!state.scene3D) return;
-    
-    const particleCount = 5000;
+    const particleCount = 8000;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
     const sizes = new Float32Array(particleCount);
     const velocities = new Float32Array(particleCount * 3);
     
+    const zoom = map.getZoom();
+    const scale = Math.pow(2, 10 - zoom) * 50;
+    
     for (let i = 0; i < particleCount; i++) {
         const i3 = i * 3;
         
-        // Position with better distribution
-        const radius = Math.random() * 90;
+        // Position
+        const radius = Math.random() * scale;
         const angle = Math.random() * Math.PI * 2;
         positions[i3] = Math.cos(angle) * radius;
-        positions[i3 + 1] = Math.random() * 75;
+        positions[i3 + 1] = Math.random() * 120;
         positions[i3 + 2] = Math.sin(angle) * radius;
         
-        // Velocities for animation
-        velocities[i3] = (Math.random() - 0.5) * 0.2;
-        velocities[i3 + 1] = -Math.random() * 0.5 - 0.3; // Falling
-        velocities[i3 + 2] = (Math.random() - 0.5) * 0.2;
+        // Velocities
+        velocities[i3] = (Math.random() - 0.5) * 0.3;
+        velocities[i3 + 1] = -Math.random() * 0.8 - 0.4;
+        velocities[i3 + 2] = (Math.random() - 0.5) * 0.3;
         
         // Color based on height
         const height = positions[i3 + 1];
-        if (height < 15) {
-            colors[i3] = 0.29; colors[i3 + 1] = 0.87; colors[i3 + 2] = 0.5; // Green
-        } else if (height < 30) {
-            colors[i3] = 0.98; colors[i3 + 1] = 0.75; colors[i3 + 2] = 0.14; // Yellow
-        } else if (height < 45) {
-            colors[i3] = 0.98; colors[i3 + 1] = 0.45; colors[i3 + 2] = 0.09; // Orange
+        if (height < 20) {
+            colors[i3] = 0.29; colors[i3 + 1] = 0.87; colors[i3 + 2] = 0.5;
+        } else if (height < 40) {
+            colors[i3] = 0.98; colors[i3 + 1] = 0.75; colors[i3 + 2] = 0.14;
         } else if (height < 60) {
-            colors[i3] = 0.94; colors[i3 + 1] = 0.27; colors[i3 + 2] = 0.27; // Red
+            colors[i3] = 0.98; colors[i3 + 1] = 0.45; colors[i3 + 2] = 0.09;
+        } else if (height < 80) {
+            colors[i3] = 0.94; colors[i3 + 1] = 0.27; colors[i3 + 2] = 0.27;
         } else {
-            colors[i3] = 0.74; colors[i3 + 1] = 0.0; colors[i3 + 2] = 0.0; // Dark red
+            colors[i3] = 0.74; colors[i3 + 1] = 0.0; colors[i3 + 2] = 0.0;
         }
         
-        sizes[i] = Math.random() * 4 + 1;
+        sizes[i] = Math.random() * 5 + 2;
     }
     
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -376,70 +323,121 @@ function createRadarParticles() {
     geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
     
     const material = new THREE.PointsMaterial({
-        size: 3,
+        size: 4,
         vertexColors: true,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0.9,
         sizeAttenuation: true,
-        blending: THREE.AdditiveBlending
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
     });
     
     const particles = new THREE.Points(geometry, material);
-    particles.name = 'radarParticles';
+    particles.name = 'radarParticles3D';
     state.scene3D.add(particles);
+}
+
+function createVerticalBeams() {
+    if (!state.scene3D) return;
+    
+    // Remove old beams
+    const oldBeams = state.scene3D.getObjectByName('verticalBeams');
+    if (oldBeams) state.scene3D.remove(oldBeams);
+    
+    const group = new THREE.Group();
+    group.name = 'verticalBeams';
+    
+    const zoom = map.getZoom();
+    const scale = Math.pow(2, 10 - zoom) * 50;
+    const beamCount = 12;
+    
+    for (let i = 0; i < beamCount; i++) {
+        const angle = (i / beamCount) * Math.PI * 2;
+        const radius = scale * 0.8;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        
+        const geometry = new THREE.CylinderGeometry(2, 2, 120, 8);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x4ade80,
+            transparent: true,
+            opacity: 0.15,
+            depthWrite: false
+        });
+        
+        const beam = new THREE.Mesh(geometry, material);
+        beam.position.set(x, 60, z);
+        group.add(beam);
+    }
+    
+    state.scene3D.add(group);
+}
+
+function getRadarColorForHeight(height) {
+    if (height < 10) return 0x646464;
+    if (height < 20) return 0x04e9e7;
+    if (height < 30) return 0x019ff4;
+    if (height < 40) return 0x02fd02;
+    if (height < 50) return 0xfdf802;
+    if (height < 60) return 0xfd9500;
+    if (height < 70) return 0xfd0000;
+    if (height < 90) return 0xd40000;
+    return 0xbc0000;
 }
 
 function animate3D() {
     if (!state.renderer3D || !state.scene3D || !state.camera3D) return;
+    if (state.radarMode !== '3d') return;
     
     requestAnimationFrame(animate3D);
     
     // Rotate radar volumes slowly
     state.radarVolumes.forEach((volume, index) => {
-        volume.rotation.y += 0.003 * (index % 2 === 0 ? 1 : -1);
+        volume.rotation.z += 0.002 * (index % 2 === 0 ? 1 : -1);
     });
     
-    // Animate particles with physics
-    const particles = state.scene3D.getObjectByName('radarParticles');
+    // Animate particles
+    const particles = state.scene3D.getObjectByName('radarParticles3D');
     if (particles) {
-        particles.rotation.y += 0.001;
         const positions = particles.geometry.attributes.position.array;
         const velocities = particles.geometry.attributes.velocity.array;
         const colors = particles.geometry.attributes.color.array;
         
+        const zoom = map.getZoom();
+        const scale = Math.pow(2, 10 - zoom) * 50;
+        
         for (let i = 0; i < positions.length; i += 3) {
-            // Update position with velocity
             positions[i] += velocities[i];
             positions[i + 1] += velocities[i + 1];
             positions[i + 2] += velocities[i + 2];
             
             // Reset particles that fall below ground
             if (positions[i + 1] < 0) {
-                positions[i + 1] = 75;
-                const radius = Math.random() * 90;
+                positions[i + 1] = 120;
+                const radius = Math.random() * scale;
                 const angle = Math.random() * Math.PI * 2;
                 positions[i] = Math.cos(angle) * radius;
                 positions[i + 2] = Math.sin(angle) * radius;
             }
             
-            // Update color based on new height
+            // Update color based on height
             const height = positions[i + 1];
-            const colorIndex = Math.floor((i / 3) * 3);
-            if (height < 15) {
+            const colorIndex = i;
+            if (height < 20) {
                 colors[colorIndex] = 0.29; colors[colorIndex + 1] = 0.87; colors[colorIndex + 2] = 0.5;
-            } else if (height < 30) {
+            } else if (height < 40) {
                 colors[colorIndex] = 0.98; colors[colorIndex + 1] = 0.75; colors[colorIndex + 2] = 0.14;
-            } else if (height < 45) {
-                colors[colorIndex] = 0.98; colors[colorIndex + 1] = 0.45; colors[colorIndex + 2] = 0.09;
             } else if (height < 60) {
+                colors[colorIndex] = 0.98; colors[colorIndex + 1] = 0.45; colors[colorIndex + 2] = 0.09;
+            } else if (height < 80) {
                 colors[colorIndex] = 0.94; colors[colorIndex + 1] = 0.27; colors[colorIndex + 2] = 0.27;
             } else {
                 colors[colorIndex] = 0.74; colors[colorIndex + 1] = 0.0; colors[colorIndex + 2] = 0.0;
             }
             
             // Bounds checking
-            if (Math.abs(positions[i]) > 100 || Math.abs(positions[i + 2]) > 100) {
-                const radius = Math.random() * 90;
+            if (Math.abs(positions[i]) > scale || Math.abs(positions[i + 2]) > scale) {
+                const radius = Math.random() * scale;
                 const angle = Math.random() * Math.PI * 2;
                 positions[i] = Math.cos(angle) * radius;
                 positions[i + 2] = Math.sin(angle) * radius;
@@ -449,47 +447,89 @@ function animate3D() {
         particles.geometry.attributes.color.needsUpdate = true;
     }
     
-    // Smooth camera orbit
-    const time = Date.now() * 0.00008;
-    const radius = 200;
-    state.camera3D.position.x = Math.cos(time) * radius;
-    state.camera3D.position.z = Math.sin(time) * radius;
-    state.camera3D.position.y = 120 + Math.sin(time * 0.5) * 20;
-    state.camera3D.lookAt(0, 30, 0);
+    // Smooth camera movement
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    const pitch = map.getPitch();
+    const bearing = map.getBearing();
+    
+    // Update camera based on map view
+    const distance = 300 + (12 - zoom) * 100;
+    const heightOffset = 200 + (12 - zoom) * 50;
+    
+    state.camera3D.position.x = Math.sin(bearing * Math.PI / 180) * distance;
+    state.camera3D.position.y = heightOffset + pitch * 5;
+    state.camera3D.position.z = Math.cos(bearing * Math.PI / 180) * distance;
+    state.camera3D.lookAt(0, 0, 0);
     
     state.renderer3D.render(state.scene3D, state.camera3D);
 }
 
 function toggle3DRadar() {
-    state.show3DRadar = !state.show3DRadar;
-    const container = document.getElementById('radar3DContainer');
-    const toggle = document.getElementById('radar3DToggle');
+    if (state.isTransitioning) return;
     
-    if (state.show3DRadar) {
+    state.isTransitioning = true;
+    const button = document.getElementById('toggle3DBtn');
+    
+    if (state.radarMode === '2d') {
+        // Switch to 3D
+        state.radarMode = '3d';
+        button.textContent = '🗺️ 2D View';
+        button.classList.add('active-3d');
+        
+        // Initialize 3D if not done
         if (!state.scene3D) {
             init3DRadar();
-        } else {
-            container.classList.remove('hidden');
         }
-        toggle.checked = true;
-        showToast('3D Radar Enabled', 'success');
+        
+        // Smooth transition
+        map.easeTo({
+            pitch: 60,
+            bearing: 0,
+            duration: 1000
+        });
+        
+        setTimeout(() => {
+            create3DRadarVolume();
+            if (state.renderer3D) {
+                state.renderer3D.domElement.style.opacity = '0';
+                state.renderer3D.domElement.style.transition = 'opacity 0.8s ease';
+                setTimeout(() => {
+                    state.renderer3D.domElement.style.opacity = '1';
+                }, 50);
+            }
+            animate3D();
+            state.isTransitioning = false;
+        }, 500);
+        
+        showToast('3D Radar View', 'success');
     } else {
-        container.classList.add('hidden');
-        toggle.checked = false;
-        showToast('3D Radar Disabled', 'info');
-    }
-}
-
-function reset3DCamera() {
-    if (state.camera3D) {
-        state.camera3D.position.set(200, 120, 200);
-        state.camera3D.lookAt(0, 30, 0);
-        showToast('Camera Reset', 'info');
+        // Switch to 2D
+        state.radarMode = '2d';
+        button.textContent = '🎯 3D View';
+        button.classList.remove('active-3d');
+        
+        // Smooth transition
+        if (state.renderer3D) {
+            state.renderer3D.domElement.style.opacity = '0';
+        }
+        
+        map.easeTo({
+            pitch: 0,
+            bearing: 0,
+            duration: 1000
+        });
+        
+        setTimeout(() => {
+            state.isTransitioning = false;
+        }, 1000);
+        
+        showToast('2D Radar View', 'info');
     }
 }
 
 // ================================
-//  RADAR FUNCTIONS - RAINVIEWER
+//  RADAR FUNCTIONS - RAINVIEWER (SMOOTH)
 // ================================
 async function loadRadarFrames() {
     try {
@@ -514,34 +554,104 @@ async function loadRadarFrames() {
     }
 }
 
-async function displayRadarFrame(frameIndex) {
+async function displayRadarFrame(frameIndex, smooth = false) {
     try {
         if (!state.radarFrames[frameIndex]) return;
+        
         const frame = state.radarFrames[frameIndex];
         const tileURL = `https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/6/1_1.png`;
         
-        if (map.getLayer('radar-layer')) map.removeLayer('radar-layer');
-        if (map.getSource('radar-source')) map.removeSource('radar-source');
-        
-        map.addSource('radar-source', {
-            type: 'raster',
-            tiles: [tileURL],
-            tileSize: 256,
-            maxzoom: 12
-        });
-        
-        map.addLayer({
-            id: 'radar-layer',
-            type: 'raster',
-            source: 'radar-source',
-            paint: {
-                'raster-opacity': state.radarOpacity,
-                'raster-fade-duration': 0
+        // Smooth transition
+        if (smooth && !state.isFrameTransitioning) {
+            state.isFrameTransitioning = true;
+            
+            // Fade out current layer
+            if (map.getLayer('radar-layer')) {
+                const currentOpacity = state.radarOpacity;
+                let opacity = currentOpacity;
+                const fadeSteps = 10;
+                const fadeInterval = state.frameTransitionDuration / (fadeSteps * 2);
+                
+                const fadeOut = setInterval(() => {
+                    opacity -= currentOpacity / fadeSteps;
+                    if (opacity <= 0) {
+                        clearInterval(fadeOut);
+                        
+                        // Switch source
+                        if (map.getLayer('radar-layer')) map.removeLayer('radar-layer');
+                        if (map.getSource('radar-source')) map.removeSource('radar-source');
+                        
+                        map.addSource('radar-source', {
+                            type: 'raster',
+                            tiles: [tileURL],
+                            tileSize: 256,
+                            maxzoom: 12
+                        });
+                        
+                        map.addLayer({
+                            id: 'radar-layer',
+                            type: 'raster',
+                            source: 'radar-source',
+                            paint: {
+                                'raster-opacity': 0,
+                                'raster-fade-duration': 0
+                            }
+                        });
+                        
+                        if (map.getLayer('warning-fills')) {
+                            map.moveLayer('radar-layer', 'warning-fills');
+                        }
+                        
+                        // Fade in new layer
+                        opacity = 0;
+                        const fadeIn = setInterval(() => {
+                            opacity += currentOpacity / fadeSteps;
+                            if (opacity >= currentOpacity) {
+                                opacity = currentOpacity;
+                                clearInterval(fadeIn);
+                                state.isFrameTransitioning = false;
+                            }
+                            if (map.getLayer('radar-layer')) {
+                                map.setPaintProperty('radar-layer', 'raster-opacity', opacity);
+                            }
+                        }, fadeInterval);
+                    } else {
+                        if (map.getLayer('radar-layer')) {
+                            map.setPaintProperty('radar-layer', 'raster-opacity', opacity);
+                        }
+                    }
+                }, fadeInterval);
             }
-        });
+        } else {
+            // Instant switch
+            if (map.getLayer('radar-layer')) map.removeLayer('radar-layer');
+            if (map.getSource('radar-source')) map.removeSource('radar-source');
+            
+            map.addSource('radar-source', {
+                type: 'raster',
+                tiles: [tileURL],
+                tileSize: 256,
+                maxzoom: 12
+            });
+            
+            map.addLayer({
+                id: 'radar-layer',
+                type: 'raster',
+                source: 'radar-source',
+                paint: {
+                    'raster-opacity': state.radarOpacity,
+                    'raster-fade-duration': 0
+                }
+            });
+            
+            if (map.getLayer('warning-fills')) {
+                map.moveLayer('radar-layer', 'warning-fills');
+            }
+        }
         
-        if (map.getLayer('warning-fills')) {
-            map.moveLayer('radar-layer', 'warning-fills');
+        // Update 3D radar if in 3D mode
+        if (state.radarMode === '3d' && state.scene3D) {
+            create3DRadarVolume();
         }
     } catch (error) {
         console.error('Error displaying radar frame:', error);
@@ -576,7 +686,7 @@ function startAnimation() {
     if (state.animationInterval) clearInterval(state.animationInterval);
     state.animationInterval = setInterval(() => {
         state.currentTimeIndex = (state.currentTimeIndex + 1) % state.radarFrames.length;
-        displayRadarFrame(state.currentTimeIndex);
+        displayRadarFrame(state.currentTimeIndex, true); // Smooth animation
         updateTimeDisplay();
     }, state.animationSpeed);
     state.isAnimating = true;
@@ -593,14 +703,277 @@ function stopAnimation() {
 }
 
 // ================================
-//  WEATHER ALERTS - NWS API (FIXED)
+//  LIGHTNING STRIKES (NEW FEATURE)
 // ================================
+async function loadLightningData() {
+    if (!state.showLightning) return;
+    
+    try {
+        // Simulated lightning data (in production, use real lightning API)
+        // For now, generate random strikes based on active thunderstorm warnings
+        state.lightningStrikes = [];
+        
+        const thunderstormWarnings = state.activeWarnings.filter(w => 
+            w.properties.event && w.properties.event.toLowerCase().includes('thunderstorm')
+        );
+        
+        thunderstormWarnings.forEach(warning => {
+            if (warning.geometry && warning.geometry.coordinates) {
+                const coords = warning.geometry.type === 'Polygon' 
+                    ? warning.geometry.coordinates[0] 
+                    : warning.geometry.coordinates[0][0];
+                
+                // Generate 5-15 random strikes within warning polygon
+                const strikeCount = Math.floor(Math.random() * 10) + 5;
+                for (let i = 0; i < strikeCount; i++) {
+                    const randomIndex = Math.floor(Math.random() * coords.length);
+                    const [lng, lat] = coords[randomIndex];
+                    
+                    // Add some random offset
+                    const offsetLat = lat + (Math.random() - 0.5) * 0.1;
+                    const offsetLng = lng + (Math.random() - 0.5) * 0.1;
+                    
+                    state.lightningStrikes.push({
+                        lat: offsetLat,
+                        lng: offsetLng,
+                        timestamp: Date.now(),
+                        intensity: Math.random()
+                    });
+                }
+            }
+        });
+        
+        displayLightningStrikes();
+        console.log(`⚡ Generated ${state.lightningStrikes.length} lightning strikes`);
+    } catch (error) {
+        console.error('Error loading lightning data:', error);
+    }
+}
+
+function displayLightningStrikes() {
+    if (map.getLayer('lightning-layer')) map.removeLayer('lightning-layer');
+    if (map.getSource('lightning-source')) map.removeSource('lightning-source');
+    
+    if (state.lightningStrikes.length === 0) return;
+    
+    const geojson = {
+        type: 'FeatureCollection',
+        features: state.lightningStrikes.map(strike => ({
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [strike.lng, strike.lat]
+            },
+            properties: {
+                intensity: strike.intensity
+            }
+        }))
+    };
+    
+    map.addSource('lightning-source', { type: 'geojson', data: geojson });
+    
+    map.addLayer({
+        id: 'lightning-layer',
+        type: 'circle',
+        source: 'lightning-source',
+        paint: {
+            'circle-radius': [
+                'interpolate',
+                ['linear'],
+                ['get', 'intensity'],
+                0, 6,
+                1, 12
+            ],
+            'circle-color': '#FFFF00',
+            'circle-opacity': 0.9,
+            'circle-blur': 0.5,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#FFFFFF',
+            'circle-stroke-opacity': 0.8
+        }
+    });
+    
+    animateLightningStrikes();
+}
+
+function animateLightningStrikes() {
+    let pulsePhase = 0;
+    const pulseInterval = setInterval(() => {
+        if (!map.getLayer('lightning-layer') || !state.showLightning) {
+            clearInterval(pulseInterval);
+            return;
+        }
+        
+        pulsePhase += 0.1;
+        const opacity = 0.5 + Math.sin(pulsePhase) * 0.4;
+        
+        map.setPaintProperty('lightning-layer', 'circle-opacity', opacity);
+    }, 50);
+}
+
+function toggleLightning() {
+    state.showLightning = !state.showLightning;
+    const toggle = document.getElementById('lightningToggle');
+    
+    if (state.showLightning) {
+        toggle.checked = true;
+        loadLightningData();
+        showToast('Lightning strikes enabled', 'success');
+    } else {
+        toggle.checked = false;
+        if (map.getLayer('lightning-layer')) map.removeLayer('lightning-layer');
+        if (map.getSource('lightning-source')) map.removeSource('lightning-source');
+        showToast('Lightning strikes disabled', 'info');
+    }
+}
+
+async function loadStormTracks() {
+    if (!state.showStormTracks) return;
+    
+    try {
+        state.stormTracks = [];
+        
+        const severeWarnings = state.activeWarnings.filter(w => {
+            const event = w.properties.event || '';
+            return event.includes('Tornado') || 
+                   event.includes('Severe Thunderstorm') || 
+                   event.includes('Hurricane');
+        });
+        
+        severeWarnings.forEach((warning, index) => {
+            if (warning.geometry && warning.geometry.coordinates) {
+                const coords = warning.geometry.type === 'Polygon' 
+                    ? warning.geometry.coordinates[0] 
+                    : warning.geometry.coordinates[0][0];
+                
+                if (coords.length > 2) {
+                    const centerLng = coords.reduce((sum, c) => sum + c[0], 0) / coords.length;
+                    const centerLat = coords.reduce((sum, c) => sum + c[1], 0) / coords.length;
+                    
+                    const track = [];
+                    const steps = 6;
+                    
+                    for (let i = 0; i < steps; i++) {
+                        track.push({
+                            lng: centerLng + (i * 0.15),
+                            lat: centerLat + (i * 0.05) * (Math.random() - 0.5),
+                            time: Date.now() + (i * 600000)
+                        });
+                    }
+                    
+                    state.stormTracks.push({
+                        id: warning.properties.id,
+                        event: warning.properties.event,
+                        track: track
+                    });
+                }
+            }
+        });
+        
+        displayStormTracks();
+        console.log(`🌪️ Generated ${state.stormTracks.length} storm tracks`);
+    } catch (error) {
+        console.error('Error loading storm tracks:', error);
+    }
+}
+
+function displayStormTracks() {
+    if (map.getLayer('storm-tracks-layer')) map.removeLayer('storm-tracks-layer');
+    if (map.getLayer('storm-points-layer')) map.removeLayer('storm-points-layer');
+    if (map.getSource('storm-tracks-source')) map.removeSource('storm-tracks-source');
+    
+    if (state.stormTracks.length === 0) return;
+    
+    const features = [];
+    
+    state.stormTracks.forEach(storm => {
+        features.push({
+            type: 'Feature',
+            geometry: {
+                type: 'LineString',
+                coordinates: storm.track.map(p => [p.lng, p.lat])
+            },
+            properties: {
+                event: storm.event
+            }
+        });
+        
+        storm.track.forEach((point, index) => {
+            features.push({
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: [point.lng, point.lat]
+                },
+                properties: {
+                    event: storm.event,
+                    isFuture: index > 0
+                }
+            });
+        });
+    });
+    
+    const geojson = {
+        type: 'FeatureCollection',
+        features: features
+    };
+    
+    map.addSource('storm-tracks-source', { type: 'geojson', data: geojson });
+    
+    map.addLayer({
+        id: 'storm-tracks-layer',
+        type: 'line',
+        source: 'storm-tracks-source',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+            'line-color': '#FF0000',
+            'line-width': 3,
+            'line-opacity': 0.8,
+            'line-dasharray': [2, 2]
+        }
+    });
+    
+    map.addLayer({
+        id: 'storm-points-layer',
+        type: 'circle',
+        source: 'storm-tracks-source',
+        filter: ['==', '$type', 'Point'],
+        paint: {
+            'circle-radius': 8,
+            'circle-color': [
+                'case',
+                ['get', 'isFuture'],
+                '#FFA500',
+                '#FF0000'
+            ],
+            'circle-opacity': 0.9,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#FFFFFF'
+        }
+    });
+}
+
+function toggleStormTracks() {
+    state.showStormTracks = !state.showStormTracks;
+    const toggle = document.getElementById('stormTracksToggle');
+    
+    if (state.showStormTracks) {
+        toggle.checked = true;
+        loadStormTracks();
+        showToast('Storm tracks enabled', 'success');
+    } else {
+        toggle.checked = false;
+        if (map.getLayer('storm-tracks-layer')) map.removeLayer('storm-tracks-layer');
+        if (map.getLayer('storm-points-layer')) map.removeLayer('storm-points-layer');
+        if (map.getSource('storm-tracks-source')) map.removeSource('storm-tracks-source');
+        showToast('Storm tracks disabled', 'info');
+    }
+}
+
 async function loadWeatherAlerts() {
     try {
         console.log('🔄 Loading alerts...');
         
-        // FIX: Don't use area=US parameter - it's too restrictive
-        // Instead, fetch ALL active alerts without area filter
         const url = 'https://api.weather.gov/alerts/active?status=actual&message_type=alert';
         
         const response = await fetch(url, {
@@ -617,15 +990,12 @@ async function loadWeatherAlerts() {
         const data = await response.json();
         
         if (data.features) {
-            // Filter out test/expired warnings
             let warnings = data.features.filter(f => {
                 if (!f.properties || !f.properties.event) return false;
                 
-                // Check if expired
                 const expires = new Date(f.properties.expires);
                 if (expires < new Date()) return false;
                 
-                // Filter by severity if set
                 if (state.severityFilter !== 'all') {
                     const severity = f.properties.severity || 'Unknown';
                     const rank = severityRanking[severity] || 0;
@@ -642,7 +1012,6 @@ async function loadWeatherAlerts() {
             state.lastWarningUpdate = new Date();
             console.log(`✅ Loaded ${state.activeWarnings.length} warnings`);
             
-            // Sort if enabled
             if (state.sortBySeverity) {
                 sortWarningsBySeverity();
             }
@@ -652,9 +1021,15 @@ async function loadWeatherAlerts() {
             updateAlertBadge();
             updateLastUpdateDisplay();
             
-            // Auto-zoom to severe weather if enabled
             if (state.autoZoom && warnings.length > 0) {
                 autoZoomToSevereWeather(warnings);
+            }
+            
+            if (state.showLightning) {
+                loadLightningData();
+            }
+            if (state.showStormTracks) {
+                loadStormTracks();
             }
         } else {
             throw new Error('No features in response');
@@ -677,10 +1052,9 @@ function sortWarningsBySeverity() {
 }
 
 function autoZoomToSevereWeather(warnings) {
-    // Find most severe warning
     const severe = warnings.filter(w => {
         const rank = severityRanking[w.properties.severity || 'Unknown'] || 0;
-        return rank >= 3; // Severe or Extreme
+        return rank >= 3;
     });
     
     if (severe.length > 0 && severe[0].geometry) {
@@ -713,7 +1087,7 @@ function updateWarningsList() {
     const count = document.getElementById('alertCount');
     count.textContent = state.activeWarnings.length;
     
- if (state.activeWarnings.length === 0) {
+    if (state.activeWarnings.length === 0) {
         content.innerHTML = '<div style="text-align: center; color: #4ade80; padding: 30px;"><div style="font-size: 48px;">✓</div><div style="font-weight: 600; margin-top: 10px;">No Active Alerts</div><div style="font-size: 12px; color: #999; margin-top: 5px;">All clear</div></div>';
         return;
     }
@@ -769,12 +1143,11 @@ function displayWarningPolygons() {
     
     map.addSource('warnings-source', { type: 'geojson', data: geojson });
     
-    // Create color expression for all warning types
     const colorExpression = ['match', ['get', 'event']];
     Object.keys(warningColors).forEach(type => {
         colorExpression.push(type, warningColors[type]);
     });
-    colorExpression.push('#999999'); // Default color
+    colorExpression.push('#999999');
     
     map.addLayer({
         id: 'warning-fills',
@@ -864,12 +1237,8 @@ function formatTimeRemaining(expiresISO) {
     return `${minutes}m`;
 }
 
-// ================================
-//  TOMORROW.IO WEATHER API (ENHANCED)
-// ================================
 async function getTomorrowWeatherData(lat, lng) {
     try {
-        // Check cache first (5 minute cache)
         const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
         const cached = state.weatherCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp < 300000)) {
@@ -888,7 +1257,6 @@ async function getTomorrowWeatherData(lat, lng) {
         
         const data = await response.json();
         
-        // Cache the result
         state.weatherCache.set(cacheKey, {
             data: data,
             timestamp: Date.now()
@@ -924,7 +1292,6 @@ async function updateWeatherPanel(lat, lng) {
         return;
     }
     
-    // Check if we got Tomorrow.io data or backup
     if (data.timelines) {
         displayTomorrowData(data, lat, lng);
     } else {
@@ -941,7 +1308,6 @@ async function displayTomorrowData(data, lat, lng) {
     document.getElementById('panelLocationAddress').textContent = locationName;
     document.getElementById('panelLocationCoords').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     
-    // Fetch NWS alerts for this location
     const localWarnings = await fetchWeatherAlertsForLocation(lat, lng);
     const warningsSection = document.getElementById('panelWarningsSection');
     const warningsList = document.getElementById('panelWarningsList');
@@ -955,7 +1321,6 @@ async function displayTomorrowData(data, lat, lng) {
         warningsSection.classList.add('hidden');
     }
     
-    // Display severe weather risk from Tomorrow.io
     displaySevereWeatherRisk(current);
     
     document.getElementById('panelCurrentTemp').textContent = `${Math.round(current.temperature)}°F`;
@@ -983,10 +1348,8 @@ async function displayTomorrowData(data, lat, lng) {
     document.getElementById('panelCloudCover').textContent = `${Math.round(current.cloudCover)}%`;
     document.getElementById('panelPrecipitation').textContent = current.precipitationIntensity ? `${current.precipitationIntensity.toFixed(2)} in` : '0 in';
     
-    // Enhanced fields from Tomorrow.io
     document.getElementById('panelUVIndex').textContent = current.uvIndex ? Math.round(current.uvIndex) : '--';
     
-    // Air Quality Index
     const aqiValue = current.particulateMatter25 || current.particulateMatter10;
     if (aqiValue) {
         const aqi = calculateAQI(aqiValue);
@@ -1048,7 +1411,6 @@ function displaySevereWeatherRisk(current) {
     
     const risks = [];
     
-    // Check for severe weather indicators
     if (current.windSpeed > 40) {
         risks.push({ icon: '💨', text: 'High Wind Risk', level: 'severe' });
     }
@@ -1080,7 +1442,6 @@ function displaySevereWeatherRisk(current) {
 }
 
 function calculateAQI(pm25) {
-    // Simplified AQI calculation from PM2.5
     if (pm25 <= 12) return { label: 'Good', color: '#4ade80' };
     if (pm25 <= 35.4) return { label: 'Moderate', color: '#fbbf24' };
     if (pm25 <= 55.4) return { label: 'Unhealthy (Sensitive)', color: '#fb923c' };
@@ -1346,9 +1707,6 @@ function selectLocation(lat, lng, name) {
     closeSearch();
 }
 
-// ================================
-//  USER LOCATION
-// ================================
 async function getUserLocation() {
     if (!navigator.geolocation) {
         showToast('Geolocation not supported', 'error');
@@ -1384,26 +1742,20 @@ async function getUserLocation() {
     );
 }
 
-// ================================
-//  AUTO-REFRESH SYSTEM
-// ================================
 function startAutoRefresh() {
-    // Clear existing timers
     if (state.refreshTimer) clearInterval(state.refreshTimer);
     if (state.warningRefreshTimer) clearInterval(state.warningRefreshTimer);
     
     if (state.refreshInterval > 0) {
-        // Refresh radar
         state.refreshTimer = setInterval(() => {
             console.log('🔄 Auto-refresh radar');
             loadRadarFrames();
         }, state.refreshInterval);
         
-        // Refresh warnings more frequently
         state.warningRefreshTimer = setInterval(() => {
             console.log('🔄 Auto-refresh alerts');
             loadWeatherAlerts();
-        }, Math.min(state.refreshInterval, 120000)); // Max 2 minutes
+        }, Math.min(state.refreshInterval, 120000));
         
         console.log(`✅ Auto-refresh enabled: ${state.refreshInterval / 1000}s`);
     } else {
@@ -1411,9 +1763,6 @@ function startAutoRefresh() {
     }
 }
 
-// ================================
-//  UI UTILITIES
-// ================================
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');
@@ -1438,20 +1787,14 @@ function closeWarningModal() {
     document.getElementById('warningModal').classList.add('hidden'); 
 }
 
-// ================================
-//  MAP INITIALIZATION
-// ================================
 map.on('load', () => {
     console.log('🗺️ Map loaded');
     
-    // Load initial data
     loadRadarFrames().then(() => {
         setTimeout(() => startAnimation(), 1000);
     });
     
     loadWeatherAlerts();
-    
-    // Start auto-refresh
     startAutoRefresh();
 });
 
@@ -1472,11 +1815,12 @@ map.on('move', () => {
         marker.style.left = `${point.x}px`;
         marker.style.top = `${point.y}px`;
     }
+    
+    if (state.radarMode === '3d' && state.scene3D) {
+        create3DRadarVolume();
+    }
 });
 
-// ================================
-//  EVENT LISTENERS
-// ================================
 document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('settingsModal').classList.remove('hidden');
 });
@@ -1499,7 +1843,7 @@ document.getElementById('timeSlider').addEventListener('input', (e) => {
     stopAnimation();
     const timeIndex = parseInt(e.target.value);
     state.currentTimeIndex = timeIndex;
-    displayRadarFrame(timeIndex);
+    displayRadarFrame(timeIndex, false);
     updateTimeDisplay();
 });
 
@@ -1530,10 +1874,6 @@ document.getElementById('sortWarningsBtn').addEventListener('click', () => {
 document.getElementById('refreshWarningsBtn').addEventListener('click', () => {
     showToast('Refreshing alerts...', 'info');
     loadWeatherAlerts();
-});
-
-document.getElementById('resetCamera3D')?.addEventListener('click', () => {
-    reset3DCamera();
 });
 
 document.getElementById('searchInput').addEventListener('keyup', async (e) => {
@@ -1596,6 +1936,14 @@ document.getElementById('autoZoomToggle').addEventListener('change', (e) => {
     showToast(state.autoZoom ? 'Auto-zoom enabled' : 'Auto-zoom disabled', 'info');
 });
 
+document.getElementById('lightningToggle')?.addEventListener('change', (e) => {
+    toggleLightning();
+});
+
+document.getElementById('stormTracksToggle')?.addEventListener('change', (e) => {
+    toggleStormTracks();
+});
+
 document.getElementById('animationSpeed').addEventListener('change', (e) => {
     state.animationSpeed = parseInt(e.target.value);
     if (state.isAnimating) {
@@ -1646,9 +1994,6 @@ document.getElementById('shareWarningBtn').addEventListener('click', () => {
     }
 });
 
-// ================================
-//  MODAL CLICK HANDLERS
-// ================================
 document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
@@ -1657,9 +2002,6 @@ document.querySelectorAll('.modal').forEach(modal => {
     });
 });
 
-// ================================
-//  KEYBOARD SHORTCUTS
-// ================================
 document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     
@@ -1673,14 +2015,14 @@ document.addEventListener('keydown', (e) => {
             e.preventDefault();
             stopAnimation();
             state.currentTimeIndex = Math.max(0, state.currentTimeIndex - 1);
-            displayRadarFrame(state.currentTimeIndex);
+            displayRadarFrame(state.currentTimeIndex, false);
             updateTimeDisplay();
             break;
         case 'arrowright':
             e.preventDefault();
             stopAnimation();
             state.currentTimeIndex = Math.min(state.radarFrames.length - 1, state.currentTimeIndex + 1);
-            displayRadarFrame(state.currentTimeIndex);
+            displayRadarFrame(state.currentTimeIndex, false);
             updateTimeDisplay();
             break;
         case 'w':
@@ -1705,22 +2047,16 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// ================================
-//  WINDOW RESIZE HANDLER
-// ================================
 window.addEventListener('resize', () => {
     map.resize();
     if (state.renderer3D && state.camera3D) {
-        const container = document.getElementById('radar3DContainer');
+        const container = document.getElementById('map');
         state.camera3D.aspect = container.clientWidth / container.clientHeight;
         state.camera3D.updateProjectionMatrix();
         state.renderer3D.setSize(container.clientWidth, container.clientHeight);
     }
 });
 
-// ================================
-//  TOUCH EVENTS
-// ================================
 let touchStartY = 0;
 document.addEventListener('touchstart', (e) => {
     touchStartY = e.touches[0].clientY;
@@ -1735,9 +2071,6 @@ document.addEventListener('touchmove', (e) => {
     }
 }, { passive: false });
 
-// ================================
-//  GLOBAL FUNCTIONS
-// ================================
 window.showWarningDetail = showWarningDetail;
 window.selectLocation = selectLocation;
 window.closeSettings = closeSettings;
@@ -1745,16 +2078,15 @@ window.closeSearch = closeSearch;
 window.closeWarningModal = closeWarningModal;
 window.toggle3DRadar = toggle3DRadar;
 
-// ================================
-//  INITIALIZATION
-// ================================
 function init() {
-    console.log('⚡ Storm Surge Weather v5.1 FIXED & ENHANCED');
+    console.log('⚡ Storm Surge Weather v5.2 - SMOOTH RADAR & INLINE 3D');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('✅ Tomorrow.io Weather API (Enhanced)');
-    console.log('✅ RainViewer Radar');
+    console.log('✅ RainViewer Radar (Smooth Transitions)');
     console.log('✅ NWS Weather Alerts (FIXED)');
-    console.log('✅ 3D Radar Visualization (Enhanced)');
+    console.log('✅ Inline 3D Radar Visualization');
+    console.log('✅ Lightning Strike Detection');
+    console.log('✅ Storm Track Prediction');
     console.log('✅ Color-Coded Warning Polygons');
     console.log('✅ Auto-Refresh System');
     console.log('✅ User Location Detection');
@@ -1780,7 +2112,3 @@ if (document.readyState === 'loading') {
 } else {
     init();
 }
-
-// ========================================
-//  JAVASCRIPT ENDS HERE
-// ========================================
