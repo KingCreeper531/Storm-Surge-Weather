@@ -6,6 +6,7 @@
   <meta name="description" content="Storm Surge Weather - Advanced radar & forecasting">
   <meta name="theme-color" content="#0a0a0f">
   <title>Storm Surge Weather</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛈</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
@@ -308,11 +309,11 @@
   <!-- LOADER -->
   <div class="loader" id="loader"><div class="spinner"></div></div>
 
-  <!-- 
-    IMPORTANT: Copy config.example.js to config.js and add your Mapbox token.
-    config.js is listed in .gitignore and will NOT be committed to GitHub.
-  -->
-  <script src="config.js"></script>
+  <script>
+    const API_CONFIG = {
+      MAPBOX: "YOUR_MAPBOX_TOKEN_HERE"
+    };
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
