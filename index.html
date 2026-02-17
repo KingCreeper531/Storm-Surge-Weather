@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Storm Surge Weather - Advanced radar & forecasting">
+  <meta name="theme-color" content="#0a0a0f">
+  <title>Storm Surge Weather</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">⛈</span>
+        <span class="logo-text">StormSurge</span>
+      </div>
+      <button class="sidebar-close" id="sidebarClose">✕</button>
+    </div>
+
+    <div class="user-block">
+      <div class="user-avatar">SS</div>
+      <div class="user-details">
+        <div class="user-name">Weather User</div>
+        <div class="user-plan">Pro Plan</div>
+      </div>
+      <div class="user-status online"></div>
+    </div>
+
+    <nav class="nav-menu">
+      <a href="#" class="nav-item active" data-page="home">
+        <span class="nav-icon">⌂</span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="#" class="nav-item" data-page="alerts" id="navAlerts">
+        <span class="nav-icon">◈</span>
+        <span class="nav-label">Weather Alerts</span>
+        <span class="nav-badge danger" id="sidebarAlertCount">0</span>
+      </a>
+      <a href="#" class="nav-item" data-page="settings" id="navSettings">
+        <span class="nav-icon">◎</span>
+        <span class="nav-label">Settings</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="theme-row">
+        <span>Dark Mode</span>
+        <label class="toggle">
+          <input type="checkbox" id="themeToggle" checked>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="version-tag">v8.0 LIVE</div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main-content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="hamburger" id="hamburger">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="location-display">
+          <span class="location-label">LOCATION</span>
+          <span class="location-name" id="dashboardLocation">New York</span>
+        </div>
+      </div>
+      <div class="topbar-center">
+        <div class="search-bar">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="mapSearch" placeholder="Search city or zip code..." autocomplete="off">
+          <div class="search-results" id="searchDropdown"></div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="live-indicator">
+          <span class="pulse-dot"></span>
+          <span>LIVE</span>
+        </div>
+        <div class="date-chip" id="currentDate">Loading...</div>
+        <button class="icon-btn" id="locateMe" title="Use my location">◎</button>
+      </div>
+    </header>
+
+    <!-- LAYER TABS -->
+    <div class="layer-strip">
+      <button class="layer-btn active" data-layer="precipitation">🌧 Precipitation</button>
+      <button class="layer-btn" data-layer="temperature">🌡 Temperature</button>
+      <button class="layer-btn" data-layer="wind">💨 Wind</button>
+      <button class="layer-btn" data-layer="clouds">☁ Clouds</button>
+      <button class="layer-btn" data-layer="pressure">📊 Pressure</button>
+    </div>
+
+    <!-- MAP AREA -->
+    <div class="map-zone">
+      <div id="map"></div>
+      <canvas id="radarCanvas"></canvas>
+
+      <!-- WEATHER CARD -->
+      <div class="weather-card" id="weatherCard">
+        <div class="wcard-header">
+          <div class="wcard-temp" id="currentTempLarge">--°C</div>
+          <div class="wcard-icon" id="currentWeatherIcon">🌡</div>
+        </div>
+        <div class="wcard-location" id="wCardLocation">New York</div>
+        <div class="wcard-divider"></div>
+        <div class="wcard-grid">
+          <div class="wcard-stat">
+            <span class="stat-label">Feels Like</span>
+            <span class="stat-val" id="feelsLike">--</span>
+          </div>
+          <div class="wcard-stat">
+            <span class="stat-label">Humidity</span>
+            <span class="stat-val" id="humidity">--</span>
+          </div>
+          <div class="wcard-stat">
+            <span class="stat-label">Wind</span>
+            <span class="stat-val" id="windSpeed">--</span>
+          </div>
+          <div class="wcard-stat">
+            <span class="stat-label">Direction</span>
+            <span class="stat-val" id="windDirection">--</span>
+          </div>
+          <div class="wcard-stat">
+            <span class="stat-label">Precipitation</span>
+            <span class="stat-val" id="precipitation">--</span>
+          </div>
+          <div class="wcard-stat">
+            <span class="stat-label">Pressure</span>
+            <span class="stat-val" id="pressure">--</span>
+          </div>
+          <div class="wcard-stat">
+            <span class="stat-label">Cloud Cover</span>
+            <span class="stat-val" id="clouds">--</span>
+          </div>
+          <div class="wcard-stat">
+            <span class="stat-label">UV Index</span>
+            <span class="stat-val" id="uvIndex">--</span>
+          </div>
+        </div>
+        <div class="wcard-divider"></div>
+        <div class="sunrise-row">
+          <span>🌅 Sunrise</span>
+          <span id="sunrise">--:--</span>
+          <span>🌇 Sunset</span>
+          <span id="sunset">--:--</span>
+        </div>
+      </div>
+
+      <!-- LEGEND -->
+      <div class="legend-box" id="legendBox">
+        <div class="legend-label" id="legendTitle">mm/h</div>
+        <div class="legend-bar" id="legendBar"></div>
+        <div class="legend-vals">
+          <span>60</span><span>32</span><span>10</span><span>1</span><span>0</span>
+        </div>
+      </div>
+
+      <!-- MAP CONTROLS -->
+      <div class="map-btns">
+        <button id="zoomIn" title="Zoom in">＋</button>
+        <button id="zoomOut" title="Zoom out">－</button>
+        <button id="mapStyleToggle" title="Toggle map style">◑</button>
+      </div>
+
+      <!-- TIME SCRUBBER -->
+      <div class="time-bar">
+        <button class="time-arrow" id="timePrev">‹</button>
+        <div class="time-slots" id="timeSlots"></div>
+        <button class="time-arrow" id="timeNext">›</button>
+        <button class="play-btn" id="playBtn">▶</button>
+      </div>
+
+      <!-- FORECAST STRIP -->
+      <div class="forecast-panel">
+        <div class="forecast-tabs">
+          <button class="ftab active" data-ft="hourly">24-Hour</button>
+          <button class="ftab" data-ft="daily">7-Day</button>
+        </div>
+        <div class="forecast-scroll" id="forecastScroll">
+          <!-- populated by JS -->
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT PANEL: ALERTS -->
+  <aside class="right-panel" id="rightPanel">
+    <div class="panel-header">
+      <div class="panel-tabs">
+        <button class="ptab active" data-ptab="alerts">
+          Alerts <span class="ptab-count danger" id="alertTabCount">0</span>
+        </button>
+        <button class="ptab" data-ptab="reports">Reports</button>
+      </div>
+    </div>
+    <div class="panel-body" id="alertsList">
+      <div class="empty-state">
+        <div class="empty-icon">✓</div>
+        <div class="empty-text">Loading alerts...</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MODAL: ALERT DETAIL -->
+  <div class="modal-backdrop" id="alertModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">Alert Detail</div>
+        <button class="modal-close" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: SETTINGS -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-box settings-modal">
+      <div class="modal-header">
+        <div class="modal-title">⚙ Settings</div>
+        <button class="modal-close" id="settingsClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <div class="settings-title">Display</div>
+          <div class="setting-row">
+            <span>Temperature Unit</span>
+            <div class="segmented" id="tempUnit">
+              <button class="seg-btn active" data-val="C">°C</button>
+              <button class="seg-btn" data-val="F">°F</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span>Wind Speed Unit</span>
+            <div class="segmented" id="windUnit">
+              <button class="seg-btn active" data-val="ms">m/s</button>
+              <button class="seg-btn" data-val="kmh">km/h</button>
+              <button class="seg-btn" data-val="mph">mph</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span>Radar Opacity</span>
+            <div class="slider-wrap">
+              <input type="range" id="radarOpacity" min="20" max="100" value="75" class="range-input">
+              <span id="opacityVal">75%</span>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-title">Radar</div>
+          <div class="setting-row">
+            <span>Auto-play Radar</span>
+            <label class="toggle">
+              <input type="checkbox" id="autoPlay">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <span>Animation Speed</span>
+            <div class="segmented" id="animSpeed">
+              <button class="seg-btn" data-val="300">Slow</button>
+              <button class="seg-btn active" data-val="600">Normal</button>
+              <button class="seg-btn" data-val="1000">Fast</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-title">Alerts</div>
+          <div class="setting-row">
+            <span>Show Alert Zones on Map</span>
+            <label class="toggle">
+              <input type="checkbox" id="showAlertZones" checked>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <span>Alert Sound</span>
+            <label class="toggle">
+              <input type="checkbox" id="alertSound">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-title">About</div>
+          <div class="about-info">
+            <div>Storm Surge Weather <strong>v8.0</strong></div>
+            <div>Real-time radar via RainViewer API</div>
+            <div>Forecast via Open-Meteo API</div>
+            <div>Alerts via NWS weather.gov</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- LOADER -->
+  <div class="loader" id="loader"><div class="spinner"></div></div>
+
+  <!-- 
+    IMPORTANT: Copy config.example.js to config.js and add your Mapbox token.
+    config.js is listed in .gitignore and will NOT be committed to GitHub.
+  -->
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
