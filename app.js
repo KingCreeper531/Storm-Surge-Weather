@@ -96,8 +96,11 @@ function initMap() {
       loadAlerts();
     });
 
-    S.map.on('moveend', () => { if (S.frames.length) drawFrame(S.frame); });
+    // Redraw on EVERY move/zoom frame so radar stays locked to map
+    S.map.on('move', () => { if (S.frames.length) drawFrame(S.frame); });
     S.map.on('zoom', () => { if (S.frames.length) drawFrame(S.frame); });
+    S.map.on('rotate', () => { if (S.frames.length) drawFrame(S.frame); });
+    S.map.on('pitch', () => { if (S.frames.length) drawFrame(S.frame); });
     S.map.on('click', e => {
       S.lat = e.lngLat.lat;
       S.lng = e.lngLat.lng;
