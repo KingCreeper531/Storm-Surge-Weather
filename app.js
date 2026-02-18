@@ -90,7 +90,7 @@ function initMap() {
       loadWeather(); loadAlerts();
     });
     ['move','zoom','rotate','pitch'].forEach(ev =>
-      S.map.on(ev, () => { if (S.frames.length && !S.drawMode) drawFrame(S.frame); })
+      S.map.on(ev, () => { if (S.frames.length && !S.drawMode) scheduleRadarDraw(); })
     );
     S.map.on('click', e => {
       if (S.drawMode) return;
@@ -120,6 +120,7 @@ function cycleMapStyle() {
   S.map.setStyle(MAP_STYLES[S.mapStyle]);
   S.map.once('style.load', () => {
     if (S.cfg.alertZones && S.alerts.length) putAlertsOnMap();
+    tileCache.clear(); prewarmCache(); scheduleRadarDraw();
     showToast(`🗺 ${S.mapStyle}`);
   });
 }
@@ -130,7 +131,7 @@ function resizeCanvas() {
     const z = c.parentElement;
     c.width = z.clientWidth; c.height = z.clientHeight;
   });
-  if (S.frames.length) drawFrame(S.frame);
+  if (S.frames.length) scheduleRadarDraw();
 }
 
 // ================================================================
@@ -318,6 +319,12 @@ function openNWSModal(props, fcast, hourly) {
 // ================================================================
 //  RADAR — fixed CORS: use /v2/ path with color in URL not param
 // ================================================================
+//  RADAR — smooth, flicker-free
+// ================================================================
+const tileCache = new Map();
+let _rafPending = false;   // RAF throttle for move events
+let _drawSeq    = 0;       // sequence counter to cancel stale draws
+
 async function loadRadar() {
   try {
     const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
@@ -325,50 +332,88 @@ async function loadRadar() {
     if (d?.radar?.past?.length) {
       S.frames = d.radar.past.slice(-12);
       S.frame  = S.frames.length - 1;
-      buildSlots(); resizeCanvas(); drawFrame(S.frame);
+      buildSlots(); resizeCanvas();
+      // Pre-warm cache for all frames at current viewport
+      prewarmCache();
+      drawFrame(S.frame);
       if (S.cfg.autoPlay) play();
     }
   } catch(e) { console.warn('Radar unavail',e); }
 }
 
-// Smooth radar: pre-load all tiles for current frame, then batch draw
-const tileCache = new Map();
+// Pre-load every tile for every frame so animation is instant
+async function prewarmCache() {
+  if (!S.map || !S.frames.length) return;
+  const zoom   = Math.max(2, Math.min(10, Math.floor(S.map.getZoom())));
+  const bounds = S.map.getBounds();
+  const tiles  = getTiles(bounds, zoom);
+  const color  = S.cfg.radarColor || '6';
+  S.frames.forEach(frame => {
+    tiles.forEach(tile => {
+      const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
+      if (!tileCache.has(src)) loadTile(src); // fire-and-forget
+    });
+  });
+}
+
 function loadTile(src) {
   if (tileCache.has(src)) return Promise.resolve(tileCache.get(src));
   return new Promise(res => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload  = () => { tileCache.set(src,img); res(img); };
-    img.onerror = () => res(null);
+    img.onload  = () => { tileCache.set(src, img); res(img); };
+    img.onerror = () => { tileCache.set(src, null); res(null); };
     img.src = src;
+  });
+}
+
+// Called on every map move — throttled via RAF so we don't pile up
+function scheduleRadarDraw() {
+  if (_rafPending) return;
+  _rafPending = true;
+  requestAnimationFrame(() => {
+    _rafPending = false;
+    drawFrame(S.frame);
   });
 }
 
 async function drawFrame(idx) {
   if (!S.frames[idx] || !S.map || !S.ctx) return;
-  const frame = S.frames[idx];
-  const zoom  = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
+
+  const seq    = ++_drawSeq; // stamp this draw call
+  const frame  = S.frames[idx];
+  const zoom   = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
   const bounds = S.map.getBounds();
   const color  = S.cfg.radarColor || '6';
   const tiles  = getTiles(bounds, zoom);
 
-  // Pre-load all tiles in parallel first → no stutter
+  // Load all tiles for this frame in parallel
   const loaded = await Promise.all(tiles.map(tile => {
     const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
     return loadTile(src).then(img => ({ tile, img }));
   }));
 
-  // Then draw all at once
-  S.ctx.clearRect(0, 0, S.canvas.width, S.canvas.height);
-  S.ctx.globalAlpha = S.cfg.opacity;
+  // If a newer draw was requested while we were loading, bail — don't flicker
+  if (seq !== _drawSeq) return;
+
+  // Draw to offscreen canvas first, then blit in one shot → no partial flash
+  const offscreen = document.createElement('canvas');
+  offscreen.width  = S.canvas.width;
+  offscreen.height = S.canvas.height;
+  const octx = offscreen.getContext('2d');
+  octx.globalAlpha = S.cfg.opacity;
+
   loaded.forEach(({ tile, img }) => {
     if (!img || !S.map) return;
     const nw = S.map.project([tile.b.west, tile.b.north]);
     const se = S.map.project([tile.b.east, tile.b.south]);
-    const w = se.x - nw.x, h = se.y - nw.y;
-    if (w > 0 && h > 0) S.ctx.drawImage(img, nw.x, nw.y, w, h);
+    const w  = se.x - nw.x, h = se.y - nw.y;
+    if (w > 0 && h > 0) octx.drawImage(img, nw.x, nw.y, w, h);
   });
-  S.ctx.globalAlpha = 1;
+
+  // Single blit to visible canvas — zero flicker
+  S.ctx.clearRect(0, 0, S.canvas.width, S.canvas.height);
+  S.ctx.drawImage(offscreen, 0, 0);
 }
 
 function getTiles(bounds, z) {
@@ -659,84 +704,207 @@ function saveUsers(users){try{localStorage.setItem('ss_users',JSON.stringify(use
 function getPosts(){try{return JSON.parse(localStorage.getItem('ss_posts')||'[]');}catch(e){return[];}}
 function savePosts(posts){try{localStorage.setItem('ss_posts',JSON.stringify(posts));}catch(e){}}
 
+// Current SC filter state
+S.scFilter = 'all'; // 'all' | 'location' | 'radar'
+S.activeCommentId = null;
+
 function openStormCentral(){
   updateSCView();
   openModal('stormCentralModal');
-  if(S.user)loadSCPosts();
+  if(S.user) loadSCPosts();
 }
 function updateSCView(){
-  id('scAuthGate').style.display=S.user?'none':'';
-  id('scFeed').style.display=S.user?'':'none';
+  id('scAuthGate').style.display = S.user ? 'none' : '';
+  id('scFeed').style.display     = S.user ? ''     : 'none';
   if(S.user){
-    const lbl=id('scUserLabel');
-    if(lbl)lbl.innerHTML=`Posting as <strong>${S.user.name}</strong>`;
-    set('scPostLoc',S.locName);
+    const lbl = id('scUserLabel');
+    if(lbl) lbl.innerHTML = `Posting as <strong>${S.user.name}</strong>`;
+    set('scPostLoc', S.locName);
   }
 }
+
+function getFilteredPosts(){
+  const all = getPosts().reverse();
+  if(S.scFilter === 'location'){
+    const loc = S.locName.toLowerCase();
+    return all.filter(p => p.location.toLowerCase().includes(loc) || loc.includes(p.location.toLowerCase()));
+  }
+  if(S.scFilter === 'radar'){
+    // Filter posts within ~2 degrees of current map center (rough bounding box)
+    const bounds = S.map ? S.map.getBounds() : null;
+    if(!bounds) return all;
+    return all.filter(p => {
+      if(!p.lat || !p.lng) return false;
+      return p.lat >= bounds.getSouth() && p.lat <= bounds.getNorth()
+          && p.lng >= bounds.getWest()  && p.lng <= bounds.getEast();
+    });
+  }
+  return all;
+}
+
 function loadSCPosts(){
-  const posts=getPosts().reverse();
-  const container=id('scPosts');
-  if(!posts.length){container.innerHTML='<div class="empty-s"><div class="es-ico">⚡</div><div>No posts yet — be the first!</div></div>';return;}
-  container.innerHTML=posts.map(p=>`
-    <div class="sc-post">
+  const posts = getFilteredPosts();
+  const container = id('scPosts');
+
+  // Filter bar
+  const filterBar = `
+    <div class="sc-filter-bar">
+      <button class="sc-fb ${S.scFilter==='all'?'active':''}" data-f="all">🌍 All</button>
+      <button class="sc-fb ${S.scFilter==='location'?'active':''}" data-f="location">📍 ${S.locName}</button>
+      <button class="sc-fb ${S.scFilter==='radar'?'active':''}" data-f="radar">🗺 Radar View</button>
+    </div>`;
+
+  if(!posts.length){
+    container.innerHTML = filterBar + '<div class="empty-s"><div class="es-ico">⚡</div><div>No posts for this filter yet</div></div>';
+    bindSCFilters(); return;
+  }
+
+  container.innerHTML = filterBar + posts.map(p => {
+    const isOwner = S.user && S.user.name === p.author;
+    const liked   = p.likes?.includes(S.user?.name);
+    const comments = p.comments || [];
+    const showComments = S.activeCommentId === p.id;
+    return `
+    <div class="sc-post" data-id="${p.id}">
       <div class="sc-post-head">
         <div class="sc-post-ava">${p.author.charAt(0).toUpperCase()}</div>
-        <div>
+        <div class="sc-post-info">
           <div class="sc-post-author">${p.author}</div>
           <div class="sc-post-meta">📍 ${p.location} · ${timeAgo(new Date(p.ts))}</div>
         </div>
-        ${S.user&&S.user.name===p.author?`<button class="sc-del" data-id="${p.id}">🗑</button>`:''}
+        <div class="sc-post-actions">
+          ${isOwner ? `<button class="sc-del" data-id="${p.id}" title="Delete post">🗑</button>` : ''}
+        </div>
       </div>
-      <div class="sc-post-text">${p.text}</div>
-      ${p.img?`<img class="sc-post-img" src="${p.img}" alt="Weather photo">`:''}
+      <div class="sc-post-text">${escHtml(p.text)}</div>
+      ${p.img ? `<img class="sc-post-img" src="${p.img}" alt="Weather photo">` : ''}
       <div class="sc-post-footer">
-        <button class="sc-like ${p.likes?.includes(S.user?.name)?'liked':''}" data-id="${p.id}">
-          ⚡ ${p.likes?.length||0}
-        </button>
+        <button class="sc-like ${liked?'liked':''}" data-id="${p.id}">⚡ ${p.likes?.length||0}</button>
+        <button class="sc-comment-btn" data-id="${p.id}">💬 ${comments.length}</button>
       </div>
-    </div>`).join('');
-  // Bind like/delete
-  container.querySelectorAll('.sc-like').forEach(btn=>{
-    btn.addEventListener('click',()=>toggleLike(btn.dataset.id));
-  });
-  container.querySelectorAll('.sc-del').forEach(btn=>{
-    btn.addEventListener('click',()=>deletePost(btn.dataset.id));
-  });
+      ${showComments ? `
+      <div class="sc-comments" id="comments-${p.id}">
+        ${comments.length ? comments.map(c => `
+          <div class="sc-comment">
+            <div class="sc-comment-ava">${c.author.charAt(0).toUpperCase()}</div>
+            <div class="sc-comment-body">
+              <div class="sc-comment-author">${c.author} <span class="sc-comment-time">${timeAgo(new Date(c.ts))}</span>
+                ${S.user && S.user.name === c.author ? `<button class="sc-del-comment" data-pid="${p.id}" data-cid="${c.id}">✕</button>` : ''}
+              </div>
+              <div class="sc-comment-text">${escHtml(c.text)}</div>
+            </div>
+          </div>`).join('') : '<div class="sc-no-comments">No comments yet</div>'}
+        <div class="sc-comment-compose">
+          <input class="sc-comment-input" id="cinput-${p.id}" placeholder="Add a comment..." maxlength="280">
+          <button class="sc-comment-post" data-id="${p.id}">→</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Bind all interactions
+  container.querySelectorAll('.sc-like').forEach(btn =>
+    btn.addEventListener('click', () => toggleLike(btn.dataset.id)));
+  container.querySelectorAll('.sc-del').forEach(btn =>
+    btn.addEventListener('click', () => deletePost(btn.dataset.id)));
+  container.querySelectorAll('.sc-comment-btn').forEach(btn =>
+    btn.addEventListener('click', () => toggleComments(btn.dataset.id)));
+  container.querySelectorAll('.sc-comment-post').forEach(btn =>
+    btn.addEventListener('click', () => submitComment(btn.dataset.id)));
+  container.querySelectorAll('.sc-comment-input').forEach(input =>
+    input.addEventListener('keydown', e => { if(e.key === 'Enter') submitComment(input.id.replace('cinput-',''));}));
+  container.querySelectorAll('.sc-del-comment').forEach(btn =>
+    btn.addEventListener('click', () => deleteComment(btn.dataset.pid, btn.dataset.cid)));
+
+  bindSCFilters();
+
+  // Re-focus comment input if open
+  if(S.activeCommentId){
+    const ci = id(`cinput-${S.activeCommentId}`);
+    if(ci) ci.focus();
+  }
 }
+
+function bindSCFilters(){
+  document.querySelectorAll('.sc-fb').forEach(btn =>
+    btn.addEventListener('click', () => { S.scFilter = btn.dataset.f; loadSCPosts(); }));
+}
+
+function toggleComments(postId){
+  S.activeCommentId = S.activeCommentId === postId ? null : postId;
+  loadSCPosts();
+}
+
+function submitComment(postId){
+  if(!S.user){ showToast('Sign in to comment'); return; }
+  const input = id(`cinput-${postId}`);
+  if(!input) return;
+  const text = input.value.trim();
+  if(!text) return;
+  const posts = getPosts();
+  const p = posts.find(x => x.id === postId);
+  if(!p) return;
+  p.comments = p.comments || [];
+  p.comments.push({ id: Date.now().toString(), author: S.user.name, text, ts: new Date().toISOString() });
+  savePosts(posts);
+  loadSCPosts();
+}
+
+function deleteComment(postId, commentId){
+  const posts = getPosts();
+  const p = posts.find(x => x.id === postId);
+  if(!p) return;
+  p.comments = (p.comments || []).filter(c => c.id !== commentId);
+  savePosts(posts); loadSCPosts();
+}
+
 function submitPost(){
-  if(!S.user){showToast('Sign in to post');return;}
-  const text=id('scText').value.trim();
-  if(!text){showToast('Write something first!');return;}
-  const posts=getPosts();
-  const post={
-    id:Date.now().toString(),
-    author:S.user.name,
-    location:S.locName,
+  if(!S.user){ showToast('Sign in to post'); return; }
+  const text = id('scText').value.trim();
+  if(!text){ showToast('Write something first!'); return; }
+  const posts = getPosts();
+  const post = {
+    id: Date.now().toString(),
+    author: S.user.name,
+    location: S.locName,
+    lat: S.lat,
+    lng: S.lng,
     text,
-    ts:new Date().toISOString(),
-    likes:[],
-    img:id('scImgPreview').dataset.img||null
+    ts: new Date().toISOString(),
+    likes: [],
+    comments: [],
+    img: id('scImgPreview').dataset.img || null
   };
   posts.push(post);
   savePosts(posts);
-  id('scText').value='';
-  id('scImgPreview').innerHTML=''; id('scImgPreview').dataset.img='';
+  id('scText').value = '';
+  id('scImgPreview').innerHTML = '';
+  id('scImgPreview').dataset.img = '';
+  id('scImgInput').value = '';
   loadSCPosts();
   showToast('⚡ Posted to Storm Central!');
 }
+
 function toggleLike(postId){
-  if(!S.user)return;
-  const posts=getPosts();
-  const p=posts.find(x=>x.id===postId);
-  if(!p)return;
-  p.likes=p.likes||[];
-  const idx=p.likes.indexOf(S.user.name);
-  if(idx>=0)p.likes.splice(idx,1); else p.likes.push(S.user.name);
+  if(!S.user) return;
+  const posts = getPosts();
+  const p = posts.find(x => x.id === postId);
+  if(!p) return;
+  p.likes = p.likes || [];
+  const idx = p.likes.indexOf(S.user.name);
+  if(idx >= 0) p.likes.splice(idx,1); else p.likes.push(S.user.name);
   savePosts(posts); loadSCPosts();
 }
+
 function deletePost(postId){
-  const posts=getPosts().filter(p=>p.id!==postId);
+  if(!confirm('Delete this post?')) return;
+  const posts = getPosts().filter(p => p.id !== postId);
   savePosts(posts); loadSCPosts();
+  showToast('Post deleted');
+}
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function initSCAuth(){
@@ -782,13 +950,44 @@ function initSCAuth(){
     showToast('Signed out');
   });
   id('scPostBtn').addEventListener('click',submitPost);
-  // Image upload
-  id('scImgInput').addEventListener('change',e=>{
-    const file=e.target.files[0]; if(!file)return;
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      id('scImgPreview').innerHTML=`<img src="${ev.target.result}" style="max-height:120px;border-radius:8px;margin-top:8px">`;
-      id('scImgPreview').dataset.img=ev.target.result;
+  // Image upload — button triggers hidden input
+  id('scImgBtn').addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    id('scImgInput').value = ''; // reset so same file can be re-selected
+    id('scImgInput').click();
+  });
+  id('scImgInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    // Compress large images before storing
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize to max 800px wide to keep storage small
+        const maxW = 800;
+        const scale = img.width > maxW ? maxW / img.width : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        id('scImgPreview').innerHTML = `
+          <div style="position:relative;display:inline-block;margin-top:8px">
+            <img src="${dataUrl}" style="max-height:130px;border-radius:8px;display:block">
+            <button id="scImgRemove" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);
+              color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;
+              font-size:11px;display:flex;align-items:center;justify-content:center">✕</button>
+          </div>`;
+        id('scImgPreview').dataset.img = dataUrl;
+        id('scImgRemove').addEventListener('click', () => {
+          id('scImgPreview').innerHTML = '';
+          id('scImgPreview').dataset.img = '';
+          id('scImgInput').value = '';
+        });
+      };
+      img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
   });

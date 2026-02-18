@@ -219,7 +219,7 @@
           <button class="sc-submit" id="registerBtn">Create Account</button>
           <div class="sc-err" id="regErr"></div>
         </div>
-        <div class="sc-note"> credentials are stored locally and never sent to any server.<br>Storm Central posts are shared publicly.</div>
+        <div class="sc-note">Your credentials are stored locally and never sent to any server.<br>Storm Central posts are shared publicly.</div>
       </div>
       <!-- Feed (shown when logged in) -->
       <div id="scFeed" style="display:none">
@@ -232,7 +232,8 @@
           <div class="sc-compose-meta">
             <span class="sc-loc-tag" id="scLocTag">📍 <span id="scPostLoc">New York</span></span>
             <div class="sc-compose-btns">
-              <label class="sc-img-btn">📷 Photo <input type="file" id="scImgInput" accept="image/*" style="display:none"></label>
+              <input type="file" id="scImgInput" accept="image/*" style="display:none">
+              <button class="sc-img-btn" id="scImgBtn" type="button">📷 Photo</button>
               <button class="sc-submit" id="scPostBtn">Post ⚡</button>
             </div>
           </div>
@@ -390,4 +391,4 @@
 <script>const MAPBOX_TOKEN = "pk.eyJ1Ijoic3Rvcm0tc3VyZ2UiLCJhIjoiY21scmM2Y3N3MDEzYjNmczViemZueTZuMSJ9.yHlnNztU7CgMaXUNuCzCrg";</script>
 <script src="app.js"></script>
 </body>
-</html>Your
+</html>
