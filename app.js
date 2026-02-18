@@ -21,6 +21,7 @@ const S = {
   fcMode: 'hourly',
   mapStyle: 'dark',
   rightTab: 'alerts',
+  alertFilter: 'all',
   cfg: {
     tempUnit: 'C',
     windUnit: 'ms',
@@ -58,47 +59,74 @@ window.addEventListener('load', () => {
 //  MAP INIT
 // ================================================================
 function initMap() {
-  mapboxgl.accessToken = MAPBOX_TOKEN;
-
-  S.map = new mapboxgl.Map({
-    container: 'map',
-    style: MAP_STYLES.dark,
-    center: [S.lng, S.lat],
-    zoom: 6,
-    minZoom: 2,
-    maxZoom: 14,
-    attributionControl: false,
-    logoPosition: 'bottom-left'
-  });
-
-  // Canvas setup — after DOM is ready
+  // Canvas setup first — always needed regardless of map
   S.canvas = document.getElementById('radarCanvas');
   S.ctx = S.canvas.getContext('2d');
-  resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 
-  S.map.on('load', () => {
-    S.map.resize(); // force correct size after DOM layout
-    loadRadar();
+  // Try to init map
+  try {
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+
+    S.map = new mapboxgl.Map({
+      container: 'map',
+      style: MAP_STYLES.dark,
+      center: [S.lng, S.lat],
+      zoom: 6,
+      minZoom: 2,
+      maxZoom: 14,
+      attributionControl: false,
+      logoPosition: 'bottom-left',
+      failIfMajorPerformanceCaveat: false
+    });
+
+    S.map.on('load', () => {
+      S.map.resize();
+      resizeCanvas();
+      loadRadar();
+      loadWeather();
+      loadAlerts();
+    });
+
+    S.map.on('error', e => {
+      console.error('Mapbox error:', e);
+      showMapError('Map error: ' + (e.error?.message || 'Check your token'));
+      // Still load weather data
+      loadWeather();
+      loadAlerts();
+    });
+
+    S.map.on('moveend', () => { if (S.frames.length) drawFrame(S.frame); });
+    S.map.on('zoom', () => { if (S.frames.length) drawFrame(S.frame); });
+    S.map.on('click', e => {
+      S.lat = e.lngLat.lat;
+      S.lng = e.lngLat.lng;
+      reverseGeocode(S.lat, S.lng);
+      loadWeather();
+      showToast('📍 Fetching weather for this location...');
+    });
+
+  } catch(e) {
+    console.error('Map init failed:', e);
+    showMapError('Could not initialize map. Check your Mapbox token.');
     loadWeather();
     loadAlerts();
-  });
+  }
+}
 
-  S.map.on('moveend', () => {
-    if (S.frames.length) drawFrame(S.frame);
-  });
-
-  S.map.on('zoom', () => {
-    if (S.frames.length) drawFrame(S.frame);
-  });
-
-  S.map.on('click', e => {
-    S.lat = e.lngLat.lat;
-    S.lng = e.lngLat.lng;
-    reverseGeocode(S.lat, S.lng);
-    loadWeather();
-    showToast('📍 Fetching weather for this location...');
-  });
+function showMapError(msg) {
+  document.getElementById('map').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;
+      height:100%;color:#f0a500;font-family:monospace;font-size:13px;
+      flex-direction:column;gap:10px;background:#0d1117;padding:20px;text-align:center">
+      <div style="font-size:36px">⛈</div>
+      <div style="color:#e8eef5;font-weight:bold">${msg}</div>
+      <div style="color:#4a5a6a;font-size:11px">
+        Get a fresh token at <a href="https://account.mapbox.com" target="_blank" 
+        style="color:#00d4c8">account.mapbox.com</a><br>
+        then update line 247 in index.html
+      </div>
+    </div>`;
 }
 
 function resizeCanvas() {
@@ -414,11 +442,32 @@ function alertIcon(event) {
 function renderAlerts() {
   if (S.rightTab !== 'alerts') return;
   const body = document.getElementById('alertsBody');
-  if (!S.alerts.length) {
-    body.innerHTML = '<div class="empty-s"><div class="es-ico">✓</div><div>No active alerts</div></div>';
+
+  // Apply filter
+  const filtered = S.alerts.filter((a, i) => {
+    a._idx = i; // preserve original index for modal
+    if (S.alertFilter === 'all') return true;
+    return alertSev(a.properties.event) === S.alertFilter;
+  });
+
+  // Filter bar HTML
+  const filterBar = `
+    <div class="alert-filters">
+      <button class="af-btn ${S.alertFilter === 'all' ? 'active' : ''}" data-f="all">All <span>${S.alerts.length}</span></button>
+      <button class="af-btn ${S.alertFilter === 'emergency' ? 'active' : ''}" data-f="emergency">🌪 Extreme</button>
+      <button class="af-btn ${S.alertFilter === 'warning' ? 'active' : ''}" data-f="warning">⚠ Warning</button>
+      <button class="af-btn ${S.alertFilter === 'watch' ? 'active' : ''}" data-f="watch">👁 Watch</button>
+      <button class="af-btn ${S.alertFilter === 'advisory' ? 'active' : ''}" data-f="advisory">ℹ Advisory</button>
+    </div>`;
+
+  if (!filtered.length) {
+    body.innerHTML = filterBar + '<div class="empty-s"><div class="es-ico">✓</div><div>No alerts match this filter</div></div>';
+    bindFilterBtns();
     return;
   }
-  body.innerHTML = S.alerts.map((a, i) => {
+
+  body.innerHTML = filterBar + filtered.map(a => {
+    const i = a._idx;
     const p = a.properties;
     const sev = alertSev(p.event);
     const ico = alertIcon(p.event);
@@ -441,6 +490,17 @@ function renderAlerts() {
     const open = () => openAlertModal(+card.dataset.i);
     card.addEventListener('click', open);
     card.addEventListener('keydown', e => (e.key === 'Enter' || e.key === ' ') && open());
+  });
+
+  bindFilterBtns();
+}
+
+function bindFilterBtns() {
+  document.querySelectorAll('.af-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      S.alertFilter = btn.dataset.f;
+      renderAlerts();
+    });
   });
 }
 
