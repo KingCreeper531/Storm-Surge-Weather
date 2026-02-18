@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20,24 +20,27 @@
     <button class="sidebar-x" id="sidebarX">✕</button>
   </div>
   <div class="user-card">
-    <div class="user-ava">SS</div>
+    <div class="user-ava" id="userAva">SS</div>
     <div>
-      <div class="user-nm">Weather User</div>
-      <div class="user-pl">Pro Plan</div>
+      <div class="user-nm" id="userNm">Weather User</div>
+      <div class="user-sub" id="userSub">Not signed in</div>
     </div>
     <div class="dot-online"></div>
   </div>
   <nav class="sidenav">
     <a href="#" class="sni active" data-p="home"><span>⌂</span> Dashboard</a>
     <a href="#" class="sni" data-p="alerts"><span>◈</span> Alerts <em id="navAlertBadge">0</em></a>
+    <a href="#" class="sni" data-p="storm-central"><span>⚡</span> Storm Central</a>
+    <a href="#" class="sni" data-p="traffic"><span>📷</span> Traffic Cams</a>
     <a href="#" class="sni" data-p="settings"><span>◎</span> Settings</a>
   </nav>
   <div class="sidebar-bottom">
-    <label class="dark-row">
-      <span>Dark Mode</span>
-      <label class="tog"><input type="checkbox" id="darkToggle" checked><span class="tog-t"></span></label>
-    </label>
-    <div class="ver-badge">v9.0 LIVE</div>
+    <button class="theme-row" id="themeBtn">
+      <span id="themeIcon">🌙</span>
+      <span id="themeLabel">Dark Mode</span>
+      <div class="tog-mini" id="themeTog"></div>
+    </button>
+    <div class="ver-badge">v10.0 LIVE</div>
   </div>
 </aside>
 
@@ -62,6 +65,7 @@
       <div class="live-pill"><span class="live-dot"></span>LIVE</div>
       <div class="date-pill" id="datePill">—</div>
       <button class="tb-btn" id="geoBtn" title="My location">◎</button>
+      <button class="tb-btn" id="drawBtn" title="Draw on map" data-active="false">✏</button>
       <button class="tb-btn" id="refreshBtn" title="Refresh">↻</button>
     </div>
   </header>
@@ -76,9 +80,30 @@
     <button class="lb style-btn" id="styleBtn">◑ Map Style</button>
   </div>
 
+  <!-- DRAW TOOLBAR (hidden by default) -->
+  <div class="draw-toolbar" id="drawToolbar">
+    <span class="dt-label">✏ Draw Mode</span>
+    <div class="dt-colors">
+      <button class="dc active" data-c="#f0a500" style="background:#f0a500"></button>
+      <button class="dc" data-c="#ff5c5c" style="background:#ff5c5c"></button>
+      <button class="dc" data-c="#00d4c8" style="background:#00d4c8"></button>
+      <button class="dc" data-c="#ffffff" style="background:#ffffff"></button>
+      <button class="dc" data-c="#22c55e" style="background:#22c55e"></button>
+    </div>
+    <div class="dt-sizes">
+      <button class="ds active" data-s="3">S</button>
+      <button class="ds" data-s="6">M</button>
+      <button class="ds" data-s="12">L</button>
+    </div>
+    <button class="dt-btn" id="drawUndo">↩ Undo</button>
+    <button class="dt-btn" id="drawClear">🗑 Clear</button>
+    <button class="dt-btn danger" id="drawExit">✕ Exit</button>
+  </div>
+
   <div class="mapzone" id="mapzone">
     <div id="map"></div>
     <canvas id="radarCanvas"></canvas>
+    <canvas id="drawCanvas"></canvas>
 
     <!-- WEATHER CARD -->
     <div class="wcard" id="wcard">
@@ -91,18 +116,18 @@
         <div class="wc-icon" id="wcIcon">🌡</div>
       </div>
       <div class="wc-bar"></div>
-      <div class="wc-grid">
-        <div class="wc-stat"><div class="wcs-l">Feels Like</div><div class="wcs-v" id="wcFeels">--</div></div>
-        <div class="wc-stat"><div class="wcs-l">Humidity</div><div class="wcs-v" id="wcHum">--</div></div>
-        <div class="wc-stat"><div class="wcs-l">Wind</div><div class="wcs-v" id="wcWind">--</div></div>
-        <div class="wc-stat"><div class="wcs-l">Direction</div><div class="wcs-v" id="wcDir">--</div></div>
-        <div class="wc-stat"><div class="wcs-l">Rain</div><div class="wcs-v" id="wcRain">--</div></div>
-        <div class="wc-stat"><div class="wcs-l">Pressure</div><div class="wcs-v" id="wcPres">--</div></div>
-        <div class="wc-stat"><div class="wcs-l">Cloud Cover</div><div class="wcs-v" id="wcCloud">--</div></div>
-        <div class="wc-stat"><div class="wcs-l">UV Index</div><div class="wcs-v" id="wcUV">--</div></div>
+      <div class="wc-grid" id="wcGrid">
+        <div class="wc-stat" id="statFeels"><div class="wcs-l">Feels Like</div><div class="wcs-v" id="wcFeels">--</div></div>
+        <div class="wc-stat" id="statHum"><div class="wcs-l">Humidity</div><div class="wcs-v" id="wcHum">--</div></div>
+        <div class="wc-stat" id="statWind"><div class="wcs-l">Wind</div><div class="wcs-v" id="wcWind">--</div></div>
+        <div class="wc-stat" id="statDir"><div class="wcs-l">Direction</div><div class="wcs-v" id="wcDir">--</div></div>
+        <div class="wc-stat" id="statRain"><div class="wcs-l">Rain</div><div class="wcs-v" id="wcRain">--</div></div>
+        <div class="wc-stat" id="statPres"><div class="wcs-l">Pressure</div><div class="wcs-v" id="wcPres">--</div></div>
+        <div class="wc-stat" id="statCloud"><div class="wcs-l">Cloud Cover</div><div class="wcs-v" id="wcCloud">--</div></div>
+        <div class="wc-stat" id="statUV"><div class="wcs-l">UV Index</div><div class="wcs-v" id="wcUV">--</div></div>
       </div>
       <div class="wc-bar"></div>
-      <div class="wc-sun">
+      <div class="wc-sun" id="statSun">
         <span>🌅</span><span id="wcSunrise">--:--</span>
         <span>🌇</span><span id="wcSunset">--:--</span>
       </div>
@@ -123,9 +148,7 @@
 
     <!-- CROSSHAIR -->
     <div class="crosshair" id="crosshair">
-      <div class="ch-h"></div>
-      <div class="ch-v"></div>
-      <div class="ch-ring"></div>
+      <div class="ch-h"></div><div class="ch-v"></div><div class="ch-ring"></div>
     </div>
 
     <!-- TIME BAR -->
@@ -151,21 +174,94 @@
 <aside class="rpanel" id="rpanel">
   <div class="rp-head">
     <button class="rpt active" data-rt="alerts">Alerts <span class="rpt-badge danger" id="alertBadge">0</span></button>
-    <button class="rpt" data-rt="info">Radar Info</button>
+    <button class="rpt" data-rt="info">Radar</button>
   </div>
   <div class="rp-body" id="alertsBody">
     <div class="empty-s"><div class="es-ico">✓</div><div>Loading alerts...</div></div>
   </div>
 </aside>
 
-<!-- ALERT MODAL -->
+<!-- NWS / ALERT MODAL -->
 <div class="modal" id="alertModal">
-  <div class="mbox">
+  <div class="mbox large">
     <div class="mbox-head">
       <div class="mbox-title" id="mTitle">Alert</div>
       <button class="mbox-x" id="mClose">✕</button>
     </div>
     <div class="mbox-body" id="mBody"></div>
+  </div>
+</div>
+
+<!-- STORM CENTRAL MODAL -->
+<div class="modal" id="stormCentralModal">
+  <div class="mbox large">
+    <div class="mbox-head">
+      <div class="mbox-title">⚡ Storm Central</div>
+      <button class="mbox-x" id="scClose">✕</button>
+    </div>
+    <div class="mbox-body sc-body">
+      <!-- Auth gate (shown when not logged in) -->
+      <div id="scAuthGate">
+        <div class="sc-auth-tabs">
+          <button class="sc-at active" data-at="login">Sign In</button>
+          <button class="sc-at" data-at="register">Create Account</button>
+        </div>
+        <div id="scLogin" class="sc-form">
+          <input class="sc-input" id="loginEmail" type="email" placeholder="Email">
+          <input class="sc-input" id="loginPass" type="password" placeholder="Password">
+          <button class="sc-submit" id="loginBtn">Sign In</button>
+          <div class="sc-err" id="loginErr"></div>
+        </div>
+        <div id="scRegister" class="sc-form" style="display:none">
+          <input class="sc-input" id="regName" type="text" placeholder="Display name">
+          <input class="sc-input" id="regEmail" type="email" placeholder="Email">
+          <input class="sc-input" id="regPass" type="password" placeholder="Password (min 6 chars)">
+          <button class="sc-submit" id="registerBtn">Create Account</button>
+          <div class="sc-err" id="regErr"></div>
+        </div>
+        <div class="sc-note">Your credentials are stored locally and never sent to any server.<br>Storm Central posts are shared publicly.</div>
+      </div>
+      <!-- Feed (shown when logged in) -->
+      <div id="scFeed" style="display:none">
+        <div class="sc-user-bar">
+          <span id="scUserLabel">Posting as <strong></strong></span>
+          <button class="sc-signout" id="scSignout">Sign out</button>
+        </div>
+        <div class="sc-compose">
+          <textarea class="sc-textarea" id="scText" placeholder="Share a weather discovery... What did you observe? Include your location!"></textarea>
+          <div class="sc-compose-meta">
+            <span class="sc-loc-tag" id="scLocTag">📍 <span id="scPostLoc">New York</span></span>
+            <div class="sc-compose-btns">
+              <label class="sc-img-btn">📷 Photo <input type="file" id="scImgInput" accept="image/*" style="display:none"></label>
+              <button class="sc-submit" id="scPostBtn">Post ⚡</button>
+            </div>
+          </div>
+          <div id="scImgPreview" class="sc-img-preview"></div>
+        </div>
+        <div class="sc-posts" id="scPosts">
+          <div class="empty-s"><div class="es-ico">⚡</div><div>Loading posts...</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TRAFFIC CAMS MODAL -->
+<div class="modal" id="trafficModal">
+  <div class="mbox large">
+    <div class="mbox-head">
+      <div class="mbox-title">📷 Traffic Cameras</div>
+      <button class="mbox-x" id="tcClose">✕</button>
+    </div>
+    <div class="mbox-body">
+      <div class="tc-search">
+        <input class="sc-input" id="tcSearch" type="text" placeholder="Search by city or state...">
+        <button class="sc-submit" id="tcSearchBtn">Search</button>
+      </div>
+      <div id="tcGrid" class="tc-grid">
+        <div class="empty-s"><div class="es-ico">📷</div><div>Search for a city to load traffic cameras</div></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -177,6 +273,7 @@
       <button class="mbox-x" id="sClose">✕</button>
     </div>
     <div class="mbox-body">
+
       <div class="s-sec">
         <div class="s-sec-title">Units</div>
         <div class="s-row"><span>Temperature</span>
@@ -192,7 +289,14 @@
             <button class="sb" data-v="mph">mph</button>
           </div>
         </div>
+        <div class="s-row"><span>Time Format</span>
+          <div class="seg" id="sTimeFormat">
+            <button class="sb active" data-v="12">12h</button>
+            <button class="sb" data-v="24">24h</button>
+          </div>
+        </div>
       </div>
+
       <div class="s-sec">
         <div class="s-sec-title">Radar</div>
         <div class="s-row"><span>Opacity</span>
@@ -203,9 +307,9 @@
         </div>
         <div class="s-row"><span>Animation Speed</span>
           <div class="seg" id="sSpeed">
-            <button class="sb" data-v="300">Slow</button>
+            <button class="sb" data-v="300">Fast</button>
             <button class="sb active" data-v="600">Normal</button>
-            <button class="sb" data-v="1000">Fast</button>
+            <button class="sb" data-v="1000">Slow</button>
           </div>
         </div>
         <div class="s-row"><span>Color Scheme</span>
@@ -220,6 +324,7 @@
           <label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label>
         </div>
       </div>
+
       <div class="s-sec">
         <div class="s-sec-title">Map & Interaction</div>
         <div class="s-row"><span>Show Alert Zones</span>
@@ -228,7 +333,7 @@
         <div class="s-row"><span>Show Crosshair</span>
           <label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label>
         </div>
-        <div class="s-row"><span>Click → NWS Report (US only)</span>
+        <div class="s-row"><span>Map Click → NWS Report</span>
           <label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label>
         </div>
         <div class="s-row"><span>Weather Card Position</span>
@@ -239,8 +344,16 @@
           </div>
         </div>
       </div>
+
       <div class="s-sec">
-        <div class="s-sec-title">Weather Card Fields</div>
+        <div class="s-sec-title">Weather Card — Info Display</div>
+        <div class="s-row"><span>Card Style</span>
+          <div class="seg" id="sCardStyle">
+            <button class="sb active" data-v="full">Full</button>
+            <button class="sb" data-v="compact">Compact</button>
+            <button class="sb" data-v="minimal">Minimal</button>
+          </div>
+        </div>
         <div class="s-fields-grid">
           <label class="s-field-tog"><input type="checkbox" id="sfHumidity" checked> Humidity</label>
           <label class="s-field-tog"><input type="checkbox" id="sfWind" checked> Wind</label>
@@ -249,33 +362,32 @@
           <label class="s-field-tog"><input type="checkbox" id="sfCloud" checked> Cloud Cover</label>
           <label class="s-field-tog"><input type="checkbox" id="sfUV" checked> UV Index</label>
           <label class="s-field-tog"><input type="checkbox" id="sfSunTimes" checked> Sunrise/Sunset</label>
+          <label class="s-field-tog"><input type="checkbox" id="sfFeels" checked> Feels Like</label>
         </div>
       </div>
+
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div>Storm Surge Weather <strong>v9.1</strong></div>
+          <div>Storm Surge Weather <strong>v10.0</strong></div>
           <div>Radar — RainViewer API</div>
-          <div>Forecast — Open-Meteo (free, no key)</div>
+          <div>Forecast — Open-Meteo (free)</div>
           <div>Alerts + NWS Reports — weather.gov</div>
           <div>Maps — Mapbox GL JS</div>
+          <div>Traffic — 511 State Systems</div>
         </div>
       </div>
+
     </div>
   </div>
 </div>
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
-<!-- LOADER -->
 <div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading...</div></div>
 
-<!-- Scripts: Mapbox MUST be before app.js -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-<script>
-  // Replace with your Mapbox token
-  const MAPBOX_TOKEN = "pk.eyJ1Ijoic3Rvcm0tc3VyZ2UiLCJhIjoiY21scmM2Y3N3MDEzYjNmczViemZueTZuMSJ9.yHlnNztU7CgMaXUNuCzCrg";
-</script>
+<script src="token.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
