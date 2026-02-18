@@ -208,26 +208,56 @@
             <button class="sb" data-v="1000">Fast</button>
           </div>
         </div>
+        <div class="s-row"><span>Color Scheme</span>
+          <div class="seg" id="sRadarColor">
+            <button class="sb" data-v="1">Original</button>
+            <button class="sb" data-v="2">Universal</button>
+            <button class="sb" data-v="4">Rainbow</button>
+            <button class="sb active" data-v="6">NOAA</button>
+          </div>
+        </div>
         <div class="s-row"><span>Auto-play on Load</span>
           <label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label>
         </div>
       </div>
       <div class="s-sec">
-        <div class="s-sec-title">Map</div>
+        <div class="s-sec-title">Map & Interaction</div>
         <div class="s-row"><span>Show Alert Zones</span>
           <label class="tog"><input type="checkbox" id="sAlertZones" checked><span class="tog-t"></span></label>
         </div>
         <div class="s-row"><span>Show Crosshair</span>
           <label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label>
         </div>
+        <div class="s-row"><span>Click → NWS Report (US only)</span>
+          <label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label>
+        </div>
+        <div class="s-row"><span>Weather Card Position</span>
+          <div class="seg" id="sCardPos">
+            <button class="sb active" data-v="top-left">↖ TL</button>
+            <button class="sb" data-v="top-right">↗ TR</button>
+            <button class="sb" data-v="bottom-left">↙ BL</button>
+          </div>
+        </div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">Weather Card Fields</div>
+        <div class="s-fields-grid">
+          <label class="s-field-tog"><input type="checkbox" id="sfHumidity" checked> Humidity</label>
+          <label class="s-field-tog"><input type="checkbox" id="sfWind" checked> Wind</label>
+          <label class="s-field-tog"><input type="checkbox" id="sfRain" checked> Rain</label>
+          <label class="s-field-tog"><input type="checkbox" id="sfPressure" checked> Pressure</label>
+          <label class="s-field-tog"><input type="checkbox" id="sfCloud" checked> Cloud Cover</label>
+          <label class="s-field-tog"><input type="checkbox" id="sfUV" checked> UV Index</label>
+          <label class="s-field-tog"><input type="checkbox" id="sfSunTimes" checked> Sunrise/Sunset</label>
+        </div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div>Storm Surge Weather <strong>v9.0</strong></div>
+          <div>Storm Surge Weather <strong>v9.1</strong></div>
           <div>Radar — RainViewer API</div>
-          <div>Forecast — Open-Meteo (free, no key needed)</div>
-          <div>Alerts — NOAA / NWS weather.gov</div>
+          <div>Forecast — Open-Meteo (free, no key)</div>
+          <div>Alerts + NWS Reports — weather.gov</div>
           <div>Maps — Mapbox GL JS</div>
         </div>
       </div>
@@ -244,7 +274,7 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script>
   // Replace with your Mapbox token
-  const MAPBOX_TOKEN = "pk.eyJ1Ijoic3Rvcm0tc3VyZ2UiLCJhIjoiY21scmM2Y3N3MDEzYjNmczViemZueTZuMSJ9.yHlnNztU7CgMaXUNuCzCrg";
+  const MAPBOX_TOKEN = "pk.eyJ1Ijoic3Rvcm0tc3VyZ2UiLCJhIjoiY21scjFvMWZwMDcwODNmcTJnNmdncXQwZSJ9.aHGseHd0HYxPUem0FEQHew";
 </script>
 <script src="app.js"></script>
 </body>
