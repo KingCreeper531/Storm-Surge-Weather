@@ -398,7 +398,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => res.json({ name: 'Storm Surge API', version: '1.0.0' }));
 
 // ── SERVE FRONTEND ──────────────────────────────────────────────
 // In production, Express serves the frontend from /public
