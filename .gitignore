@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Secrets — NEVER commit these
+.env
+*.key
+*.pem
+service-account.json
+
+# token.js contains your Mapbox key
+public/token.js
+
+# OS
+.DS_Store
+Thumbs.db

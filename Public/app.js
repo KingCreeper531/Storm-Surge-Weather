@@ -1,5 +1,5 @@
 // ================================================================
-//  STORM SURGE WEATHER v10.0
+//  STORM SURGE WEATHER v10.1
 //  Fixes: CORS radar, dark/light mode, radar color, all settings
 //  New: draw mode, Storm Central, traffic cams, 24h time, accounts
 // ================================================================
@@ -24,6 +24,20 @@ const S = {
     radarColor: '6', clickAction: 'nws', theme: 'dark'
   }
 };
+
+// ================================================================
+//  BACKEND API — change this to your Render URL once deployed
+// ================================================================
+const API_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001'
+  : 'https://storm-surge-api.onrender.com'; // ← update this after deploying to Render
+
+function apiHeaders(includeAuth = false) {
+  const h = { 'Content-Type': 'application/json' };
+  const token = localStorage.getItem('ss_token');
+  if (includeAuth && token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
 
 const MAP_STYLES = {
   dark:      'mapbox://styles/mapbox/dark-v11',
@@ -470,16 +484,97 @@ function togglePlay(){S.playing?pause():play();}
 async function loadWeather(){
   showLoader(true);
   try{
-    const url=`https://api.open-meteo.com/v1/forecast?latitude=${S.lat}&longitude=${S.lng}`
-      +`&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,`
-      +`weather_code,wind_speed_10m,wind_direction_10m,surface_pressure,cloud_cover,uv_index`
-      +`&hourly=temperature_2m,relative_humidity_2m,weather_code,precipitation_probability`
-      +`&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,`
-      +`precipitation_probability_max,wind_speed_10m_max&timezone=auto&forecast_days=8`;
-    const d=await(await fetch(url)).json();
-    S.weather=d; renderWeather(d); renderForecast(d);
-  }catch(e){showToast('⚠ Weather unavailable');}
+    // Try backend proxy first (Google Weather API + caching)
+    const r = await fetch(`${API_URL}/api/weather?lat=${S.lat}&lng=${S.lng}`);
+    if(!r.ok) throw new Error(r.status);
+    const d = await r.json();
+
+    // Backend returns Google Weather API format or Open-Meteo fallback
+    // Normalise whichever we got into the same shape renderWeather expects
+    const normalised = d._source === 'open-meteo-fallback'
+      ? d
+      : normaliseGoogleWeather(d);
+
+    S.weather = normalised;
+    renderWeather(normalised);
+    renderForecast(normalised);
+  }catch(e){
+    console.warn('Backend weather failed, falling back to Open-Meteo directly:', e);
+    try{
+      const url=`https://api.open-meteo.com/v1/forecast?latitude=${S.lat}&longitude=${S.lng}`
+        +`&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,`
+        +`weather_code,wind_speed_10m,wind_direction_10m,surface_pressure,cloud_cover,uv_index`
+        +`&hourly=temperature_2m,relative_humidity_2m,weather_code,precipitation_probability`
+        +`&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,`
+        +`precipitation_probability_max,wind_speed_10m_max&timezone=auto&forecast_days=8`;
+      const d=await(await fetch(url)).json();
+      S.weather=d; renderWeather(d); renderForecast(d);
+    }catch(fe){ showToast('⚠ Weather unavailable'); }
+  }
   showLoader(false);
+}
+
+// Normalise Google Weather API response → same shape as Open-Meteo
+// so the rest of the app doesn't need to change
+function normaliseGoogleWeather(g){
+  // Google Weather API v1 structure
+  const cur = g.currentConditions || {};
+  const hours = g.forecastHours || [];
+  const days  = g.forecastDays  || [];
+
+  return {
+    _source: 'google-weather',
+    current: {
+      temperature_2m:        cur.temperature?.degrees ?? 0,
+      apparent_temperature:  cur.feelsLikeTemperature?.degrees ?? 0,
+      relative_humidity_2m:  cur.relativeHumidity ?? 0,
+      precipitation:         cur.precipitation?.quantity ?? 0,
+      weather_code:          googleConditionToWMO(cur.weatherCondition?.type),
+      wind_speed_10m:        cur.wind?.speed?.value ?? 0,
+      wind_direction_10m:    cur.wind?.direction?.degrees ?? 0,
+      surface_pressure:      cur.pressure?.meanSeaLevelPressure ?? 1013,
+      cloud_cover:           cur.cloudCover ?? 0,
+      uv_index:              cur.uvIndex ?? 0
+    },
+    hourly: {
+      time:                        hours.map(h => h.interval?.startTime || ''),
+      temperature_2m:              hours.map(h => h.temperature?.degrees ?? 0),
+      relative_humidity_2m:        hours.map(h => h.relativeHumidity ?? 0),
+      weather_code:                hours.map(h => googleConditionToWMO(h.weatherCondition?.type)),
+      precipitation_probability:   hours.map(h => h.precipitationProbability ?? 0)
+    },
+    daily: {
+      time:                         days.map(d => d.interval?.startTime?.slice(0,10) || ''),
+      temperature_2m_max:           days.map(d => d.maxTemperature?.degrees ?? 0),
+      temperature_2m_min:           days.map(d => d.minTemperature?.degrees ?? 0),
+      weather_code:                 days.map(d => googleConditionToWMO(d.weatherCondition?.type)),
+      sunrise:                      days.map(d => d.sunEvents?.sunriseTime || ''),
+      sunset:                       days.map(d => d.sunEvents?.sunsetTime  || ''),
+      precipitation_probability_max:days.map(d => d.precipitationProbability ?? 0),
+      wind_speed_10m_max:           days.map(d => d.maxWindSpeed?.value ?? 0)
+    }
+  };
+}
+
+// Map Google weather condition strings → WMO codes used by wIcon/wDesc
+function googleConditionToWMO(type){
+  if(!type) return 0;
+  const t = type.toLowerCase();
+  if(t.includes('thunder')) return 95;
+  if(t.includes('blizzard')) return 75;
+  if(t.includes('heavy_snow')||t.includes('snowstorm')) return 75;
+  if(t.includes('snow_shower')) return 85;
+  if(t.includes('snow')||t.includes('flurr')) return 71;
+  if(t.includes('freezing_rain')||t.includes('sleet')) return 56;
+  if(t.includes('heavy_rain')) return 65;
+  if(t.includes('rain_shower')) return 80;
+  if(t.includes('rain')||t.includes('drizzle')) return 61;
+  if(t.includes('fog')||t.includes('mist')) return 45;
+  if(t.includes('overcast')||t.includes('cloudy')) return 3;
+  if(t.includes('partly_cloudy')) return 2;
+  if(t.includes('mostly_clear')||t.includes('mostly_sunny')) return 1;
+  if(t.includes('clear')||t.includes('sunny')) return 0;
+  return 0;
 }
 
 function renderWeather(d){
@@ -674,38 +769,42 @@ function rmLayers(layers,sources){
 }
 
 // ================================================================
-//  STORM CENTRAL — local account + posts stored in localStorage
+//  STORM CENTRAL — backend-powered auth + posts
 // ================================================================
 function loadUser(){
   try{
-    const u=localStorage.getItem('ss_user');
-    if(u)S.user=JSON.parse(u);
+    const u = localStorage.getItem('ss_user');
+    if(u) S.user = JSON.parse(u);
     updateUserUI();
   }catch(e){}
 }
-function saveUser(u){
-  S.user=u;
-  try{localStorage.setItem('ss_user',JSON.stringify(u));}catch(e){}
+function saveUser(u, token){
+  S.user = u;
+  try{
+    localStorage.setItem('ss_user', JSON.stringify(u));
+    if(token) localStorage.setItem('ss_token', token);
+  }catch(e){}
+  updateUserUI();
+}
+function clearUser(){
+  S.user = null;
+  try{ localStorage.removeItem('ss_user'); localStorage.removeItem('ss_token'); }catch(e){}
   updateUserUI();
 }
 function updateUserUI(){
   if(S.user){
-    set('userNm',S.user.name);
-    set('userSub','Storm Central');
-    id('userAva').textContent=S.user.name.charAt(0).toUpperCase();
+    set('userNm', S.user.name);
+    set('userSub', 'Storm Central');
+    id('userAva').textContent = S.user.name.charAt(0).toUpperCase();
   }else{
-    set('userNm','Weather User');
-    set('userSub','Not signed in');
-    id('userAva').textContent='SS';
+    set('userNm', 'Weather User');
+    set('userSub', 'Not signed in');
+    id('userAva').textContent = 'SS';
   }
 }
-function getUsers(){try{return JSON.parse(localStorage.getItem('ss_users')||'{}');}catch(e){return{};}}
-function saveUsers(users){try{localStorage.setItem('ss_users',JSON.stringify(users));}catch(e){}}
-function getPosts(){try{return JSON.parse(localStorage.getItem('ss_posts')||'[]');}catch(e){return[];}}
-function savePosts(posts){try{localStorage.setItem('ss_posts',JSON.stringify(posts));}catch(e){}}
 
 // Current SC filter state
-S.scFilter = 'all'; // 'all' | 'location' | 'radar'
+S.scFilter = 'all';
 S.activeCommentId = null;
 
 function openStormCentral(){
@@ -723,28 +822,28 @@ function updateSCView(){
   }
 }
 
-function getFilteredPosts(){
-  const all = getPosts().reverse();
-  if(S.scFilter === 'location'){
-    const loc = S.locName.toLowerCase();
-    return all.filter(p => p.location.toLowerCase().includes(loc) || loc.includes(p.location.toLowerCase()));
-  }
-  if(S.scFilter === 'radar'){
-    // Filter posts within ~2 degrees of current map center (rough bounding box)
-    const bounds = S.map ? S.map.getBounds() : null;
-    if(!bounds) return all;
-    return all.filter(p => {
-      if(!p.lat || !p.lng) return false;
-      return p.lat >= bounds.getSouth() && p.lat <= bounds.getNorth()
-          && p.lng >= bounds.getWest()  && p.lng <= bounds.getEast();
-    });
-  }
-  return all;
-}
-
-function loadSCPosts(){
-  const posts = getFilteredPosts();
+async function loadSCPosts(){
   const container = id('scPosts');
+  container.innerHTML = '<div class="sc-loading">Loading posts...</div>';
+
+  let posts = [];
+  try {
+    let url = `${API_URL}/api/posts`;
+    const params = new URLSearchParams();
+    if(S.scFilter === 'location') params.set('location', S.locName);
+    if(S.scFilter === 'radar' && S.map){
+      const b = S.map.getBounds();
+      params.set('north', b.getNorth()); params.set('south', b.getSouth());
+      params.set('east',  b.getEast());  params.set('west',  b.getWest());
+    }
+    if([...params].length) url += '?' + params.toString();
+    const r = await fetch(url);
+    if(!r.ok) throw new Error(r.status);
+    posts = await r.json();
+  } catch(e) {
+    container.innerHTML = '<div class="empty-s"><div class="es-ico">⚠</div><div>Could not load posts — is the backend running?</div></div>';
+    return;
+  }
 
   // Filter bar
   const filterBar = `
@@ -858,49 +957,101 @@ function deleteComment(postId, commentId){
   savePosts(posts); loadSCPosts();
 }
 
-function submitPost(){
+async function submitPost(){
   if(!S.user){ showToast('Sign in to post'); return; }
   const text = id('scText').value.trim();
   if(!text){ showToast('Write something first!'); return; }
-  const posts = getPosts();
-  const post = {
-    id: Date.now().toString(),
-    author: S.user.name,
-    location: S.locName,
-    lat: S.lat,
-    lng: S.lng,
-    text,
-    ts: new Date().toISOString(),
-    likes: [],
-    comments: [],
-    img: id('scImgPreview').dataset.img || null
-  };
-  posts.push(post);
-  savePosts(posts);
-  id('scText').value = '';
-  id('scImgPreview').innerHTML = '';
-  id('scImgPreview').dataset.img = '';
-  id('scImgInput').value = '';
-  loadSCPosts();
-  showToast('⚡ Posted to Storm Central!');
+
+  const btn = id('scPostBtn');
+  btn.disabled = true; btn.textContent = 'Posting...';
+
+  try {
+    // 1. Create post
+    const r = await fetch(`${API_URL}/api/posts`, {
+      method: 'POST',
+      headers: apiHeaders(true),
+      body: JSON.stringify({ text, location: S.locName, lat: S.lat, lng: S.lng })
+    });
+    if(!r.ok){
+      const e = await r.json();
+      showToast('⚠ ' + (e.error || 'Post failed')); return;
+    }
+    const post = await r.json();
+
+    // 2. Upload image if attached
+    const imgData = id('scImgPreview').dataset.img;
+    if(imgData){
+      try {
+        const blob = await (await fetch(imgData)).blob();
+        const form = new FormData();
+        form.append('image', blob, 'photo.jpg');
+        await fetch(`${API_URL}/api/posts/${post.id}/image`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('ss_token')}` },
+          body: form
+        });
+      } catch(imgErr){ console.warn('Image upload failed:', imgErr); }
+    }
+
+    id('scText').value = '';
+    id('scImgPreview').innerHTML = '';
+    id('scImgPreview').dataset.img = '';
+    id('scImgInput').value = '';
+    loadSCPosts();
+    showToast('⚡ Posted to Storm Central!');
+  } catch(e){
+    showToast('⚠ Could not post — check connection');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Post ⚡';
+  }
 }
 
-function toggleLike(postId){
+async function toggleLike(postId){
   if(!S.user) return;
-  const posts = getPosts();
-  const p = posts.find(x => x.id === postId);
-  if(!p) return;
-  p.likes = p.likes || [];
-  const idx = p.likes.indexOf(S.user.name);
-  if(idx >= 0) p.likes.splice(idx,1); else p.likes.push(S.user.name);
-  savePosts(posts); loadSCPosts();
+  try {
+    await fetch(`${API_URL}/api/posts/${postId}/like`, {
+      method: 'PATCH', headers: apiHeaders(true)
+    });
+    loadSCPosts();
+  } catch(e){ showToast('⚠ Could not like post'); }
 }
 
-function deletePost(postId){
+async function deletePost(postId){
   if(!confirm('Delete this post?')) return;
-  const posts = getPosts().filter(p => p.id !== postId);
-  savePosts(posts); loadSCPosts();
-  showToast('Post deleted');
+  try {
+    const r = await fetch(`${API_URL}/api/posts/${postId}`, {
+      method: 'DELETE', headers: apiHeaders(true)
+    });
+    if(!r.ok) throw new Error();
+    loadSCPosts();
+    showToast('Post deleted');
+  } catch(e){ showToast('⚠ Could not delete post'); }
+}
+
+async function submitComment(postId){
+  if(!S.user){ showToast('Sign in to comment'); return; }
+  const input = id(`cinput-${postId}`);
+  if(!input) return;
+  const text = input.value.trim();
+  if(!text) return;
+  try {
+    const r = await fetch(`${API_URL}/api/posts/${postId}/comments`, {
+      method: 'POST',
+      headers: apiHeaders(true),
+      body: JSON.stringify({ text })
+    });
+    if(!r.ok) throw new Error();
+    loadSCPosts();
+  } catch(e){ showToast('⚠ Could not post comment'); }
+}
+
+async function deleteComment(postId, commentId){
+  try {
+    await fetch(`${API_URL}/api/posts/${postId}/comments/${commentId}`, {
+      method: 'DELETE', headers: apiHeaders(true)
+    });
+    loadSCPosts();
+  } catch(e){ showToast('⚠ Could not delete comment'); }
 }
 
 function escHtml(s){
@@ -915,38 +1066,74 @@ function initSCAuth(){
       tab.classList.add('active');
       id('scLogin').style.display=tab.dataset.at==='login'?'':'none';
       id('scRegister').style.display=tab.dataset.at==='register'?'':'none';
+      set('loginErr',''); set('regErr','');
     });
   });
-  id('loginBtn').addEventListener('click',()=>{
-    const email=id('loginEmail').value.trim();
-    const pass=id('loginPass').value;
-    const users=getUsers();
-    if(!users[email]){set('loginErr','No account found with this email');return;}
-    if(users[email].pass!==btoa(pass)){set('loginErr','Wrong password');return;}
-    saveUser({name:users[email].name,email});
-    set('loginErr','');
-    updateSCView(); loadSCPosts();
-    showToast(`Welcome back, ${S.user.name}!`);
+
+  // LOGIN
+  id('loginBtn').addEventListener('click', async () => {
+    const email = id('loginEmail').value.trim();
+    const pass  = id('loginPass').value;
+    if(!email||!pass){ set('loginErr','Email and password required'); return; }
+    const btn = id('loginBtn');
+    btn.disabled = true; btn.textContent = 'Signing in...';
+    try {
+      const r = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ email, password: pass })
+      });
+      const d = await r.json();
+      if(!r.ok){ set('loginErr', d.error || 'Login failed'); return; }
+      saveUser(d.user, d.token);
+      set('loginErr','');
+      updateSCView(); loadSCPosts();
+      showToast(`Welcome back, ${d.user.name}!`);
+    } catch(e){ set('loginErr','Cannot connect to server'); }
+    finally { btn.disabled=false; btn.textContent='Sign In'; }
   });
-  id('registerBtn').addEventListener('click',()=>{
-    const name=id('regName').value.trim();
-    const email=id('regEmail').value.trim();
-    const pass=id('regPass').value;
-    if(!name||!email||!pass){set('regErr','All fields required');return;}
-    if(pass.length<6){set('regErr','Password must be 6+ characters');return;}
-    const users=getUsers();
-    if(users[email]){set('regErr','Email already registered');return;}
-    users[email]={name,pass:btoa(pass)};
-    saveUsers(users);
-    saveUser({name,email});
-    set('regErr','');
-    updateSCView(); loadSCPosts();
-    showToast(`Welcome, ${name}!`);
+
+  // REGISTER — with live username check
+  let usernameCheckTimer;
+  id('regName').addEventListener('input', () => {
+    clearTimeout(usernameCheckTimer);
+    const name = id('regName').value.trim();
+    if(name.length < 2){ set('regErr',''); return; }
+    usernameCheckTimer = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API_URL}/api/auth/check-username?username=${encodeURIComponent(name)}`);
+        const d = await r.json();
+        set('regErr', d.available ? '✓ Username available' : `⚠ ${d.reason}`);
+        id('regErr').style.color = d.available ? 'var(--acc2)' : 'var(--danger)';
+      } catch(e){}
+    }, 400);
   });
+
+  id('registerBtn').addEventListener('click', async () => {
+    const name  = id('regName').value.trim();
+    const email = id('regEmail').value.trim();
+    const pass  = id('regPass').value;
+    if(!name||!email||!pass){ set('regErr','All fields required'); return; }
+    const btn = id('registerBtn');
+    btn.disabled = true; btn.textContent = 'Creating account...';
+    try {
+      const r = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, email, password: pass })
+      });
+      const d = await r.json();
+      if(!r.ok){ set('regErr', d.error || 'Registration failed'); return; }
+      saveUser(d.user, d.token);
+      set('regErr','');
+      updateSCView(); loadSCPosts();
+      showToast(`Welcome to Storm Central, ${d.user.name}!`);
+    } catch(e){ set('regErr','Cannot connect to server'); }
+    finally { btn.disabled=false; btn.textContent='Create Account'; }
+  });
+
+  // SIGN OUT
   id('scSignout').addEventListener('click',()=>{
-    S.user=null;
-    try{localStorage.removeItem('ss_user');}catch(e){}
-    updateUserUI(); updateSCView();
+    clearUser();
+    updateSCView();
     showToast('Signed out');
   });
   id('scPostBtn').addEventListener('click',submitPost);

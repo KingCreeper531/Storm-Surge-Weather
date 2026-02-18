@@ -757,6 +757,8 @@ a { text-decoration: none; }
 .sc-img-btn:hover { color: var(--t1); border-color: var(--border2); }
 .sc-img-preview { margin-top: 6px; }
 .sc-posts { padding: 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+.sc-loading { padding: 20px; text-align: center; color: var(--t3); font-family: var(--mono); font-size: 11px; }
+
 .sc-post {
   background: var(--bg3); border: 1px solid var(--border);
   border-radius: var(--r); padding: 12px;
