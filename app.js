@@ -58,17 +58,6 @@ window.addEventListener('load', () => {
 //  MAP INIT
 // ================================================================
 function initMap() {
-  // Validate token
-  if (!window.MAPBOX_TOKEN || MAPBOX_TOKEN === 'YOUR_MAPBOX_TOKEN_HERE') {
-    showToast('⚠ Add your Mapbox token to config.js');
-    document.getElementById('map').innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#f0a500;font-family:monospace;font-size:13px;flex-direction:column;gap:12px"><div style="font-size:32px">⛈</div><div>Add your Mapbox token to config.js</div><div style="font-size:11px;color:#4a5a6a">Get a free token at account.mapbox.com</div></div>';
-    // Still load weather data (no token needed)
-    loadWeather();
-    loadAlerts();
-    return;
-  }
-
   mapboxgl.accessToken = MAPBOX_TOKEN;
 
   S.map = new mapboxgl.Map({
@@ -89,6 +78,7 @@ function initMap() {
   window.addEventListener('resize', resizeCanvas);
 
   S.map.on('load', () => {
+    S.map.resize(); // force correct size after DOM layout
     loadRadar();
     loadWeather();
     loadAlerts();
@@ -546,7 +536,6 @@ function hideDrop() {
 }
 
 async function reverseGeocode(lat, lng) {
-  if (!window.MAPBOX_TOKEN || MAPBOX_TOKEN === 'YOUR_MAPBOX_TOKEN_HERE') return;
   try {
     const r = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}&limit=1`);
     const d = await r.json();
