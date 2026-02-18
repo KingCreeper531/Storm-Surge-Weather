@@ -26,11 +26,11 @@ const S = {
 };
 
 // ================================================================
-//  BACKEND API 
+//  BACKEND API — change this to your Render URL once deployed
 // ================================================================
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
-  : 'https://storm-surge-weather.onrender.com'; 
+  : 'https://storm-surge-api.onrender.com'; // ← update this after deploying to Render
 
 function apiHeaders(includeAuth = false) {
   const h = { 'Content-Type': 'application/json' };
@@ -274,18 +274,27 @@ async function handleMapClick(e) {
 
 async function fetchNWSReport(lat, lng) {
   try {
-    const pt = await (await fetch(
+    // NWS points API — get grid info
+    const ptRes = await fetch(
       `https://api.weather.gov/points/${lat.toFixed(4)},${lng.toFixed(4)}`,
-      { headers: { 'User-Agent':'(StormSurgeWeather/10.0)','Accept':'application/geo+json' } }
-    )).json();
+      { headers: { 'User-Agent':'(StormSurgeWeather/10.0, contact@stormsurge.app)','Accept':'application/geo+json' } }
+    );
+    if (!ptRes.ok) throw new Error(`NWS points: ${ptRes.status}`);
+    const pt = await ptRes.json();
+    if (pt.status === 404 || !pt.properties?.forecast) throw new Error('Location not supported by NWS');
     const props = pt.properties;
-    const [fRes, hRes] = await Promise.all([
+
+    // Fetch forecast + hourly in parallel with error handling per-request
+    const [fRes, hRes] = await Promise.allSettled([
       fetch(props.forecast,       { headers:{'User-Agent':'(StormSurgeWeather/10.0)'} }),
       fetch(props.forecastHourly, { headers:{'User-Agent':'(StormSurgeWeather/10.0)'} })
     ]);
-    openNWSModal(props, fRes.ok ? await fRes.json() : null, hRes.ok ? await hRes.json() : null);
+    const fcast  = fRes.status  === 'fulfilled' && fRes.value.ok  ? await fRes.value.json()  : null;
+    const hourly = hRes.status  === 'fulfilled' && hRes.value.ok  ? await hRes.value.json()  : null;
+    openNWSModal(props, fcast, hourly);
   } catch(e) {
-    showToast('⚠ NWS unavailable here (US only) — using Open-Meteo');
+    console.warn('NWS error:', e.message);
+    showToast('⚠ NWS only covers the US — loading standard weather');
     loadWeather();
   }
 }
@@ -484,22 +493,15 @@ function togglePlay(){S.playing?pause():play();}
 async function loadWeather(){
   showLoader(true);
   try{
-    // Try backend proxy first (Google Weather API + caching)
+    // Backend proxy — returns Open-Meteo-shaped data whether from tomorrow.io or fallback
     const r = await fetch(`${API_URL}/api/weather?lat=${S.lat}&lng=${S.lng}`);
     if(!r.ok) throw new Error(r.status);
     const d = await r.json();
-
-    // Backend returns Google Weather API format or Open-Meteo fallback
-    // Normalise whichever we got into the same shape renderWeather expects
-    const normalised = d._source === 'open-meteo-fallback'
-      ? d
-      : normaliseGoogleWeather(d);
-
-    S.weather = normalised;
-    renderWeather(normalised);
-    renderForecast(normalised);
+    S.weather = d;
+    renderWeather(d);
+    renderForecast(d);
   }catch(e){
-    console.warn('Backend weather failed, falling back to Open-Meteo directly:', e);
+    console.warn('Backend weather failed, direct fallback:', e);
     try{
       const url=`https://api.open-meteo.com/v1/forecast?latitude=${S.lat}&longitude=${S.lng}`
         +`&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,`
@@ -514,68 +516,7 @@ async function loadWeather(){
   showLoader(false);
 }
 
-// Normalise Google Weather API response → same shape as Open-Meteo
-// so the rest of the app doesn't need to change
-function normaliseGoogleWeather(g){
-  // Google Weather API v1 structure
-  const cur = g.currentConditions || {};
-  const hours = g.forecastHours || [];
-  const days  = g.forecastDays  || [];
 
-  return {
-    _source: 'google-weather',
-    current: {
-      temperature_2m:        cur.temperature?.degrees ?? 0,
-      apparent_temperature:  cur.feelsLikeTemperature?.degrees ?? 0,
-      relative_humidity_2m:  cur.relativeHumidity ?? 0,
-      precipitation:         cur.precipitation?.quantity ?? 0,
-      weather_code:          googleConditionToWMO(cur.weatherCondition?.type),
-      wind_speed_10m:        cur.wind?.speed?.value ?? 0,
-      wind_direction_10m:    cur.wind?.direction?.degrees ?? 0,
-      surface_pressure:      cur.pressure?.meanSeaLevelPressure ?? 1013,
-      cloud_cover:           cur.cloudCover ?? 0,
-      uv_index:              cur.uvIndex ?? 0
-    },
-    hourly: {
-      time:                        hours.map(h => h.interval?.startTime || ''),
-      temperature_2m:              hours.map(h => h.temperature?.degrees ?? 0),
-      relative_humidity_2m:        hours.map(h => h.relativeHumidity ?? 0),
-      weather_code:                hours.map(h => googleConditionToWMO(h.weatherCondition?.type)),
-      precipitation_probability:   hours.map(h => h.precipitationProbability ?? 0)
-    },
-    daily: {
-      time:                         days.map(d => d.interval?.startTime?.slice(0,10) || ''),
-      temperature_2m_max:           days.map(d => d.maxTemperature?.degrees ?? 0),
-      temperature_2m_min:           days.map(d => d.minTemperature?.degrees ?? 0),
-      weather_code:                 days.map(d => googleConditionToWMO(d.weatherCondition?.type)),
-      sunrise:                      days.map(d => d.sunEvents?.sunriseTime || ''),
-      sunset:                       days.map(d => d.sunEvents?.sunsetTime  || ''),
-      precipitation_probability_max:days.map(d => d.precipitationProbability ?? 0),
-      wind_speed_10m_max:           days.map(d => d.maxWindSpeed?.value ?? 0)
-    }
-  };
-}
-
-// Map Google weather condition strings → WMO codes used by wIcon/wDesc
-function googleConditionToWMO(type){
-  if(!type) return 0;
-  const t = type.toLowerCase();
-  if(t.includes('thunder')) return 95;
-  if(t.includes('blizzard')) return 75;
-  if(t.includes('heavy_snow')||t.includes('snowstorm')) return 75;
-  if(t.includes('snow_shower')) return 85;
-  if(t.includes('snow')||t.includes('flurr')) return 71;
-  if(t.includes('freezing_rain')||t.includes('sleet')) return 56;
-  if(t.includes('heavy_rain')) return 65;
-  if(t.includes('rain_shower')) return 80;
-  if(t.includes('rain')||t.includes('drizzle')) return 61;
-  if(t.includes('fog')||t.includes('mist')) return 45;
-  if(t.includes('overcast')||t.includes('cloudy')) return 3;
-  if(t.includes('partly_cloudy')) return 2;
-  if(t.includes('mostly_clear')||t.includes('mostly_sunny')) return 1;
-  if(t.includes('clear')||t.includes('sunny')) return 0;
-  return 0;
-}
 
 function renderWeather(d){
   const c=d.current;
@@ -1181,63 +1122,97 @@ function initSCAuth(){
 }
 
 // ================================================================
-//  TRAFFIC CAMERAS — 511 API
+//  TRAFFIC CAMERAS — 511 State Systems (real feeds)
 // ================================================================
-async function searchTrafficCams(query){
-  const tcGrid=id('tcGrid');
-  tcGrid.innerHTML='<div class="empty-s"><div class="es-ico">📷</div><div>Searching...</div></div>';
-  // 511 state systems use different URLs per state
-  // We'll use a public CCTV API approach
-  const stateMap={
-    'california':'ca','ca':'ca','los angeles':'ca','san francisco':'ca',
-    'new york':'ny','ny':'ny','nyc':'ny',
-    'texas':'tx','tx':'tx','dallas':'tx','houston':'tx',
-    'florida':'fl','fl':'fl','miami':'fl','orlando':'fl',
-    'illinois':'il','il':'il','chicago':'il',
-    'washington':'wa','wa':'wa','seattle':'wa',
-    'oregon':'or','or':'or','portland':'or',
-    'minnesota':'mn','mn':'mn','minnesota':'mn',
-    'georgia':'ga','ga':'ga','atlanta':'ga',
-  };
-  const q=query.toLowerCase();
-  const state=Object.keys(stateMap).find(k=>q.includes(k));
-  const stateCode=state?stateMap[state]:null;
-  if(!stateCode){
-    tcGrid.innerHTML=`<div class="tc-msg">
-      <div style="font-size:28px">📷</div>
-      <div>Supported states: CA, NY, TX, FL, IL, WA, OR, MN, GA</div>
-      <div style="font-size:11px;color:var(--t3);margin-top:6px">Try searching "Los Angeles CA" or "Seattle"</div>
-    </div>`;
-    return;
+
+// 511 API endpoints by state code
+const STATE_511 = {
+  ca: { name:'California', url:'https://api.511.org/traffic/cameras', key:'b044c1d8-d4a8-4823-abba-9e05b63e2f32' },
+  sf: { name:'San Francisco', url:'https://api.511.org/traffic/cameras', key:'b044c1d8-d4a8-4823-abba-9e05b63e2f32' },
+  or: { name:'Oregon', url:'https://api.511.org/traffic/cameras', key:'b044c1d8-d4a8-4823-abba-9e05b63e2f32' },
+};
+
+const CITY_STATE = {
+  'california':'ca','san francisco':'ca','los angeles':'ca','sacramento':'ca','san diego':'ca',
+  'oregon':'or','portland':'or',
+  'new york':'ny','nyc':'ny','new york city':'ny',
+  'texas':'tx','dallas':'tx','houston':'tx','austin':'tx',
+  'florida':'fl','miami':'fl','orlando':'fl','tampa':'fl',
+  'illinois':'il','chicago':'il',
+  'washington':'wa','seattle':'wa',
+  'minnesota':'mn','minneapolis':'mn',
+  'georgia':'ga','atlanta':'ga',
+};
+
+async function searchTrafficCams(query) {
+  const grid = id('tcGrid');
+  if (!query) { grid.innerHTML='<div class="empty-s"><div class="es-ico">📷</div><div>Enter a city or state</div></div>'; return; }
+  grid.innerHTML = '<div class="empty-s"><div class="es-ico">📷</div><div>Searching cameras...</div></div>';
+
+  const q = query.toLowerCase().trim();
+  const stateKey = Object.keys(CITY_STATE).find(k => q.includes(k));
+  const stateCode = stateKey ? CITY_STATE[stateKey] : null;
+
+  // States with real 511 feeds
+  if ((stateCode === 'ca' || stateCode === 'or') && STATE_511[stateCode]) {
+    try {
+      const cfg = STATE_511[stateCode];
+      // 511 API returns JSONP — proxy through our backend
+      const r = await fetch(`${API_URL}/api/traffic-cams?state=${stateCode}&q=${encodeURIComponent(query)}`);
+      if (r.ok) {
+        const cams = await r.json();
+        renderTrafficCams(grid, cams, query);
+        return;
+      }
+    } catch(e) { console.warn('511 API failed:', e); }
   }
-  try{
-    const url=`https://api.511.org/traffic/cameras?api_key=AIzaSyD6-6K4WvMeUJtWTlVE5XgHAfb3cNmSUq4&format=json`;
-    // 511 requires state-specific endpoints; show demo cams for now
-    showDemoCams(tcGrid, stateCode, query);
-  }catch(e){
-    showDemoCams(tcGrid, stateCode, query);
-  }
+
+  // For other states — show 511 links + CCTV viewer links
+  renderTrafficLinks(grid, stateCode, query);
 }
-function showDemoCams(grid, state, query){
-  // Demo cam data using publicly available CCTV image feeds
-  const cams=[
-    {name:`${query} - Highway Cam 1`,id:'cam1',url:`https://cwwp2.dot.ca.gov/vm/streamSelector.php?cctv=001`},
-    {name:`${query} - Intersection Cam`,id:'cam2'},
-    {name:`${query} - Downtown Cam`,id:'cam3'},
-    {name:`${query} - Freeway Cam`,id:'cam4'},
-  ];
-  grid.innerHTML=`
-    <div class="tc-note">📡 Live traffic cameras for ${query.toUpperCase()} — click to view stream</div>
-    <div class="tc-cams">
-      ${cams.map(cam=>`
-        <div class="tc-cam" data-id="${cam.id}">
-          <div class="tc-cam-thumb">
-            <div class="tc-cam-placeholder">📷<br><span>${cam.name}</span></div>
-          </div>
-          <div class="tc-cam-name">${cam.name}</div>
-        </div>`).join('')}
-    </div>
-    <div class="tc-note" style="margin-top:10px">⚠ Full 511 integration requires a backend proxy. <a href="https://511.org" target="_blank" style="color:var(--acc2)">Visit 511.org</a> for live feeds.</div>`;
+
+function renderTrafficCams(grid, cams, query) {
+  if (!cams.length) { renderTrafficLinks(grid, null, query); return; }
+  grid.innerHTML = `
+    <div class="tc-note">📡 ${cams.length} cameras found near ${query}</div>
+    <div class="tc-cams">${cams.slice(0,12).map(cam => `
+      <div class="tc-cam" onclick="window.open('${cam.url||'#'}','_blank')">
+        <div class="tc-cam-thumb">
+          ${cam.img
+            ? `<img src="${cam.img}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div class=tc-cam-placeholder>📷</div>'">`
+            : '<div class="tc-cam-placeholder">📷</div>'}
+        </div>
+        <div class="tc-cam-name">${cam.name||'Traffic Camera'}</div>
+        <div class="tc-cam-road">${cam.road||''}</div>
+      </div>`).join('')}
+    </div>`;
+}
+
+function renderTrafficLinks(grid, stateCode, query) {
+  const links = {
+    ny: ['https://511ny.org/map#cameras','511NY'],
+    tx: ['https://drivetexas.org/#7/31.000/-100.000','DriveTexas'],
+    fl: ['https://fl511.com','FL511'],
+    il: ['https://gettingaroundillinois.com','IL DOT'],
+    wa: ['https://wsdot.com/traffic/cameras','WSDOT'],
+    mn: ['https://511mn.org','511MN'],
+    ga: ['https://511ga.org','511GA'],
+    ca: ['https://quickmap.dot.ca.gov','QuickMap CA'],
+    or: ['https://tripcheck.com','TripCheck OR'],
+  };
+  const link = stateCode && links[stateCode];
+  grid.innerHTML = `
+    <div class="tc-msg">
+      <div style="font-size:32px">📷</div>
+      <div style="font-weight:700;margin:8px 0">${query ? `Traffic Cameras — ${query}` : 'Traffic Cameras'}</div>
+      ${link
+        ? `<a href="${link[0]}" target="_blank" class="tc-ext-link">Open ${link[1]} Live Cameras →</a>`
+        : `<div style="font-size:11px;color:var(--t3)">Try: Los Angeles, Portland, New York, Chicago, Seattle, Miami, Atlanta</div>`}
+      <div style="font-size:10px;color:var(--t3);margin-top:10px">
+        Live camera images require a 511 API key for each state.<br>
+        Add <code>TRAFFIC_511_KEY</code> to your backend to enable direct feeds.
+      </div>
+    </div>`;
 }
 
 // ================================================================
@@ -1572,4 +1547,12 @@ function showToast(msg){
 }
 function showLoader(show){id('loader').classList.toggle('show',show);}
 
-console.log('⛈ Storm Surge v10.0 ready');
+// ── SETTINGS SAFETY NET ──────────────────────────────────────────
+// Re-apply all settings on page load after weather loads
+function reapplySettings(){
+  const c = S.cfg;
+  if(!c.crosshair) id('crosshair').style.display = 'none';
+  if(S.weather){ renderWeather(S.weather); renderForecast(S.weather); }
+}
+
+console.log('⛈ Storm Surge v10.1 ready');
