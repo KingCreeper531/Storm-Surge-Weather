@@ -35,15 +35,35 @@ const WEATHERNEXT_KEY = process.env.WEATHERNEXT_KEY;  // WeatherNext 2 API key
 // ── GOOGLE CLOUD STORAGE ─────────────────────────────────────────
 let storage, bucket;
 try {
-  const credentials = GCS_KEY ? JSON.parse(GCS_KEY) : null;
-  storage = new Storage({
-    projectId: GCS_PROJECT,
-    ...(credentials && { credentials })
-  });
-  bucket = storage.bucket(GCS_BUCKET);
-  console.log('✅ Google Cloud Storage connected');
+  let credentials = null;
+  if (GCS_KEY) {
+    // Render sometimes wraps the value in extra quotes or truncates —
+    // clean it up before parsing
+    let raw = GCS_KEY.trim();
+    // Strip surrounding quotes if Render added them
+    if ((raw.startsWith('"') && raw.endsWith('"')) ||
+        (raw.startsWith("'") && raw.endsWith("'"))) {
+      raw = raw.slice(1, -1);
+    }
+    // Unescape any escaped quotes Render may have added
+    raw = raw.replace(/\\"/g, '"');
+    try {
+      credentials = JSON.parse(raw);
+    } catch(parseErr) {
+      console.error('⚠ GOOGLE_CLOUD_KEY is not valid JSON.');
+      console.error('  Paste the raw service account JSON with no extra quotes around it.');
+      console.error('  Parse error:', parseErr.message);
+    }
+  }
+  if (credentials) {
+    storage = new Storage({ projectId: GCS_PROJECT, credentials });
+    bucket  = storage.bucket(GCS_BUCKET);
+    console.log('✅ Google Cloud Storage connected');
+  } else {
+    console.warn('⚠ GCS credentials missing or invalid — using in-memory fallback');
+  }
 } catch(e) {
-  console.warn('⚠ GCS not configured:', e.message);
+  console.warn('⚠ GCS init failed:', e.message);
 }
 
 // ── MIDDLEWARE ───────────────────────────────────────────────────
@@ -476,28 +496,101 @@ function tomorrowCodeToWMO(code) {
 }
 
 // ── TOMORROW.IO MAP TILES PROXY ──────────────────────────────────
-// Proxies tile requests to avoid CORS and keep key server-side
-app.get('/api/tiles/:layer/:z/:x/:y', async (req, res) => {
-  if (!TOMORROW_KEY) return res.status(503).json({ error: 'Tiles not configured' });
-  const { layer, z, x, y } = req.params;
-  const validLayers = ['precipitation_intensity','temperature','wind_speed','cloud_cover','pressure_surface_level'];
-  if (!validLayers.includes(layer)) return res.status(400).json({ error: 'Invalid layer' });
+// Caches available timestamps so we don't re-fetch on every tile request
+let _radarTimestamps = {};   // { layer: { ts: string[], fetchedAt: number } }
+
+async function getRadarTimestamps(layer) {
+  const cached = _radarTimestamps[layer];
+  // Re-fetch timestamps every 5 minutes
+  if (cached && Date.now() - cached.fetchedAt < 5 * 60 * 1000) return cached.ts;
   try {
-    // Get latest timestamp for tiles
-    const tsRes = await fetch(`https://api.tomorrow.io/v4/map/tile/${layer}?apikey=${TOMORROW_KEY}`);
-    const tsData = tsRes.ok ? await tsRes.json() : null;
-    const timestamp = tsData?.timestamps?.[tsData.timestamps.length - 1] || new Date().toISOString().slice(0,13) + ':00:00Z';
+    const r = await fetch(
+      `https://api.tomorrow.io/v4/map/tile/${layer}?apikey=${TOMORROW_KEY}`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    if (!r.ok) throw new Error(`timestamp fetch: ${r.status}`);
+    const d = await r.json();
+    const ts = d?.data?.timestamps || d?.timestamps || [];
+    _radarTimestamps[layer] = { ts, fetchedAt: Date.now() };
+    return ts;
+  } catch(e) {
+    console.warn('Could not get radar timestamps:', e.message);
+    // Fallback: generate last 12 hours at hourly intervals
+    const now = new Date();
+    now.setMinutes(0,0,0);
+    return Array.from({length:12}, (_,i) => {
+      const d = new Date(now - (11-i) * 60*60*1000);
+      return d.toISOString();
+    });
+  }
+}
+
+// GET /api/radar-times — returns available radar frame timestamps
+app.get('/api/radar-times', async (req, res) => {
+  if (!TOMORROW_KEY) {
+    // Return dummy timestamps so frontend doesn't break
+    const now = new Date(); now.setMinutes(0,0,0);
+    const ts = Array.from({length:12}, (_,i) => new Date(now - (11-i)*60*60*1000).toISOString());
+    return res.json({ timestamps: ts, source: 'fallback' });
+  }
+  try {
+    const ts = await getRadarTimestamps('precipitation_intensity');
+    // Return past 12 frames only
+    res.json({ timestamps: ts.slice(-12), source: 'tomorrow.io' });
+  } catch(e) {
+    res.status(503).json({ error: 'Could not get radar times' });
+  }
+});
+
+// GET /api/tiles/:layer/:z/:x/:y — proxy tile image to hide API key
+app.get('/api/tiles/:layer/:z/:x/:y', async (req, res) => {
+  if (!TOMORROW_KEY) return res.status(503).send(); // transparent 1x1 would be better but keep simple
+  const { layer, z, x, y } = req.params;
+  const { ts } = req.query;
+  const validLayers = [
+    'precipitation_intensity','temperature','wind_speed',
+    'cloud_cover','pressure_surface_level','humidity'
+  ];
+  if (!validLayers.includes(layer)) return res.status(400).json({ error: 'Invalid layer' });
+
+  try {
+    // Get a valid timestamp — use requested ts or latest available
+    let timestamp = ts;
+    if (!timestamp) {
+      const timestamps = await getRadarTimestamps(layer);
+      timestamp = timestamps[timestamps.length - 1];
+    }
 
     const tileUrl = `https://api.tomorrow.io/v4/map/tile/${z}/${x}/${y}/${layer}/${timestamp}.png?apikey=${TOMORROW_KEY}`;
+    const cacheKey = `tile_${layer}_${z}_${x}_${y}_${timestamp}`;
+
+    // Check in-memory tile cache (store as buffer)
+    const cachedBuf = cache.get(cacheKey);
+    if (cachedBuf) {
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=300');
+      res.set('X-Cache', 'HIT');
+      return res.send(cachedBuf);
+    }
+
     const tileRes = await fetch(tileUrl);
-    if (!tileRes.ok) throw new Error(`Tile fetch failed: ${tileRes.status}`);
-    const buf = await tileRes.arrayBuffer();
+    if (!tileRes.ok) {
+      // Return empty 256x256 transparent PNG instead of error — keeps map clean
+      const empty = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAABmJLR0QA/wD/AP+gvaeTAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==','base64');
+      return res.set('Content-Type','image/png').send(empty);
+    }
+
+    const buf = Buffer.from(await tileRes.arrayBuffer());
+    cache.set(cacheKey, buf, 300); // cache tile for 5 minutes
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=300');
-    res.send(Buffer.from(buf));
+    res.set('X-Cache', 'MISS');
+    res.send(buf);
   } catch(e) {
     console.error('Tile proxy error:', e.message);
-    res.status(502).json({ error: 'Tile unavailable' });
+    // Return transparent tile on error — never show broken image
+    const empty = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAABmJLR0QA/wD/AP+gvaeTAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==','base64');
+    res.set('Content-Type','image/png').send(empty);
   }
 });
 

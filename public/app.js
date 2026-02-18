@@ -134,7 +134,7 @@ function cycleMapStyle() {
   S.map.setStyle(MAP_STYLES[S.mapStyle]);
   S.map.once('style.load', () => {
     if (S.cfg.alertZones && S.alerts.length) putAlertsOnMap();
-    tileCache.clear(); prewarmCache(); scheduleRadarDraw();
+    tileCache.clear(); loadRadar();
     showToast(`🗺 ${S.mapStyle}`);
   });
 }
@@ -340,41 +340,50 @@ function openNWSModal(props, fcast, hourly) {
 }
 
 // ================================================================
-//  RADAR — fixed CORS: use /v2/ path with color in URL not param
-// ================================================================
-//  RADAR — smooth, flicker-free
+//  RADAR — tomorrow.io precipitation tiles via backend proxy
+//  Smooth + flicker-free via offscreen canvas + RAF throttle
 // ================================================================
 const tileCache = new Map();
-let _rafPending = false;   // RAF throttle for move events
-let _drawSeq    = 0;       // sequence counter to cancel stale draws
+let _rafPending = false;
+let _drawSeq    = 0;
 
+// tomorrow.io radar uses a single "now" tile — no frame list needed
+// We simulate frames by fetching past timestamps from the backend
 async function loadRadar() {
   try {
-    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    // Get available radar timestamps from backend
+    const r = await fetch(`${API_URL}/api/radar-times`);
+    if (!r.ok) throw new Error('No radar times');
     const d = await r.json();
-    if (d?.radar?.past?.length) {
-      S.frames = d.radar.past.slice(-12);
-      S.frame  = S.frames.length - 1;
-      buildSlots(); resizeCanvas();
-      // Pre-warm cache for all frames at current viewport
-      prewarmCache();
-      drawFrame(S.frame);
-      if (S.cfg.autoPlay) play();
-    }
-  } catch(e) { console.warn('Radar unavail',e); }
+    // d.timestamps = array of ISO strings, past → present
+    S.frames = d.timestamps.map((ts, i) => ({ time: new Date(ts).getTime()/1000, ts, index: i }));
+    S.frame  = S.frames.length - 1;
+    buildSlots();
+    resizeCanvas();
+    prewarmCache();
+    drawFrame(S.frame);
+    if (S.cfg.autoPlay) play();
+  } catch(e) {
+    console.warn('tomorrow.io radar unavailable:', e.message);
+    // Fallback: show current time as single frame
+    S.frames = [{ time: Date.now()/1000, ts: new Date().toISOString(), index: 0 }];
+    S.frame  = 0;
+    buildSlots();
+    resizeCanvas();
+    drawFrame(0);
+  }
 }
 
-// Pre-load every tile for every frame so animation is instant
 async function prewarmCache() {
   if (!S.map || !S.frames.length) return;
   const zoom   = Math.max(2, Math.min(10, Math.floor(S.map.getZoom())));
   const bounds = S.map.getBounds();
   const tiles  = getTiles(bounds, zoom);
-  const color  = S.cfg.radarColor || '6';
+  // Fire-and-forget: load all tiles for all frames in background
   S.frames.forEach(frame => {
     tiles.forEach(tile => {
-      const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
-      if (!tileCache.has(src)) loadTile(src); // fire-and-forget
+      const src = `${API_URL}/api/tiles/precipitation_intensity/${tile.z}/${tile.x}/${tile.y}?ts=${encodeURIComponent(frame.ts)}`;
+      if (!tileCache.has(src)) loadTile(src);
     });
   });
 }
@@ -390,7 +399,6 @@ function loadTile(src) {
   });
 }
 
-// Called on every map move — throttled via RAF so we don't pile up
 function scheduleRadarDraw() {
   if (_rafPending) return;
   _rafPending = true;
@@ -402,24 +410,20 @@ function scheduleRadarDraw() {
 
 async function drawFrame(idx) {
   if (!S.frames[idx] || !S.map || !S.ctx) return;
-
-  const seq    = ++_drawSeq; // stamp this draw call
-  const frame  = S.frames[idx];
-  const zoom   = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
-  const bounds = S.map.getBounds();
-  const color  = S.cfg.radarColor || '6';
-  const tiles  = getTiles(bounds, zoom);
+  const seq   = ++_drawSeq;
+  const frame = S.frames[idx];
+  const zoom  = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
+  const tiles = getTiles(S.map.getBounds(), zoom);
 
   // Load all tiles for this frame in parallel
   const loaded = await Promise.all(tiles.map(tile => {
-    const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
+    const src = `${API_URL}/api/tiles/precipitation_intensity/${tile.z}/${tile.x}/${tile.y}?ts=${encodeURIComponent(frame.ts)}`;
     return loadTile(src).then(img => ({ tile, img }));
   }));
 
-  // If a newer draw was requested while we were loading, bail — don't flicker
-  if (seq !== _drawSeq) return;
+  if (seq !== _drawSeq) return; // newer draw started — bail
 
-  // Draw to offscreen canvas first, then blit in one shot → no partial flash
+  // Offscreen blit — zero flicker
   const offscreen = document.createElement('canvas');
   offscreen.width  = S.canvas.width;
   offscreen.height = S.canvas.height;
@@ -434,7 +438,6 @@ async function drawFrame(idx) {
     if (w > 0 && h > 0) octx.drawImage(img, nw.x, nw.y, w, h);
   });
 
-  // Single blit to visible canvas — zero flicker
   S.ctx.clearRect(0, 0, S.canvas.width, S.canvas.height);
   S.ctx.drawImage(offscreen, 0, 0);
 }
@@ -1405,9 +1408,8 @@ function initUI(){
   segBind('sCardStyle',v=>{S.cfg.cardStyle=v;saveCfg();if(S.weather)renderWeather(S.weather);});
   segBind('sRadarColor',v=>{
     S.cfg.radarColor=v; saveCfg();
-    tileCache.clear(); // clear cache so new color loads
-    if(S.frames.length)drawFrame(S.frame);
-    showToast(`🎨 Radar: ${{'1':'Original','2':'Universal','4':'Rainbow','6':'NOAA'}[v]}`);
+    // tomorrow.io uses precipitation_intensity layer — color is handled server-side
+    showToast('🎨 Radar layer updated');
   });
   id('sOpacity').addEventListener('input',e=>{
     S.cfg.opacity=+e.target.value/100;id('sOpacityVal').textContent=e.target.value+'%';
@@ -1440,13 +1442,15 @@ function initUI(){
 }
 
 function renderRadarInfo(){
-  const newest=S.frames.length?new Date(S.frames[S.frames.length-1].time*1000):null;
+  const newest = S.frames.length ? new Date(S.frames[S.frames.length-1].time*1000) : null;
+  const oldest = S.frames.length ? new Date(S.frames[0].time*1000) : null;
   id('alertsBody').innerHTML=`<div class="radar-info">
     <div class="ri-title">Radar Status</div>
+    <div class="ri-stat"><span>Source</span><span>tomorrow.io</span></div>
     <div class="ri-stat"><span>Frames</span><span>${S.frames.length}/12</span></div>
     <div class="ri-stat"><span>Latest</span><span>${newest?fmtTime(newest,true):'N/A'}</span></div>
-    <div class="ri-stat"><span>Color</span><span>${{'1':'Original','2':'Universal','4':'Rainbow','6':'NOAA'}[S.cfg.radarColor]||'NOAA'}</span></div>
-    <div class="ri-stat"><span>Source</span><span>RainViewer</span></div>
+    <div class="ri-stat"><span>Oldest</span><span>${oldest?fmtTime(oldest,true):'N/A'}</span></div>
+    <div class="ri-stat"><span>Layer</span><span>Precipitation</span></div>
     <div class="ri-stat"><span>Opacity</span><span>${Math.round(S.cfg.opacity*100)}%</span></div>
     <button class="ri-refresh" onclick="tileCache.clear();loadRadar();showToast('↻ Radar refreshed')">↻ Refresh Radar</button>
   </div>`;
@@ -1555,4 +1559,4 @@ function reapplySettings(){
   if(S.weather){ renderWeather(S.weather); renderForecast(S.weather); }
 }
 
-console.log('⛈ Storm Surge v10.1 ready');
+console.log('⛈ Storm Surge v10.2 — tomorrow.io radar ready');
