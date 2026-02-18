@@ -37,21 +37,25 @@ let storage, bucket;
 try {
   let credentials = null;
   if (GCS_KEY) {
-    // Render sometimes wraps the value in extra quotes or truncates —
-    // clean it up before parsing
     let raw = GCS_KEY.trim();
-    // Strip surrounding quotes if Render added them
+    // Try base64 decode first (recommended method)
+    try {
+      const decoded = Buffer.from(raw, 'base64').toString('utf8');
+      if (decoded.startsWith('{')) raw = decoded;
+    } catch(e) {}
+    // Strip surrounding quotes Render may have added
     if ((raw.startsWith('"') && raw.endsWith('"')) ||
         (raw.startsWith("'") && raw.endsWith("'"))) {
       raw = raw.slice(1, -1);
     }
-    // Unescape any escaped quotes Render may have added
-    raw = raw.replace(/\\"/g, '"');
+    raw = raw.replace(/\\"/g, '"').replace(/\n/g, '\n');
     try {
       credentials = JSON.parse(raw);
     } catch(parseErr) {
       console.error('⚠ GOOGLE_CLOUD_KEY is not valid JSON.');
-      console.error('  Paste the raw service account JSON with no extra quotes around it.');
+      console.error('  Best fix: base64 encode your service account JSON and paste that.');
+      console.error('  Mac/Linux: base64 -i service-account.json | tr -d "\n"');
+      console.error('  Windows:   [Convert]::ToBase64String([IO.File]::ReadAllBytes("service-account.json"))');
       console.error('  Parse error:', parseErr.message);
     }
   }
@@ -651,21 +655,30 @@ app.get('/api/traffic-cams', async (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: '1.0.0',
+    name: 'Storm Surge Weather',
+    version: '1.2.0',
     gcs: !!bucket,
     tomorrowIO: !!TOMORROW_KEY,
+    mapboxToken: !!process.env.MAPBOX_TOKEN,
     uptime: Math.round(process.uptime()) + 's'
   });
 });
 
 
+
 // ── SERVE FRONTEND ──────────────────────────────────────────────
-// In production, Express serves the frontend from /public
-// In dev, use a local server for the frontend separately
 const frontendPath = path.join(__dirname, 'public');
 app.use(express.static(frontendPath));
 
-// Any route not matched by the API falls through to index.html
+// Serve token.js dynamically so Mapbox key stays in env var
+// This replaces the need for a committed token.js file
+app.get('/token.js', (req, res) => {
+  const token = process.env.MAPBOX_TOKEN || '';
+  res.set('Content-Type', 'application/javascript');
+  res.send(`const MAPBOX_TOKEN = "${token}";`);
+});
+
+// Any route not matched by API or static files → index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });

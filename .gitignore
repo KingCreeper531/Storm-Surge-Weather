@@ -7,9 +7,6 @@ node_modules/
 *.pem
 service-account.json
 
-# token.js contains your Mapbox key
-public/token.js
-
 # OS
 .DS_Store
 Thumbs.db
