@@ -26,11 +26,11 @@ const S = {
 };
 
 // ================================================================
-//  BACKEND API — change this to your Render URL once deployed
+//  BACKEND API 
 // ================================================================
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
-  : 'https://storm-surge-api.onrender.com'; // ← update this after deploying to Render
+  : 'https://storm-surge-weather.onrender.com'; 
 
 function apiHeaders(includeAuth = false) {
   const h = { 'Content-Type': 'application/json' };
