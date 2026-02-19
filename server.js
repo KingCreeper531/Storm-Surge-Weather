@@ -879,6 +879,19 @@ app.get('/api/radar/tile', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=120');
     res.send(arr);
   } catch (e) {
+    const parts = safePath.split('/');
+    const z = Number(parts[parts.length - 5]);
+    const x = Number(parts[parts.length - 4]);
+    const y = Number(parts[parts.length - 3]);
+    const color = Number(parts[parts.length - 2]);
+
+    if (Number.isFinite(z) && Number.isFinite(x) && Number.isFinite(y)) {
+      const svg = buildSyntheticRadarTileSvg(safePath, z, x, y, Number.isFinite(color) ? color : 6);
+      res.set('Content-Type', 'image/svg+xml; charset=utf-8');
+      res.set('Cache-Control', 'public, max-age=30');
+      return res.send(svg);
+    }
+
     const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/n1QAAAAASUVORK5CYII=', 'base64');
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=30');
