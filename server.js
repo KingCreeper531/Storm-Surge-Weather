@@ -6,6 +6,7 @@
 //  Deploy to: Render.com
 // ================================================================
 
+require('dotenv').config(); // loads .env for local dev — ignored on Render
 const express    = require('express');
 const cors       = require('cors');
 const bcrypt     = require('bcryptjs');
@@ -668,17 +669,20 @@ app.get('/api/health', (req, res) => {
 
 // ── SERVE FRONTEND ──────────────────────────────────────────────
 const frontendPath = path.join(__dirname, 'public');
-app.use(express.static(frontendPath));
 
-// Serve token.js dynamically so Mapbox key stays in env var
-// This replaces the need for a committed token.js file
+// token.js MUST come before static middleware so env var wins over any file
 app.get('/token.js', (req, res) => {
   const token = process.env.MAPBOX_TOKEN || '';
+  if (!token) console.warn('⚠ MAPBOX_TOKEN env var not set — map will not load');
   res.set('Content-Type', 'application/javascript');
+  res.set('Cache-Control', 'no-store'); // never cache — token could change
   res.send(`const MAPBOX_TOKEN = "${token}";`);
 });
 
-// Any route not matched by API or static files → index.html
+// Static files (index.html, app.js, style.css etc)
+app.use(express.static(frontendPath));
+
+// Anything else → index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });

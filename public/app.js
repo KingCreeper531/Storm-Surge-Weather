@@ -340,38 +340,27 @@ function openNWSModal(props, fcast, hourly) {
 }
 
 // ================================================================
-//  RADAR — tomorrow.io precipitation tiles via backend proxy
+//  RADAR — RainViewer (primary) + tomorrow.io overlays
 //  Smooth + flicker-free via offscreen canvas + RAF throttle
 // ================================================================
 const tileCache = new Map();
 let _rafPending = false;
 let _drawSeq    = 0;
 
-// tomorrow.io radar uses a single "now" tile — no frame list needed
-// We simulate frames by fetching past timestamps from the backend
 async function loadRadar() {
   try {
-    // Get available radar timestamps from backend
-    const r = await fetch(`${API_URL}/api/radar-times`);
-    if (!r.ok) throw new Error('No radar times');
+    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
     const d = await r.json();
-    // d.timestamps = array of ISO strings, past → present
-    S.frames = d.timestamps.map((ts, i) => ({ time: new Date(ts).getTime()/1000, ts, index: i }));
-    S.frame  = S.frames.length - 1;
-    buildSlots();
-    resizeCanvas();
-    prewarmCache();
-    drawFrame(S.frame);
-    if (S.cfg.autoPlay) play();
-  } catch(e) {
-    console.warn('tomorrow.io radar unavailable:', e.message);
-    // Fallback: show current time as single frame
-    S.frames = [{ time: Date.now()/1000, ts: new Date().toISOString(), index: 0 }];
-    S.frame  = 0;
-    buildSlots();
-    resizeCanvas();
-    drawFrame(0);
-  }
+    if (d?.radar?.past?.length) {
+      S.frames = d.radar.past.slice(-12);
+      S.frame  = S.frames.length - 1;
+      buildSlots();
+      resizeCanvas();
+      prewarmCache();
+      drawFrame(S.frame);
+      if (S.cfg.autoPlay) play();
+    }
+  } catch(e) { console.warn('RainViewer unavail:', e); }
 }
 
 async function prewarmCache() {
@@ -379,10 +368,10 @@ async function prewarmCache() {
   const zoom   = Math.max(2, Math.min(10, Math.floor(S.map.getZoom())));
   const bounds = S.map.getBounds();
   const tiles  = getTiles(bounds, zoom);
-  // Fire-and-forget: load all tiles for all frames in background
+  const color  = S.cfg.radarColor || '6';
   S.frames.forEach(frame => {
     tiles.forEach(tile => {
-      const src = `${API_URL}/api/tiles/precipitation_intensity/${tile.z}/${tile.x}/${tile.y}?ts=${encodeURIComponent(frame.ts)}`;
+      const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
       if (!tileCache.has(src)) loadTile(src);
     });
   });
@@ -410,20 +399,19 @@ function scheduleRadarDraw() {
 
 async function drawFrame(idx) {
   if (!S.frames[idx] || !S.map || !S.ctx) return;
-  const seq   = ++_drawSeq;
-  const frame = S.frames[idx];
-  const zoom  = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
-  const tiles = getTiles(S.map.getBounds(), zoom);
+  const seq    = ++_drawSeq;
+  const frame  = S.frames[idx];
+  const zoom   = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
+  const color  = S.cfg.radarColor || '6';
+  const tiles  = getTiles(S.map.getBounds(), zoom);
 
-  // Load all tiles for this frame in parallel
   const loaded = await Promise.all(tiles.map(tile => {
-    const src = `${API_URL}/api/tiles/precipitation_intensity/${tile.z}/${tile.x}/${tile.y}?ts=${encodeURIComponent(frame.ts)}`;
+    const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
     return loadTile(src).then(img => ({ tile, img }));
   }));
 
-  if (seq !== _drawSeq) return; // newer draw started — bail
+  if (seq !== _drawSeq) return;
 
-  // Offscreen blit — zero flicker
   const offscreen = document.createElement('canvas');
   offscreen.width  = S.canvas.width;
   offscreen.height = S.canvas.height;
@@ -440,6 +428,42 @@ async function drawFrame(idx) {
 
   S.ctx.clearRect(0, 0, S.canvas.width, S.canvas.height);
   S.ctx.drawImage(offscreen, 0, 0);
+
+  // Draw tomorrow.io overlay layer on top if active
+  if (S.activeOverlay) drawOverlay(S.activeOverlay);
+}
+
+// tomorrow.io overlay layers (lightning, clouds, temp, wind)
+S.activeOverlay = null;
+async function drawOverlay(layer) {
+  if (!S.map || !S.ctx) return;
+  const zoom  = Math.max(0, Math.min(8, Math.floor(S.map.getZoom())));
+  const tiles = getTiles(S.map.getBounds(), zoom);
+  const loaded = await Promise.all(tiles.map(tile => {
+    const src = `${API_URL}/api/tiles/${layer}/${tile.z}/${tile.x}/${tile.y}`;
+    return loadTile(src).then(img => ({ tile, img }));
+  }));
+  S.ctx.save();
+  S.ctx.globalAlpha = 0.6;
+  loaded.forEach(({ tile, img }) => {
+    if (!img || !S.map) return;
+    const nw = S.map.project([tile.b.west, tile.b.north]);
+    const se = S.map.project([tile.b.east, tile.b.south]);
+    const w  = se.x - nw.x, h = se.y - nw.y;
+    if (w > 0 && h > 0) S.ctx.drawImage(img, nw.x, nw.y, w, h);
+  });
+  S.ctx.restore();
+}
+
+function setOverlay(layer) {
+  S.activeOverlay = S.activeOverlay === layer ? null : layer;
+  tileCache.clear();
+  scheduleRadarDraw();
+  const labels = {
+    'cloud_cover':'☁ Clouds','temperature':'🌡 Temp',
+    'wind_speed':'💨 Wind','precipitation_intensity':'🌧 Precip'
+  };
+  showToast(S.activeOverlay ? `Overlay: ${labels[S.activeOverlay]||S.activeOverlay}` : 'Overlay off');
 }
 
 function getTiles(bounds, z) {
@@ -672,8 +696,18 @@ function openAlertModal(i){
   const onset=p.onset?new Date(p.onset):(p.sent?new Date(p.sent):null);
   const expires=p.expires?new Date(p.expires):null;
   set('mTitle',`${ico} ${p.event}`);
+  // Format text — replace newlines with <br>, clean up excessive whitespace
+  const fmtAlertText = t => (t||'').trim()
+    .replace(/\*([^*]+)\*/g,'<strong>$1</strong>') // *bold* → <strong>
+    .replace(/\n\n+/g,'</p><p>')
+    .replace(/\n/g,'<br>')
+    .replace(/^/,'<p>').replace(/$/,'</p>');
+
   id('mBody').innerHTML=`
-    <div class="ad-hdr"><div class="ad-ico">${ico}</div><div class="ad-title">${p.headline||p.event}</div></div>
+    <div class="ad-hdr">
+      <div class="ad-ico">${ico}</div>
+      <div class="ad-title">${p.headline||p.event}</div>
+    </div>
     <div class="ad-chips">
       ${onset?`<span class="ad-chip">📅 ${onset.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</span>`:''}
       ${expires?`<span class="ad-chip">⏱ ${fmtDateTime(expires)}</span>`:''}
@@ -681,9 +715,18 @@ function openAlertModal(i){
       ${p.certainty?`<span class="ad-chip">🎯 ${p.certainty}</span>`:''}
       ${p.urgency?`<span class="ad-chip">⏰ ${p.urgency}</span>`:''}
     </div>
-    ${p.areaDesc?`<div class="ad-chip" style="margin-bottom:12px;display:inline-block">📍 ${p.areaDesc.split(';').slice(0,3).join(' · ')}</div>`:''}
-    <div class="ad-text">${p.description||'No description.'}</div>
-    ${p.instruction?`<div class="ad-sub"><div class="ad-sub-title">Instructions</div><div class="ad-text">${p.instruction}</div></div>`:''}`;
+    ${p.areaDesc?`<div class="ad-area-row">📍 ${p.areaDesc.split(';').map(s=>s.trim()).filter(Boolean).slice(0,5).join(' · ')}</div>`:''}
+    ${p.description?`
+      <div class="ad-section">
+        <div class="ad-sub-title">Description</div>
+        <div class="ad-text">${fmtAlertText(p.description)}</div>
+      </div>`:'<div class="ad-text" style="color:var(--t3)">No description available.</div>'}
+    ${p.instruction?`
+      <div class="ad-section">
+        <div class="ad-sub-title">⚠ Instructions</div>
+        <div class="ad-text ad-instruction">${fmtAlertText(p.instruction)}</div>
+      </div>`:''}
+    ${p.senderName?`<div class="ad-sender">Issued by: ${p.senderName}</div>`:''}`;
   openModal('alertModal');
 }
 function putAlertsOnMap(){
@@ -1330,6 +1373,16 @@ function initUI(){
     };
   });
 
+  // tomorrow.io overlay buttons (toggle on/off)
+  document.querySelectorAll('.lb-overlay[data-overlay]').forEach(b=>{
+    b.onclick=()=>{
+      const wasActive = b.classList.contains('active');
+      document.querySelectorAll('.lb-overlay').forEach(x=>x.classList.remove('active'));
+      if(!wasActive){ b.classList.add('active'); setOverlay(b.dataset.overlay); }
+      else setOverlay(null);
+    };
+  });
+
   // Forecast tabs
   document.querySelectorAll('.fct').forEach(t=>{
     t.onclick=()=>{
@@ -1408,8 +1461,9 @@ function initUI(){
   segBind('sCardStyle',v=>{S.cfg.cardStyle=v;saveCfg();if(S.weather)renderWeather(S.weather);});
   segBind('sRadarColor',v=>{
     S.cfg.radarColor=v; saveCfg();
-    // tomorrow.io uses precipitation_intensity layer — color is handled server-side
-    showToast('🎨 Radar layer updated');
+    tileCache.clear();
+    if(S.frames.length) drawFrame(S.frame);
+    showToast(`🎨 Radar: ${{'1':'Original','2':'Universal','4':'Rainbow','6':'NOAA'}[v]||v}`);
   });
   id('sOpacity').addEventListener('input',e=>{
     S.cfg.opacity=+e.target.value/100;id('sOpacityVal').textContent=e.target.value+'%';
@@ -1444,13 +1498,15 @@ function initUI(){
 function renderRadarInfo(){
   const newest = S.frames.length ? new Date(S.frames[S.frames.length-1].time*1000) : null;
   const oldest = S.frames.length ? new Date(S.frames[0].time*1000) : null;
+  const overlayLabels = {'cloud_cover':'Clouds','temperature':'Temp','wind_speed':'Wind','precipitation_intensity':'Precip'};
   id('alertsBody').innerHTML=`<div class="radar-info">
     <div class="ri-title">Radar Status</div>
-    <div class="ri-stat"><span>Source</span><span>tomorrow.io</span></div>
+    <div class="ri-stat"><span>Radar</span><span>RainViewer</span></div>
+    <div class="ri-stat"><span>Overlay</span><span>${S.activeOverlay?overlayLabels[S.activeOverlay]||S.activeOverlay:'None'} ${S.activeOverlay?'(tomorrow.io)':''}</span></div>
     <div class="ri-stat"><span>Frames</span><span>${S.frames.length}/12</span></div>
     <div class="ri-stat"><span>Latest</span><span>${newest?fmtTime(newest,true):'N/A'}</span></div>
     <div class="ri-stat"><span>Oldest</span><span>${oldest?fmtTime(oldest,true):'N/A'}</span></div>
-    <div class="ri-stat"><span>Layer</span><span>Precipitation</span></div>
+    <div class="ri-stat"><span>Color</span><span>${{'1':'Original','2':'Universal','4':'Rainbow','6':'NOAA'}[S.cfg.radarColor]||'NOAA'}</span></div>
     <div class="ri-stat"><span>Opacity</span><span>${Math.round(S.cfg.opacity*100)}%</span></div>
     <button class="ri-refresh" onclick="tileCache.clear();loadRadar();showToast('↻ Radar refreshed')">↻ Refresh Radar</button>
   </div>`;
