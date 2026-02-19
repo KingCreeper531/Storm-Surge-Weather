@@ -31,7 +31,7 @@
     <a href="#" class="sni active" data-p="home"><span>⌂</span> Dashboard</a>
     <a href="#" class="sni" data-p="alerts"><span>◈</span> Alerts <em id="navAlertBadge">0</em></a>
     <a href="#" class="sni" data-p="storm-central"><span>⚡</span> Storm Central</a>
-    <a href="#" class="sni" data-p="traffic"><span>📷</span> Traffic Cams</a>
+    <a href="#" class="sni" data-p="traffic"><span>📷</span> Cameras</a>
     <a href="#" class="sni" data-p="settings"><span>◎</span> Settings</a>
   </nav>
   <div class="sidebar-bottom">
@@ -77,9 +77,6 @@
     <button class="lb" data-layer="clouds">☁ Clouds</button>
     <button class="lb" data-layer="pressure">📊 Pressure</button>
     <div class="lb-divider" aria-hidden="true"></div>
-    <button class="lb-overlay" data-overlay="cloud_cover" title="tomorrow.io clouds overlay">☁ Clouds+</button>
-    <button class="lb-overlay" data-overlay="temperature" title="tomorrow.io temperature overlay">🌡 Temp+</button>
-    <button class="lb-overlay" data-overlay="wind_speed" title="tomorrow.io wind overlay">💨 Wind+</button>
     <button class="style-btn" id="styleBtn" aria-label="Cycle map style">◑ Map Style</button>
   </div>
 
@@ -158,18 +155,12 @@
     <div class="timebar" role="toolbar" aria-label="Radar timeline">
       <button class="t-arr" id="tPrev" aria-label="Previous frame">‹</button>
       <div class="tslots" id="tSlots" role="group" aria-label="Time slots"></div>
+      <input type="range" id="tRange" min="0" max="0" value="0" aria-label="Radar timeline slider">
       <button class="t-arr" id="tNext" aria-label="Next frame">›</button>
       <button class="playbtn" id="playBtn" aria-label="Play/pause animation">▶</button>
+      <label class="quick-op">Opacity <input type="range" id="quickOpacity" min="20" max="100" value="75"></label>
     </div>
 
-    <!-- FORECAST -->
-    <div class="fcast">
-      <div class="fc-tabs" role="tablist">
-        <button class="fct active" data-ft="hourly" role="tab" id="tab-hourly" aria-selected="true" aria-controls="fcScroll">24 Hour</button>
-        <button class="fct" data-ft="daily" role="tab" id="tab-daily" aria-selected="false" aria-controls="fcScroll">7 Day</button>
-      </div>
-      <div class="fc-scroll" id="fcScroll" role="tabpanel" aria-labelledby="tab-hourly"></div>
-    </div>
   </div>
 </main>
 
@@ -250,20 +241,20 @@
   </div>
 </div>
 
-<!-- TRAFFIC CAMS MODAL -->
-<div class="modal" id="trafficModal" role="dialog" aria-modal="true" aria-label="Traffic cameras">
+<!-- CAMERAS MODAL -->
+<div class="modal" id="trafficModal" role="dialog" aria-modal="true" aria-label="Cameras">
   <div class="mbox large">
     <div class="mbox-head">
-      <div class="mbox-title">📷 Traffic Cameras</div>
+      <div class="mbox-title">📷 Cameras</div>
       <button class="mbox-x" id="tcClose" aria-label="Close">✕</button>
     </div>
     <div class="mbox-body">
       <div class="tc-search">
-        <input class="sc-input" id="tcSearch" type="text" placeholder="Search by city or state..." autocomplete="off" aria-label="Search traffic cameras">
+        <input class="sc-input" id="tcSearch" type="text" placeholder="Search city, state, or route..." autocomplete="off" aria-label="Search cameras">
         <button class="sc-submit" id="tcSearchBtn">Search</button>
       </div>
       <div id="tcGrid" class="tc-grid">
-        <div class="empty-s"><div class="es-ico">📷</div><div>Search for a city to load traffic cameras</div></div>
+        <div class="empty-s"><div class="es-ico">📷</div><div>Search for a place to open live cameras on Hazcams</div></div>
       </div>
     </div>
   </div>
@@ -375,11 +366,10 @@
         <div class="about-box">
           <div>Storm Surge Weather <strong>v10.3</strong></div>
           <div>Radar — RainViewer</div>
-          <div>Overlays — tomorrow.io</div>
-          <div>Forecast — Open-Meteo</div>
+                    <div>Forecast — WeatherNext2</div>
           <div>Alerts + NWS Reports — weather.gov</div>
           <div>Maps — Mapbox GL JS</div>
-          <div>Traffic — 511 State Systems</div>
+          <div>Cameras — Hazcams</div>
           <div>Storage — Google Cloud Storage</div>
         </div>
       </div>
