@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Storm Surge Weather</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛈</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛈%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
@@ -17,7 +17,7 @@
   <div class="sidebar-logo">
     <span class="logo-bolt">⛈</span>
     <span class="logo-name">StormSurge</span>
-    <button class="sidebar-x" id="sidebarX">✕</button>
+    <button class="sidebar-x" id="sidebarX" aria-label="Close sidebar">✕</button>
   </div>
   <div class="user-card">
     <div class="user-ava" id="userAva">SS</div>
@@ -40,7 +40,7 @@
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">v10.0 LIVE</div>
+    <div class="ver-badge">v10.3 LIVE</div>
   </div>
 </aside>
 
@@ -48,7 +48,7 @@
 <main class="main">
   <header class="topbar">
     <div class="tb-left">
-      <button class="burger" id="burger"><span></span><span></span><span></span></button>
+      <button class="burger" id="burger" aria-label="Open menu"><span></span><span></span><span></span></button>
       <div class="loc-chip">
         <div class="loc-tag">LOCATION</div>
         <div class="loc-val" id="locName">New York</div>
@@ -56,17 +56,17 @@
     </div>
     <div class="tb-mid">
       <div class="searchbox">
-        <span class="s-ico">⌕</span>
-        <input id="searchInput" type="text" placeholder="Search city or zip..." autocomplete="off" spellcheck="false">
+        <span class="s-ico" aria-hidden="true">⌕</span>
+        <input id="searchInput" type="text" placeholder="Search city or zip..." autocomplete="off" spellcheck="false" aria-label="Search location">
         <div class="s-drop" id="searchDrop"></div>
       </div>
     </div>
     <div class="tb-right">
       <div class="live-pill"><span class="live-dot"></span>LIVE</div>
       <div class="date-pill" id="datePill">—</div>
-      <button class="tb-btn" id="geoBtn" title="My location">◎</button>
-      <button class="tb-btn" id="drawBtn" title="Draw on map" data-active="false">✏</button>
-      <button class="tb-btn" id="refreshBtn" title="Refresh">↻</button>
+      <button class="tb-btn" id="geoBtn" title="My location" aria-label="Use my location">◎</button>
+      <button class="tb-btn" id="drawBtn" title="Draw on map" aria-label="Draw on map">✏</button>
+      <button class="tb-btn" id="refreshBtn" title="Refresh data" aria-label="Refresh">↻</button>
     </div>
   </header>
 
@@ -76,25 +76,24 @@
     <button class="lb" data-layer="wind">💨 Wind</button>
     <button class="lb" data-layer="clouds">☁ Clouds</button>
     <button class="lb" data-layer="pressure">📊 Pressure</button>
-    <div class="lb-divider"></div>
-    <button class="lb lb-overlay" data-overlay="cloud_cover" title="tomorrow.io clouds overlay">☁ Clouds+</button>
-    <button class="lb lb-overlay" data-overlay="temperature" title="tomorrow.io temperature overlay">🌡 Temp+</button>
-    <button class="lb lb-overlay" data-overlay="wind_speed" title="tomorrow.io wind overlay">💨 Wind+</button>
-    <div class="lb-spacer"></div>
-    <button class="lb style-btn" id="styleBtn">◑ Map Style</button>
+    <div class="lb-divider" aria-hidden="true"></div>
+    <button class="lb-overlay" data-overlay="cloud_cover" title="tomorrow.io clouds overlay">☁ Clouds+</button>
+    <button class="lb-overlay" data-overlay="temperature" title="tomorrow.io temperature overlay">🌡 Temp+</button>
+    <button class="lb-overlay" data-overlay="wind_speed" title="tomorrow.io wind overlay">💨 Wind+</button>
+    <button class="style-btn" id="styleBtn" aria-label="Cycle map style">◑ Map Style</button>
   </div>
 
   <!-- DRAW TOOLBAR (hidden by default) -->
-  <div class="draw-toolbar" id="drawToolbar">
+  <div class="draw-toolbar" id="drawToolbar" role="toolbar" aria-label="Drawing tools">
     <span class="dt-label">✏ Draw Mode</span>
-    <div class="dt-colors">
-      <button class="dc active" data-c="#f0a500" style="background:#f0a500"></button>
-      <button class="dc" data-c="#ff5c5c" style="background:#ff5c5c"></button>
-      <button class="dc" data-c="#00d4c8" style="background:#00d4c8"></button>
-      <button class="dc" data-c="#ffffff" style="background:#ffffff"></button>
-      <button class="dc" data-c="#22c55e" style="background:#22c55e"></button>
+    <div class="dt-colors" role="group" aria-label="Colour">
+      <button class="dc active" data-c="#f0a500" style="background:#f0a500" aria-label="Amber" title="Amber"></button>
+      <button class="dc" data-c="#ff5c5c" style="background:#ff5c5c" aria-label="Red" title="Red"></button>
+      <button class="dc" data-c="#00d4c8" style="background:#00d4c8" aria-label="Teal" title="Teal"></button>
+      <button class="dc" data-c="#ffffff" style="background:#ffffff" aria-label="White" title="White"></button>
+      <button class="dc" data-c="#22c55e" style="background:#22c55e" aria-label="Green" title="Green"></button>
     </div>
-    <div class="dt-sizes">
+    <div class="dt-sizes" role="group" aria-label="Size">
       <button class="ds active" data-s="3">S</button>
       <button class="ds" data-s="6">M</button>
       <button class="ds" data-s="12">L</button>
@@ -106,76 +105,76 @@
 
   <div class="mapzone" id="mapzone">
     <div id="map"></div>
-    <canvas id="radarCanvas"></canvas>
-    <canvas id="drawCanvas"></canvas>
+    <canvas id="radarCanvas" aria-hidden="true"></canvas>
+    <canvas id="drawCanvas" aria-hidden="true"></canvas>
 
     <!-- WEATHER CARD -->
-    <div class="wcard" id="wcard">
+    <div class="wcard" id="wcard" role="complementary" aria-label="Current weather">
       <div class="wc-top">
         <div>
           <div class="wc-temp" id="wcTemp">--°C</div>
           <div class="wc-loc" id="wcLoc">New York</div>
           <div class="wc-desc" id="wcDesc">—</div>
         </div>
-        <div class="wc-icon" id="wcIcon">🌡</div>
+        <div class="wc-icon" id="wcIcon" aria-hidden="true">🌡</div>
       </div>
       <div class="wc-bar"></div>
       <div class="wc-grid" id="wcGrid">
         <div class="wc-stat" id="statFeels"><div class="wcs-l">Feels Like</div><div class="wcs-v" id="wcFeels">--</div></div>
-        <div class="wc-stat" id="statHum"><div class="wcs-l">Humidity</div><div class="wcs-v" id="wcHum">--</div></div>
-        <div class="wc-stat" id="statWind"><div class="wcs-l">Wind</div><div class="wcs-v" id="wcWind">--</div></div>
-        <div class="wc-stat" id="statDir"><div class="wcs-l">Direction</div><div class="wcs-v" id="wcDir">--</div></div>
-        <div class="wc-stat" id="statRain"><div class="wcs-l">Rain</div><div class="wcs-v" id="wcRain">--</div></div>
-        <div class="wc-stat" id="statPres"><div class="wcs-l">Pressure</div><div class="wcs-v" id="wcPres">--</div></div>
+        <div class="wc-stat" id="statHum">  <div class="wcs-l">Humidity</div>  <div class="wcs-v" id="wcHum">--</div></div>
+        <div class="wc-stat" id="statWind"> <div class="wcs-l">Wind</div>      <div class="wcs-v" id="wcWind">--</div></div>
+        <div class="wc-stat" id="statDir">  <div class="wcs-l">Direction</div> <div class="wcs-v" id="wcDir">--</div></div>
+        <div class="wc-stat" id="statRain"> <div class="wcs-l">Rain</div>      <div class="wcs-v" id="wcRain">--</div></div>
+        <div class="wc-stat" id="statPres"> <div class="wcs-l">Pressure</div>  <div class="wcs-v" id="wcPres">--</div></div>
         <div class="wc-stat" id="statCloud"><div class="wcs-l">Cloud Cover</div><div class="wcs-v" id="wcCloud">--</div></div>
-        <div class="wc-stat" id="statUV"><div class="wcs-l">UV Index</div><div class="wcs-v" id="wcUV">--</div></div>
+        <div class="wc-stat" id="statUV">   <div class="wcs-l">UV Index</div>  <div class="wcs-v" id="wcUV">--</div></div>
       </div>
       <div class="wc-bar"></div>
       <div class="wc-sun" id="statSun">
-        <span>🌅</span><span id="wcSunrise">--:--</span>
-        <span>🌇</span><span id="wcSunset">--:--</span>
+        <span aria-hidden="true">🌅</span><span id="wcSunrise">--:--</span>
+        <span aria-hidden="true">🌇</span><span id="wcSunset">--:--</span>
       </div>
     </div>
 
     <!-- LEGEND -->
-    <div class="legend" id="legend">
+    <div class="legend" id="legend" aria-label="Radar legend">
       <div class="leg-title" id="legTitle">mm/h</div>
       <div class="leg-bar" id="legBar"></div>
-      <div class="leg-nums"><span>60</span><span>32</span><span>10</span><span>1</span><span>0</span></div>
+      <div class="leg-nums" aria-hidden="true"><span>60</span><span>32</span><span>10</span><span>1</span><span>0</span></div>
     </div>
 
-    <!-- MAP BTNS -->
+    <!-- MAP BUTTONS -->
     <div class="mapbtns">
-      <button id="zoomIn">＋</button>
-      <button id="zoomOut">－</button>
+      <button id="zoomIn" aria-label="Zoom in">＋</button>
+      <button id="zoomOut" aria-label="Zoom out">－</button>
     </div>
 
     <!-- CROSSHAIR -->
-    <div class="crosshair" id="crosshair">
+    <div class="crosshair" id="crosshair" aria-hidden="true">
       <div class="ch-h"></div><div class="ch-v"></div><div class="ch-ring"></div>
     </div>
 
     <!-- TIME BAR -->
-    <div class="timebar">
-      <button class="t-arr" id="tPrev">‹</button>
-      <div class="tslots" id="tSlots"></div>
-      <button class="t-arr" id="tNext">›</button>
-      <button class="playbtn" id="playBtn">▶</button>
+    <div class="timebar" role="toolbar" aria-label="Radar timeline">
+      <button class="t-arr" id="tPrev" aria-label="Previous frame">‹</button>
+      <div class="tslots" id="tSlots" role="group" aria-label="Time slots"></div>
+      <button class="t-arr" id="tNext" aria-label="Next frame">›</button>
+      <button class="playbtn" id="playBtn" aria-label="Play/pause animation">▶</button>
     </div>
 
     <!-- FORECAST -->
     <div class="fcast">
-      <div class="fc-tabs">
-        <button class="fct active" data-ft="hourly">24 Hour</button>
-        <button class="fct" data-ft="daily">7 Day</button>
+      <div class="fc-tabs" role="tablist">
+        <button class="fct active" data-ft="hourly" role="tab" id="tab-hourly" aria-selected="true" aria-controls="fcScroll">24 Hour</button>
+        <button class="fct" data-ft="daily" role="tab" id="tab-daily" aria-selected="false" aria-controls="fcScroll">7 Day</button>
       </div>
-      <div class="fc-scroll" id="fcScroll"></div>
+      <div class="fc-scroll" id="fcScroll" role="tabpanel" aria-labelledby="tab-hourly"></div>
     </div>
   </div>
 </main>
 
 <!-- RIGHT PANEL -->
-<aside class="rpanel" id="rpanel">
+<aside class="rpanel" id="rpanel" aria-label="Alerts and radar info">
   <div class="rp-head">
     <button class="rpt active" data-rt="alerts">Alerts <span class="rpt-badge danger" id="alertBadge">0</span></button>
     <button class="rpt" data-rt="info">Radar</button>
@@ -186,44 +185,44 @@
 </aside>
 
 <!-- NWS / ALERT MODAL -->
-<div class="modal" id="alertModal">
+<div class="modal" id="alertModal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
   <div class="mbox large">
     <div class="mbox-head">
       <div class="mbox-title" id="mTitle">Alert</div>
-      <button class="mbox-x" id="mClose">✕</button>
+      <button class="mbox-x" id="mClose" aria-label="Close">✕</button>
     </div>
     <div class="mbox-body" id="mBody"></div>
   </div>
 </div>
 
 <!-- STORM CENTRAL MODAL -->
-<div class="modal" id="stormCentralModal">
+<div class="modal" id="stormCentralModal" role="dialog" aria-modal="true" aria-label="Storm Central">
   <div class="mbox large">
     <div class="mbox-head">
       <div class="mbox-title">⚡ Storm Central</div>
-      <button class="mbox-x" id="scClose">✕</button>
+      <button class="mbox-x" id="scClose" aria-label="Close">✕</button>
     </div>
     <div class="mbox-body sc-body">
       <!-- Auth gate (shown when not logged in) -->
       <div id="scAuthGate">
-        <div class="sc-auth-tabs">
-          <button class="sc-at active" data-at="login">Sign In</button>
-          <button class="sc-at" data-at="register">Create Account</button>
+        <div class="sc-auth-tabs" role="tablist">
+          <button class="sc-at active" data-at="login" role="tab">Sign In</button>
+          <button class="sc-at" data-at="register" role="tab">Create Account</button>
         </div>
         <div id="scLogin" class="sc-form">
-          <input class="sc-input" id="loginEmail" type="email" placeholder="Email">
-          <input class="sc-input" id="loginPass" type="password" placeholder="Password">
+          <input class="sc-input" id="loginEmail" type="email" placeholder="Email" autocomplete="email">
+          <input class="sc-input" id="loginPass" type="password" placeholder="Password" autocomplete="current-password">
           <button class="sc-submit" id="loginBtn">Sign In</button>
-          <div class="sc-err" id="loginErr"></div>
+          <div class="sc-err" id="loginErr" role="alert" aria-live="polite"></div>
         </div>
         <div id="scRegister" class="sc-form" style="display:none">
-          <input class="sc-input" id="regName" type="text" placeholder="Display name">
-          <input class="sc-input" id="regEmail" type="email" placeholder="Email">
-          <input class="sc-input" id="regPass" type="password" placeholder="Password (min 6 chars)">
+          <input class="sc-input" id="regName" type="text" placeholder="Display name" autocomplete="username">
+          <input class="sc-input" id="regEmail" type="email" placeholder="Email" autocomplete="email">
+          <input class="sc-input" id="regPass" type="password" placeholder="Password (min 6 chars)" autocomplete="new-password">
           <button class="sc-submit" id="registerBtn">Create Account</button>
-          <div class="sc-err" id="regErr"></div>
+          <div class="sc-err" id="regErr" role="alert" aria-live="polite"></div>
         </div>
-        <div class="sc-note">Your credentials are stored locally and never sent to any server.<br>Storm Central posts are shared publicly.</div>
+        <div class="sc-note">Storm Central posts are shared publicly with all users.</div>
       </div>
       <!-- Feed (shown when logged in) -->
       <div id="scFeed" style="display:none">
@@ -232,11 +231,11 @@
           <button class="sc-signout" id="scSignout">Sign out</button>
         </div>
         <div class="sc-compose">
-          <textarea class="sc-textarea" id="scText" placeholder="Share a weather discovery... What did you observe? Include your location!"></textarea>
+          <textarea class="sc-textarea" id="scText" placeholder="Share a weather observation... What did you see? Include your location!" aria-label="Post text"></textarea>
           <div class="sc-compose-meta">
             <span class="sc-loc-tag" id="scLocTag">📍 <span id="scPostLoc">New York</span></span>
             <div class="sc-compose-btns">
-              <input type="file" id="scImgInput" accept="image/*" style="display:none">
+              <input type="file" id="scImgInput" accept="image/*" style="display:none" aria-hidden="true">
               <button class="sc-img-btn" id="scImgBtn" type="button">📷 Photo</button>
               <button class="sc-submit" id="scPostBtn">Post ⚡</button>
             </div>
@@ -252,15 +251,15 @@
 </div>
 
 <!-- TRAFFIC CAMS MODAL -->
-<div class="modal" id="trafficModal">
+<div class="modal" id="trafficModal" role="dialog" aria-modal="true" aria-label="Traffic cameras">
   <div class="mbox large">
     <div class="mbox-head">
       <div class="mbox-title">📷 Traffic Cameras</div>
-      <button class="mbox-x" id="tcClose">✕</button>
+      <button class="mbox-x" id="tcClose" aria-label="Close">✕</button>
     </div>
     <div class="mbox-body">
       <div class="tc-search">
-        <input class="sc-input" id="tcSearch" type="text" placeholder="Search by city or state...">
+        <input class="sc-input" id="tcSearch" type="text" placeholder="Search by city or state..." autocomplete="off" aria-label="Search traffic cameras">
         <button class="sc-submit" id="tcSearchBtn">Search</button>
       </div>
       <div id="tcGrid" class="tc-grid">
@@ -271,31 +270,31 @@
 </div>
 
 <!-- SETTINGS MODAL -->
-<div class="modal" id="settingsModal">
+<div class="modal" id="settingsModal" role="dialog" aria-modal="true" aria-label="Settings">
   <div class="mbox wide">
     <div class="mbox-head">
       <div class="mbox-title">⚙ Settings</div>
-      <button class="mbox-x" id="sClose">✕</button>
+      <button class="mbox-x" id="sClose" aria-label="Close settings">✕</button>
     </div>
     <div class="mbox-body">
 
       <div class="s-sec">
         <div class="s-sec-title">Units</div>
         <div class="s-row"><span>Temperature</span>
-          <div class="seg" id="sTempUnit">
+          <div class="seg" id="sTempUnit" role="group" aria-label="Temperature unit">
             <button class="sb active" data-v="C">°C</button>
             <button class="sb" data-v="F">°F</button>
           </div>
         </div>
         <div class="s-row"><span>Wind Speed</span>
-          <div class="seg" id="sWindUnit">
+          <div class="seg" id="sWindUnit" role="group" aria-label="Wind speed unit">
             <button class="sb active" data-v="ms">m/s</button>
             <button class="sb" data-v="kmh">km/h</button>
             <button class="sb" data-v="mph">mph</button>
           </div>
         </div>
         <div class="s-row"><span>Time Format</span>
-          <div class="seg" id="sTimeFormat">
+          <div class="seg" id="sTimeFormat" role="group" aria-label="Time format">
             <button class="sb active" data-v="12">12h</button>
             <button class="sb" data-v="24">24h</button>
           </div>
@@ -306,19 +305,19 @@
         <div class="s-sec-title">Radar</div>
         <div class="s-row"><span>Opacity</span>
           <div class="slider-row">
-            <input type="range" id="sOpacity" min="20" max="100" value="75">
+            <input type="range" id="sOpacity" min="20" max="100" value="75" aria-label="Radar opacity">
             <span id="sOpacityVal">75%</span>
           </div>
         </div>
         <div class="s-row"><span>Animation Speed</span>
-          <div class="seg" id="sSpeed">
+          <div class="seg" id="sSpeed" role="group" aria-label="Animation speed">
             <button class="sb" data-v="300">Fast</button>
             <button class="sb active" data-v="600">Normal</button>
             <button class="sb" data-v="1000">Slow</button>
           </div>
         </div>
         <div class="s-row"><span>Color Scheme</span>
-          <div class="seg" id="sRadarColor">
+          <div class="seg" id="sRadarColor" role="group" aria-label="Radar color scheme">
             <button class="sb" data-v="1">Original</button>
             <button class="sb" data-v="2">Universal</button>
             <button class="sb" data-v="4">Rainbow</button>
@@ -331,7 +330,7 @@
       </div>
 
       <div class="s-sec">
-        <div class="s-sec-title">Map & Interaction</div>
+        <div class="s-sec-title">Map &amp; Interaction</div>
         <div class="s-row"><span>Show Alert Zones</span>
           <label class="tog"><input type="checkbox" id="sAlertZones" checked><span class="tog-t"></span></label>
         </div>
@@ -342,7 +341,7 @@
           <label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label>
         </div>
         <div class="s-row"><span>Weather Card Position</span>
-          <div class="seg" id="sCardPos">
+          <div class="seg" id="sCardPos" role="group" aria-label="Card position">
             <button class="sb active" data-v="top-left">↖ TL</button>
             <button class="sb" data-v="top-right">↗ TR</button>
             <button class="sb" data-v="bottom-left">↙ BL</button>
@@ -353,7 +352,7 @@
       <div class="s-sec">
         <div class="s-sec-title">Weather Card — Info Display</div>
         <div class="s-row"><span>Card Style</span>
-          <div class="seg" id="sCardStyle">
+          <div class="seg" id="sCardStyle" role="group" aria-label="Card style">
             <button class="sb active" data-v="full">Full</button>
             <button class="sb" data-v="compact">Compact</button>
             <button class="sb" data-v="minimal">Minimal</button>
@@ -374,9 +373,10 @@
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div>Storm Surge Weather <strong>v10.2</strong></div>
-          <div>Radar — tomorrow.io</div>
-          <div>Forecast — WeatherNext 2 / Open-Meteo</div>
+          <div>Storm Surge Weather <strong>v10.3</strong></div>
+          <div>Radar — RainViewer</div>
+          <div>Overlays — tomorrow.io</div>
+          <div>Forecast — Open-Meteo</div>
           <div>Alerts + NWS Reports — weather.gov</div>
           <div>Maps — Mapbox GL JS</div>
           <div>Traffic — 511 State Systems</div>
@@ -389,8 +389,8 @@
 </div>
 
 <!-- TOAST -->
-<div class="toast" id="toast"></div>
-<div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading...</div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="loader" id="loader" role="status" aria-label="Loading"><div class="spin"></div><div class="load-txt">Loading...</div></div>
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
