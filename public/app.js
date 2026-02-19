@@ -41,9 +41,7 @@ const S = {
   }
 };
 
-const API_URL = window.location.hostname === 'localhost'
-  ? 'http://localhost:3001'
-  : 'https://storm-surge-api.onrender.com';
+const API_URL = (window.SS_API_URL || window.location.origin || '').replace(/\/$/, '');
 
 function apiHeaders(auth) {
   const h = { 'Content-Type': 'application/json' };
@@ -161,11 +159,14 @@ function initMap() {
       showMapError('Map error — check your Mapbox token');
       loadWeather(); loadAlerts();
     });
-    // Redraw from cache on every pan/rotate frame
+    // Keep radar visually attached during map movement by drawing from cached tiles immediately.
     ['move','rotate','pitch'].forEach(function(ev){
-      S.map.on(ev,function(){ if(S.frames.length&&!S.drawMode) scheduleRadarDraw(); });
+      S.map.on(ev,function(){
+        if(!S.frames.length||S.drawMode) return;
+        drawCachedFrame();
+      });
     });
-    // After movement ends: clear cache, refetch, redraw
+    // After movement ends: refresh tile cache for newly visible area.
     ['moveend','zoomend'].forEach(function(ev){
       S.map.on(ev,function(){
         if(!S.frames.length||S.drawMode) return;
@@ -405,6 +406,22 @@ function loadTile(src){
   return p;
 }
 
+function drawCachedFrame(){
+  if(!S.frames[S.frame]||!S.map||!S.ctx) return;
+  var project=S.map.project.bind(S.map);
+  S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
+  S.ctx.save();
+  S.ctx.globalAlpha=S.cfg.opacity;
+  drawFrameQuick(S.frame, project);
+  S.ctx.restore();
+  if(S.compareMode && S.frames.length>1){
+    S.ctx.save(); S.ctx.globalAlpha=0.28;
+    var prev=(S.frame-1+S.frames.length)%S.frames.length;
+    drawFrameQuick(prev, project);
+    S.ctx.restore();
+  }
+}
+
 function scheduleRadarDraw(){
   if(_rafPending) return;
   _rafPending=true;
@@ -600,7 +617,9 @@ function renderWeather(d){
 }
 
 function renderForecast(d){
-  var c=$('fcScroll'); c.innerHTML='';
+  var c=$('fcScroll');
+  if(!c) return;
+  c.innerHTML='';
   if(S.fcMode==='hourly'){
     var nowH=new Date().getHours();
     for(var i=0;i<Math.min(24,d.hourly.temperature_2m.length);i++){
