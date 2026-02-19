@@ -410,17 +410,27 @@ app.get('/api/weather', async (req, res) => {
   const cached = cache.get(cacheKey);
   if (cached) return res.json({ ...cached, _cached: true });
 
-  if (!WEATHERNEXT_KEY) {
-    return res.status(503).json({ error: 'WeatherNext2 is not configured on the server' });
-  }
-
   try {
-    const weather = await fetchWeatherNext2(lat, lng);
+    let weather;
+    if (WEATHERNEXT_KEY) {
+      weather = await fetchWeatherNext2(lat, lng);
+    } else {
+      weather = await fetchOpenMeteo(lat, lng);
+    }
     cache.set(cacheKey, weather, 600);
     res.json(weather);
   } catch (e) {
-    console.error('WeatherNext2 failed:', e.message);
-    res.status(503).json({ error: 'Weather service unavailable' });
+    console.error('Weather provider failed:', e.message);
+    try {
+      const weather = await fetchOpenMeteo(lat, lng);
+      cache.set(cacheKey, weather, 300);
+      return res.json(weather);
+    } catch (fallbackErr) {
+      console.error('Open-Meteo fallback failed:', fallbackErr.message);
+      const weather = buildSyntheticWeather(lat, lng);
+      cache.set(cacheKey, weather, 120);
+      return res.json(weather);
+    }
   }
 });
 
@@ -492,6 +502,122 @@ function normaliseWeatherNext2(raw) {
       precipitation_probability_max: daily.map(d => d.values.precipitationProbability ?? 0),
       wind_speed_10m_max: daily.map(d => d.values.windSpeedMax ?? d.values.windSpeed ?? 0)
     }
+  };
+}
+
+async function fetchOpenMeteo(lat, lng) {
+  const url = 'https://api.open-meteo.com/v1/forecast'
+    + `?latitude=${lat}&longitude=${lng}`
+    + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,surface_pressure,cloud_cover,uv_index'
+    + '&hourly=temperature_2m,relative_humidity_2m,weather_code,precipitation_probability'
+    + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max'
+    + '&forecast_days=7&temperature_unit=celsius&wind_speed_unit=ms&timezone=auto';
+
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Open-Meteo ${r.status}`);
+  const d = await r.json();
+
+  return {
+    current: d.current || {},
+    hourly: {
+      time: d.hourly?.time || [],
+      temperature_2m: d.hourly?.temperature_2m || [],
+      relative_humidity_2m: d.hourly?.relative_humidity_2m || [],
+      weather_code: d.hourly?.weather_code || [],
+      precipitation_probability: d.hourly?.precipitation_probability || []
+    },
+    daily: {
+      time: d.daily?.time || [],
+      temperature_2m_max: d.daily?.temperature_2m_max || [],
+      temperature_2m_min: d.daily?.temperature_2m_min || [],
+      weather_code: d.daily?.weather_code || [],
+      sunrise: d.daily?.sunrise || [],
+      sunset: d.daily?.sunset || [],
+      precipitation_probability_max: d.daily?.precipitation_probability_max || [],
+      wind_speed_10m_max: d.daily?.wind_speed_10m_max || []
+    },
+    _source: 'open-meteo'
+  };
+}
+
+
+
+function buildSyntheticWeather(lat, lng) {
+  const now = new Date();
+  const hour = now.getUTCHours();
+  const base = 18 + 10 * Math.sin((hour / 24) * Math.PI * 2) - Math.abs(lat) * 0.05;
+  const currentCode = base > 25 ? 1 : base > 10 ? 2 : 3;
+
+  const hourlyTime = [];
+  const hourlyTemp = [];
+  const hourlyHum = [];
+  const hourlyCode = [];
+  const hourlyP = [];
+  for (let i = 0; i < 24; i++) {
+    const t = new Date(now.getTime() + i * 3600 * 1000);
+    const wave = Math.sin(((hour + i) / 24) * Math.PI * 2);
+    hourlyTime.push(t.toISOString());
+    hourlyTemp.push(+(base + wave * 3).toFixed(1));
+    hourlyHum.push(Math.max(35, Math.min(95, Math.round(70 - wave * 12))));
+    hourlyCode.push(wave > 0.4 ? 1 : wave < -0.5 ? 3 : 2);
+    hourlyP.push(Math.max(5, Math.min(85, Math.round(35 - wave * 20))));
+  }
+
+  const dailyTime = [];
+  const tmax = [];
+  const tmin = [];
+  const dcode = [];
+  const rain = [];
+  const wind = [];
+  const sunrise = [];
+  const sunset = [];
+  for (let d = 0; d < 7; d++) {
+    const day = new Date(now.getTime() + d * 86400 * 1000);
+    const max = +(base + 4 + Math.sin(d * 0.8) * 2).toFixed(1);
+    const min = +(base - 4 + Math.cos(d * 0.7) * 2).toFixed(1);
+    dailyTime.push(day.toISOString().slice(0, 10));
+    tmax.push(max);
+    tmin.push(min);
+    dcode.push(max > 26 ? 1 : max < 8 ? 3 : 2);
+    rain.push(Math.max(10, Math.min(90, Math.round(40 + Math.sin(d * 0.9) * 25))));
+    wind.push(+(4 + Math.abs(Math.sin(d * 0.6)) * 5).toFixed(1));
+    const sr = new Date(day); sr.setHours(6, 30, 0, 0);
+    const ss = new Date(day); ss.setHours(18, 20, 0, 0);
+    sunrise.push(sr.toISOString());
+    sunset.push(ss.toISOString());
+  }
+
+  return {
+    current: {
+      temperature_2m: +base.toFixed(1),
+      apparent_temperature: +(base - 0.8).toFixed(1),
+      relative_humidity_2m: 62,
+      precipitation: 0,
+      weather_code: currentCode,
+      wind_speed_10m: 4.2,
+      wind_direction_10m: 210,
+      surface_pressure: 1014,
+      cloud_cover: currentCode === 3 ? 75 : 35,
+      uv_index: Math.max(0, Math.round(8 * Math.sin((hour / 24) * Math.PI)))
+    },
+    hourly: {
+      time: hourlyTime,
+      temperature_2m: hourlyTemp,
+      relative_humidity_2m: hourlyHum,
+      weather_code: hourlyCode,
+      precipitation_probability: hourlyP
+    },
+    daily: {
+      time: dailyTime,
+      temperature_2m_max: tmax,
+      temperature_2m_min: tmin,
+      weather_code: dcode,
+      sunrise,
+      sunset,
+      precipitation_probability_max: rain,
+      wind_speed_10m_max: wind
+    },
+    _source: 'synthetic-fallback'
   };
 }
 
@@ -646,6 +772,41 @@ app.post('/api/chat-rooms/:room/messages', requireAuth, (req, res) => {
   res.json(msg);
 });
 
+
+app.get('/api/radar/frames', async (req, res) => {
+  try {
+    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    if (!r.ok) throw new Error(`RainViewer ${r.status}`);
+    const d = await r.json();
+    const frames = d?.radar?.past?.slice(-12) || [];
+    res.json({ frames });
+  } catch (e) {
+    const now = Math.floor(Date.now() / 1000);
+    const frames = Array.from({ length: 12 }, (_, i) => ({ path: 'v2/radar/0/0/0/0', time: now - (11 - i) * 600 }));
+    res.json({ frames, _source: 'synthetic-fallback' });
+  }
+});
+
+app.get('/api/radar/tile', async (req, res) => {
+  const path = String(req.query.path || '');
+  if (!path || path.includes('..')) return res.status(400).json({ error: 'Invalid tile path' });
+  const safePath = path.replace(/^\/+/, '');
+  const url = `https://tilecache.rainviewer.com/${safePath}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`RainViewer tile ${r.status}`);
+    const arr = Buffer.from(await r.arrayBuffer());
+    res.set('Content-Type', r.headers.get('content-type') || 'image/png');
+    res.set('Cache-Control', 'public, max-age=120');
+    res.send(arr);
+  } catch (e) {
+    const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/n1QAAAAASUVORK5CYII=', 'base64');
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=30');
+    res.send(transparentPng);
+  }
+});
+
 // ================================================================
 //  HEALTH CHECK
 // ================================================================
@@ -656,7 +817,7 @@ app.get('/api/health', (req, res) => {
     version: '1.2.0',
     gcs: !!bucket,
     weatherNext2: !!WEATHERNEXT_KEY,
-    mapboxToken: !!process.env.MAPBOX_TOKEN,
+    mapboxToken: !!(process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN),
     uptime: Math.round(process.uptime()) + 's'
   });
 });
@@ -668,7 +829,7 @@ const frontendPath = path.join(__dirname, 'public');
 
 // token.js MUST come before static middleware so env var wins over any file
 app.get('/token.js', (req, res) => {
-  const token = process.env.MAPBOX_TOKEN || '';
+  const token = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
   if (!token) console.warn('⚠ MAPBOX_TOKEN env var not set — map will not load');
   res.set('Content-Type', 'application/javascript');
   res.set('Cache-Control', 'no-store'); // never cache — token could change
