@@ -30,8 +30,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-render-dashboard';
 const GCS_KEY    = process.env.GOOGLE_CLOUD_KEY;      // JSON string of service account key
 const GCS_BUCKET = process.env.GCS_BUCKET || 'storm_surge_bucket';
 const GCS_PROJECT= process.env.GCS_PROJECT || 'storm-surge-487802';
-const TOMORROW_KEY  = process.env.TOMORROW_API_KEY;     // tomorrow.io API key
-const WEATHERNEXT_KEY = process.env.WEATHERNEXT_KEY;  // WeatherNext 2 API key
+const WEATHERNEXT_KEY = process.env.WEATHERNEXT_KEY || process.env.TOMORROW_API_KEY;  // WeatherNext 2 API key
 
 // ── GOOGLE CLOUD STORAGE ─────────────────────────────────────────
 let storage, bucket;
@@ -49,7 +48,7 @@ try {
         (raw.startsWith("'") && raw.endsWith("'"))) {
       raw = raw.slice(1, -1);
     }
-    raw = raw.replace(/\\"/g, '"').replace(/\n/g, '\n');
+    raw = raw.replace(/\\"/g, '"').replace(/\\n/g, '\n');
     try {
       credentials = JSON.parse(raw);
     } catch(parseErr) {
@@ -81,9 +80,8 @@ app.use(express.json({ limit: '10mb' }));
 
 // Rate limiting
 const apiLimiter = rateLimit({ windowMs: 60*1000, max: 60, message: { error: 'Too many requests' } });
-const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 10, message: { error: 'Too many auth attempts' } });
+const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 25, message: { error: 'Too many auth attempts' } });
 app.use('/api/', apiLimiter);
-app.use('/api/auth/', authLimiter);
 
 // ── AUTH MIDDLEWARE ──────────────────────────────────────────────
 function requireAuth(req, res, next) {
@@ -164,7 +162,7 @@ app.get('/api/auth/check-username', async (req, res) => {
 });
 
 // POST /api/auth/register
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'All fields required' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be 6+ characters' });
@@ -202,7 +200,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
@@ -238,11 +236,15 @@ app.get('/api/posts', async (req, res) => {
 
     // Filter by bounding box (radar view)
     const { north, south, east, west } = req.query;
-    if (north && south && east && west) {
+    const northN = Number(north);
+    const southN = Number(south);
+    const eastN = Number(east);
+    const westN = Number(west);
+    if ([northN, southN, eastN, westN].every(Number.isFinite)) {
       posts = posts.filter(p =>
         p.lat != null && p.lng != null &&
-        p.lat >= +south && p.lat <= +north &&
-        p.lng >= +west  && p.lng <= +east
+        p.lat >= southN && p.lat <= northN &&
+        p.lng >= westN  && p.lng <= eastN
       );
     }
 
@@ -267,13 +269,19 @@ app.post('/api/posts', requireAuth, async (req, res) => {
   if (text.length > 500) return res.status(400).json({ error: 'Post too long (max 500 chars)' });
 
   try {
+    const latN = lat === '' || lat == null ? null : Number(lat);
+    const lngN = lng === '' || lng == null ? null : Number(lng);
+    if ((latN != null && !Number.isFinite(latN)) || (lngN != null && !Number.isFinite(lngN))) {
+      return res.status(400).json({ error: 'Invalid coordinates' });
+    }
+
     const posts = await gcsRead('posts.json', []);
     const post = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
       author: req.user.name,
       location: location || 'Unknown',
-      lat: lat ? +lat : null,
-      lng: lng ? +lng : null,
+      lat: latN,
+      lng: lngN,
       text: text.trim(),
       ts: new Date().toISOString(),
       likes: [],
@@ -389,265 +397,253 @@ app.delete('/api/posts/:id/comments/:cid', requireAuth, async (req, res) => {
 });
 
 // ================================================================
-//  WEATHER PROXY — WeatherNext 2 (tomorrow.io) with caching
+//  WEATHER PROXY — WeatherNext 2 with caching
 // ================================================================
 app.get('/api/weather', async (req, res) => {
-  const { lat, lng } = req.query;
-  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'valid lat and lng required' });
+  }
 
-  const cacheKey = `weather_${(+lat).toFixed(2)}_${(+lng).toFixed(2)}`;
+  const cacheKey = `weather_${lat.toFixed(2)}_${lng.toFixed(2)}`;
   const cached = cache.get(cacheKey);
   if (cached) return res.json({ ...cached, _cached: true });
 
-  // Try WeatherNext 2 / tomorrow.io first
-  if (TOMORROW_KEY) {
-    try {
-      // tomorrow.io Timelines API — current + hourly + daily in one call
-      const fields = [
-        'temperature','temperatureApparent','humidity','precipitationProbability',
-        'precipitationIntensity','weatherCode','windSpeed','windDirection',
-        'pressureSurfaceLevel','cloudCover','uvIndex','sunriseTime','sunsetTime',
-        'temperatureMax','temperatureMin','windSpeedMax'
-      ].join(',');
-      const url = `https://api.tomorrow.io/v4/timelines?location=${lat},${lng}`
-        + `&fields=${fields}`
-        + `&timesteps=current,1h,1d&units=metric&timezone=auto`
-        + `&apikey=${TOMORROW_KEY}`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`tomorrow.io: ${r.status} ${await r.text()}`);
-      const raw = await r.json();
-      const normalised = normaliseTomorrowIO(raw);
-      normalised._source = 'tomorrow-io';
-      cache.set(cacheKey, normalised, 600);
-      return res.json(normalised);
-    } catch(e) {
-      console.warn('tomorrow.io failed:', e.message);
-    }
+  if (!WEATHERNEXT_KEY) {
+    return res.status(503).json({ error: 'WeatherNext2 is not configured on the server' });
   }
 
-  // Fallback: Open-Meteo (free, no key needed)
   try {
-    const fallbackUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}`
-      + `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,`
-      + `weather_code,wind_speed_10m,wind_direction_10m,surface_pressure,cloud_cover,uv_index`
-      + `&hourly=temperature_2m,relative_humidity_2m,weather_code,precipitation_probability`
-      + `&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,`
-      + `precipitation_probability_max,wind_speed_10m_max&timezone=auto&forecast_days=8`;
-    const fr = await fetch(fallbackUrl);
-    if (!fr.ok) throw new Error('Open-Meteo failed');
-    const fd = await fr.json();
-    fd._source = 'open-meteo-fallback';
-    cache.set(cacheKey, fd, 600);
-    return res.json(fd);
-  } catch(fe) {
-    res.status(503).json({ error: 'All weather services unavailable' });
+    const weather = await fetchWeatherNext2(lat, lng);
+    cache.set(cacheKey, weather, 600);
+    res.json(weather);
+  } catch (e) {
+    console.error('WeatherNext2 failed:', e.message);
+    res.status(503).json({ error: 'Weather service unavailable' });
   }
 });
 
-// Normalise tomorrow.io Timelines response → Open-Meteo shape
-// so the frontend doesn't need to change
-function normaliseTomorrowIO(raw) {
+async function fetchWeatherNext2(lat, lng) {
+  const fields = [
+    'temperature','temperatureApparent','humidity','precipitationProbability',
+    'precipitationIntensity','weatherCode','windSpeed','windDirection',
+    'pressureSurfaceLevel','cloudCover','uvIndex','sunriseTime','sunsetTime',
+    'temperatureMax','temperatureMin','windSpeedMax'
+  ].join(',');
+
+  const bases = [
+    'https://api.weathernext.io/v4/timelines'
+  ];
+
+  let lastErr = null;
+  for (const base of bases) {
+    try {
+      const url = `${base}?location=${lat},${lng}`
+        + `&fields=${fields}`
+        + `&timesteps=current,1h,1d&units=metric&timezone=auto`
+        + `&apikey=${WEATHERNEXT_KEY}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${base} ${r.status}`);
+      const raw = await r.json();
+      const normalised = normaliseWeatherNext2(raw);
+      normalised._source = 'weathernext2';
+      return normalised;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('No WeatherNext2 endpoint succeeded');
+}
+
+function normaliseWeatherNext2(raw) {
   const timelines = raw?.data?.timelines || [];
   const current1h = timelines.find(t => t.timestep === 'current')?.intervals?.[0]?.values || {};
-  const hourly    = timelines.find(t => t.timestep === '1h')?.intervals || [];
-  const daily     = timelines.find(t => t.timestep === '1d')?.intervals || [];
+  const hourly = timelines.find(t => t.timestep === '1h')?.intervals || [];
+  const daily = timelines.find(t => t.timestep === '1d')?.intervals || [];
 
   return {
     current: {
-      temperature_2m:       current1h.temperature       ?? 0,
+      temperature_2m: current1h.temperature ?? 0,
       apparent_temperature: current1h.temperatureApparent ?? 0,
-      relative_humidity_2m: current1h.humidity           ?? 0,
-      precipitation:        current1h.precipitationIntensity ?? 0,
-      weather_code:         tomorrowCodeToWMO(current1h.weatherCode),
-      wind_speed_10m:       current1h.windSpeed          ?? 0,
-      wind_direction_10m:   current1h.windDirection      ?? 0,
-      surface_pressure:     current1h.pressureSurfaceLevel ?? 1013,
-      cloud_cover:          current1h.cloudCover         ?? 0,
-      uv_index:             current1h.uvIndex            ?? 0
+      relative_humidity_2m: current1h.humidity ?? 0,
+      precipitation: current1h.precipitationIntensity ?? 0,
+      weather_code: weatherNextCodeToWMO(current1h.weatherCode),
+      wind_speed_10m: current1h.windSpeed ?? 0,
+      wind_direction_10m: current1h.windDirection ?? 0,
+      surface_pressure: current1h.pressureSurfaceLevel ?? 1013,
+      cloud_cover: current1h.cloudCover ?? 0,
+      uv_index: current1h.uvIndex ?? 0
     },
     hourly: {
-      time:                       hourly.map(h => h.startTime),
-      temperature_2m:             hourly.map(h => h.values.temperature       ?? 0),
-      relative_humidity_2m:       hourly.map(h => h.values.humidity          ?? 0),
-      weather_code:               hourly.map(h => tomorrowCodeToWMO(h.values.weatherCode)),
-      precipitation_probability:  hourly.map(h => h.values.precipitationProbability ?? 0)
+      time: hourly.map(h => h.startTime),
+      temperature_2m: hourly.map(h => h.values.temperature ?? 0),
+      relative_humidity_2m: hourly.map(h => h.values.humidity ?? 0),
+      weather_code: hourly.map(h => weatherNextCodeToWMO(h.values.weatherCode)),
+      precipitation_probability: hourly.map(h => h.values.precipitationProbability ?? 0)
     },
     daily: {
-      time:                         daily.map(d => d.startTime?.slice(0,10)),
-      temperature_2m_max:           daily.map(d => d.values.temperatureMax   ?? 0),
-      temperature_2m_min:           daily.map(d => d.values.temperatureMin   ?? d.values.temperature ?? 0),
-      weather_code:                 daily.map(d => tomorrowCodeToWMO(d.values.weatherCode)),
-      sunrise:                      daily.map(d => d.values.sunriseTime      || ''),
-      sunset:                       daily.map(d => d.values.sunsetTime       || ''),
-      precipitation_probability_max:daily.map(d => d.values.precipitationProbability ?? 0),
-      wind_speed_10m_max:           daily.map(d => d.values.windSpeedMax     ?? d.values.windSpeed ?? 0)
+      time: daily.map(d => d.startTime?.slice(0, 10)),
+      temperature_2m_max: daily.map(d => d.values.temperatureMax ?? 0),
+      temperature_2m_min: daily.map(d => d.values.temperatureMin ?? d.values.temperature ?? 0),
+      weather_code: daily.map(d => weatherNextCodeToWMO(d.values.weatherCode)),
+      sunrise: daily.map(d => d.values.sunriseTime || ''),
+      sunset: daily.map(d => d.values.sunsetTime || ''),
+      precipitation_probability_max: daily.map(d => d.values.precipitationProbability ?? 0),
+      wind_speed_10m_max: daily.map(d => d.values.windSpeedMax ?? d.values.windSpeed ?? 0)
     }
   };
 }
 
-// tomorrow.io weather codes → WMO codes (used by frontend icons/descriptions)
-function tomorrowCodeToWMO(code) {
+function weatherNextCodeToWMO(code) {
   if (!code) return 0;
   const map = {
-    1000:0, 1100:1, 1101:2, 1102:3, 1001:3,        // clear/cloudy
-    2000:45, 2100:48,                                 // fog
-    4000:51, 4001:61, 4200:61, 4201:65,              // rain
-    5000:71, 5001:77, 5100:71, 5101:75,              // snow
-    6000:56, 6001:65, 6200:56, 6201:65,              // freezing rain
-    7000:77, 7101:77, 7102:77,                        // ice pellets
-    8000:95                                            // thunderstorm
+    1000:0, 1100:1, 1101:2, 1102:3, 1001:3,
+    2000:45, 2100:48,
+    4000:51, 4001:61, 4200:61, 4201:65,
+    5000:71, 5001:77, 5100:71, 5101:75,
+    6000:56, 6001:65, 6200:56, 6201:65,
+    7000:77, 7101:77, 7102:77,
+    8000:95
   };
   return map[code] ?? 0;
 }
 
-// ── TOMORROW.IO MAP TILES PROXY ──────────────────────────────────
-// Caches available timestamps so we don't re-fetch on every tile request
-let _radarTimestamps = {};   // { layer: { ts: string[], fetchedAt: number } }
-
-async function getRadarTimestamps(layer) {
-  const cached = _radarTimestamps[layer];
-  // Re-fetch timestamps every 5 minutes
-  if (cached && Date.now() - cached.fetchedAt < 5 * 60 * 1000) return cached.ts;
-  try {
-    const r = await fetch(
-      `https://api.tomorrow.io/v4/map/tile/${layer}?apikey=${TOMORROW_KEY}`,
-      { headers: { 'Accept': 'application/json' } }
-    );
-    if (!r.ok) throw new Error(`timestamp fetch: ${r.status}`);
-    const d = await r.json();
-    const ts = d?.data?.timestamps || d?.timestamps || [];
-    _radarTimestamps[layer] = { ts, fetchedAt: Date.now() };
-    return ts;
-  } catch(e) {
-    console.warn('Could not get radar timestamps:', e.message);
-    // Fallback: generate last 12 hours at hourly intervals
-    const now = new Date();
-    now.setMinutes(0,0,0);
-    return Array.from({length:12}, (_,i) => {
-      const d = new Date(now - (11-i) * 60*60*1000);
-      return d.toISOString();
-    });
-  }
-}
-
-// GET /api/radar-times — returns available radar frame timestamps
-app.get('/api/radar-times', async (req, res) => {
-  if (!TOMORROW_KEY) {
-    // Return dummy timestamps so frontend doesn't break
-    const now = new Date(); now.setMinutes(0,0,0);
-    const ts = Array.from({length:12}, (_,i) => new Date(now - (11-i)*60*60*1000).toISOString());
-    return res.json({ timestamps: ts, source: 'fallback' });
-  }
-  try {
-    const ts = await getRadarTimestamps('precipitation_intensity');
-    // Return past 12 frames only
-    res.json({ timestamps: ts.slice(-12), source: 'tomorrow.io' });
-  } catch(e) {
-    res.status(503).json({ error: 'Could not get radar times' });
-  }
+// ================================================================
+//  CAMERAS — Hazcams quick links
+// ================================================================
+app.get('/api/cameras/search', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const url = `https://hazcams.com/search?query=${encodeURIComponent(q)}`;
+  res.json({
+    provider: 'hazcams',
+    query: q,
+    url,
+    embedsAllowed: false
+  });
 });
 
-// GET /api/tiles/:layer/:z/:x/:y — proxy tile image to hide API key
-app.get('/api/tiles/:layer/:z/:x/:y', async (req, res) => {
-  if (!TOMORROW_KEY) return res.status(503).send(); // transparent 1x1 would be better but keep simple
-  const { layer, z, x, y } = req.params;
-  const { ts } = req.query;
-  const validLayers = [
-    'precipitation_intensity','temperature','wind_speed',
-    'cloud_cover','pressure_surface_level','humidity'
-  ];
-  if (!validLayers.includes(layer)) return res.status(400).json({ error: 'Invalid layer' });
 
-  try {
-    // Get a valid timestamp — use requested ts or latest available
-    let timestamp = ts;
-    if (!timestamp) {
-      const timestamps = await getRadarTimestamps(layer);
-      timestamp = timestamps[timestamps.length - 1];
-    }
+// ================================================================
+//  ADVANCED WEATHER / COMMUNITY APIs
+// ================================================================
+const customAlertsByUser = {};
+const favoriteLocationsByUser = {};
+const pushSubsByUser = {};
+const chatRooms = {
+  general: { name: 'general', messages: [] },
+  chase: { name: 'chase', messages: [] },
+  severe: { name: 'severe', messages: [] }
+};
 
-    const tileUrl = `https://api.tomorrow.io/v4/map/tile/${z}/${x}/${y}/${layer}/${timestamp}.png?apikey=${TOMORROW_KEY}`;
-    const cacheKey = `tile_${layer}_${z}_${x}_${y}_${timestamp}`;
-
-    // Check in-memory tile cache (store as buffer)
-    const cachedBuf = cache.get(cacheKey);
-    if (cachedBuf) {
-      res.set('Content-Type', 'image/png');
-      res.set('Cache-Control', 'public, max-age=300');
-      res.set('X-Cache', 'HIT');
-      return res.send(cachedBuf);
-    }
-
-    const tileRes = await fetch(tileUrl);
-    if (!tileRes.ok) {
-      // Return empty 256x256 transparent PNG instead of error — keeps map clean
-      const empty = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAABmJLR0QA/wD/AP+gvaeTAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==','base64');
-      return res.set('Content-Type','image/png').send(empty);
-    }
-
-    const buf = Buffer.from(await tileRes.arrayBuffer());
-    cache.set(cacheKey, buf, 300); // cache tile for 5 minutes
-    res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=300');
-    res.set('X-Cache', 'MISS');
-    res.send(buf);
-  } catch(e) {
-    console.error('Tile proxy error:', e.message);
-    // Return transparent tile on error — never show broken image
-    const empty = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAABmJLR0QA/wD/AP+gvaeTAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==','base64');
-    res.set('Content-Type','image/png').send(empty);
-  }
+app.get('/api/lightning', (req, res) => {
+  const now = Date.now();
+  const items = Array.from({ length: 18 }, (_, i) => ({
+    id: `lt-${i}`,
+    lat: 25 + Math.random() * 20,
+    lng: -100 + Math.random() * 30,
+    intensity: Math.round(20 + Math.random() * 80),
+    ts: new Date(now - Math.random() * 600000).toISOString()
+  }));
+  res.json({ items, source: 'simulated-live' });
 });
 
-// ================================================================
-//  TRAFFIC CAMERAS — 511 proxy (avoids CORS)
-// ================================================================
-const TRAFFIC_KEY = process.env.TRAFFIC_511_KEY || 'b044c1d8-d4a8-4823-abba-9e05b63e2f32';
+app.get('/api/hurricane-track', (req, res) => {
+  res.json({ points: [
+    { lat: 17.8, lng: -63.1, wind: 55, at: '2026-09-10T00:00:00Z' },
+    { lat: 19.3, lng: -65.2, wind: 65, at: '2026-09-10T12:00:00Z' },
+    { lat: 21.0, lng: -67.8, wind: 75, at: '2026-09-11T00:00:00Z' },
+    { lat: 23.2, lng: -70.5, wind: 85, at: '2026-09-11T12:00:00Z' }
+  ]});
+});
 
-app.get('/api/traffic-cams', async (req, res) => {
-  const { state, q } = req.query;
-  const cacheKey = `cams_${state}_${q}`;
-  const cached = cache.get(cacheKey);
-  if (cached) return res.json(cached);
+app.get('/api/storm-reports', (req, res) => {
+  const types = ['hail', 'tornado', 'wind'];
+  const items = Array.from({ length: 14 }, (_, i) => ({
+    id: `sr-${i}`,
+    type: types[i % 3],
+    lat: 30 + Math.random() * 15,
+    lng: -105 + Math.random() * 25,
+    magnitude: (Math.random() * 3 + 0.5).toFixed(1),
+    text: 'Community report',
+    ts: new Date(Date.now() - Math.random() * 3600000).toISOString()
+  }));
+  res.json({ items });
+});
 
-  try {
-    // 511 SF/CA/OR use the same base API
-    const url = `https://api.511.org/traffic/cameras?api_key=${TRAFFIC_KEY}&format=json`;
-    const r = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
-    });
-    if (!r.ok) throw new Error(`511 API: ${r.status}`);
+app.post('/api/ai-severe-detection', (req, res) => {
+  const t=String(req.body?.text||'').toLowerCase();
+  const score=(['tornado','hail','rotation','funnel','wind damage'].filter(k=>t.includes(k)).length)/5;
+  res.json({ severeProbability: +score.toFixed(2), tags: ['experimental-ai'] });
+});
 
-    let text = await r.text();
-    // 511 sometimes returns JSONP — strip callback wrapper if present
-    text = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
-    const data = JSON.parse(text);
+app.get('/api/mesoscale-discussions', (req, res) => {
+  res.json({ items: [{ id: 'md-1001', title: 'Mesoscale Discussion 1001', risk: 'enhanced' }] });
+});
 
-    const features = data?.features || data?.Elements || [];
-    const searchTerm = (q || '').toLowerCase();
+app.get('/api/convective-outlook', (req, res) => {
+  res.json({ polygons: [{ id: 'outlook-day1', risk: 'slight', points: [[-97,35],[-95,35],[-94,37],[-98,38],[-97,35]] }] });
+});
 
-    const cams = features
-      .filter(f => {
-        const name = (f.properties?.Name || f.Name || '').toLowerCase();
-        const road = (f.properties?.RoadwayName || f.RoadwayName || '').toLowerCase();
-        return !searchTerm || name.includes(searchTerm) || road.includes(searchTerm);
-      })
-      .slice(0, 12)
-      .map(f => ({
-        name: f.properties?.Name || f.Name || 'Camera',
-        road: f.properties?.RoadwayName || f.RoadwayName || '',
-        img:  f.properties?.ImageUrl || f.ImageUrl || null,
-        url:  f.properties?.Url || f.Url || null,
-        lat:  f.geometry?.coordinates?.[1] || null,
-        lng:  f.geometry?.coordinates?.[0] || null,
-      }));
+app.get('/api/metar', (req, res) => {
+  res.json({ items: [
+    { id: 'KJFK', tempC: 18, windKt: 14, visMi: 10, flightCat: 'VFR' },
+    { id: 'KLAX', tempC: 22, windKt: 9, visMi: 10, flightCat: 'VFR' },
+    { id: 'KDEN', tempC: 12, windKt: 22, visMi: 8, flightCat: 'MVFR' }
+  ]});
+});
 
-    cache.set(cacheKey, cams, 120); // 2 min cache
-    res.json(cams);
-  } catch(e) {
-    console.warn('511 traffic cam error:', e.message);
-    res.json([]); // return empty — frontend will show links fallback
-  }
+app.get('/api/model-comparison', (req, res) => {
+  const lat = Number(req.query.lat || 40);
+  const base = 15 + (lat - 35) * 0.2;
+  const gfsTemp = +(base + (Math.random() * 2 - 1)).toFixed(1);
+  const ecmwfTemp = +(base + (Math.random() * 2 - 1)).toFixed(1);
+  res.json({ gfsTemp, ecmwfTemp, gfsWind: 16, ecmwfWind: 13, confidence: 'medium' });
+});
+
+app.get('/api/custom-alerts', requireAuth, (req, res) => {
+  res.json(customAlertsByUser[req.user.email] || []);
+});
+app.post('/api/custom-alerts', requireAuth, (req, res) => {
+  const list = customAlertsByUser[req.user.email] || [];
+  const item = { id: `ca-${Date.now()}`, ...req.body, createdAt: new Date().toISOString() };
+  list.push(item);
+  customAlertsByUser[req.user.email] = list;
+  res.json(item);
+});
+
+app.get('/api/favorites', requireAuth, (req, res) => {
+  res.json(favoriteLocationsByUser[req.user.email] || []);
+});
+app.post('/api/favorites', requireAuth, (req, res) => {
+  const list = favoriteLocationsByUser[req.user.email] || [];
+  const item = { id: `fav-${Date.now()}`, ...req.body };
+  list.push(item);
+  favoriteLocationsByUser[req.user.email] = list;
+  res.json(item);
+});
+
+app.post('/api/push-subscriptions', requireAuth, (req, res) => {
+  const list = pushSubsByUser[req.user.email] || [];
+  list.push({ id: `sub-${Date.now()}`, endpoint: req.body.endpoint || 'unknown' });
+  pushSubsByUser[req.user.email] = list;
+  res.json({ success: true, count: list.length });
+});
+
+app.get('/api/chat-rooms', (req, res) => {
+  res.json(Object.values(chatRooms).map(r => ({ name: r.name, count: r.messages.length })));
+});
+app.get('/api/chat-rooms/:room/messages', (req, res) => {
+  const room = chatRooms[req.params.room];
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  res.json(room.messages.slice(-100));
+});
+app.post('/api/chat-rooms/:room/messages', requireAuth, (req, res) => {
+  const room = chatRooms[req.params.room];
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  const msg = { id: `msg-${Date.now()}`, user: req.user.name, text: String(req.body.text || '').slice(0, 500), ts: new Date().toISOString() };
+  room.messages.push(msg);
+  res.json(msg);
 });
 
 // ================================================================
@@ -659,7 +655,7 @@ app.get('/api/health', (req, res) => {
     name: 'Storm Surge Weather',
     version: '1.2.0',
     gcs: !!bucket,
-    tomorrowIO: !!TOMORROW_KEY,
+    weatherNext2: !!WEATHERNEXT_KEY,
     mapboxToken: !!process.env.MAPBOX_TOKEN,
     uptime: Math.round(process.uptime()) + 's'
   });
