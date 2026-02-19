@@ -30,8 +30,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-render-dashboard';
 const GCS_KEY    = process.env.GOOGLE_CLOUD_KEY;      // JSON string of service account key
 const GCS_BUCKET = process.env.GCS_BUCKET || 'storm_surge_bucket';
 const GCS_PROJECT= process.env.GCS_PROJECT || 'storm-surge-487802';
-const WEATHERNEXT_KEY = process.env.WEATHERNEXT_KEY || process.env.TOMORROW_API_KEY;  // WeatherNext 2 API key
-const APP_VERSION = process.env.APP_VERSION || '1.2.1';
+const WEATHERNEXT_KEY = process.env.WEATHERNEXT_KEY || process.env.WEATHERNEXT2_KEY || process.env.TOMORROW_API_KEY;  // WeatherNext 2 API key
+const APP_VERSION = process.env.APP_VERSION || process.env.RENDER_GIT_COMMIT?.slice(0, 7) || '1.2.1';
 const DEPLOY_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null;
 const DEPLOY_BRANCH = process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || null;
 

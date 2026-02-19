@@ -45,7 +45,9 @@ const API_URL = (window.SS_API_URL || window.location.origin || '').replace(/\/$
 
 
 function radarTileUrl(framePath, z, x, y, color){
-  var p = String(framePath || '').replace(/^\/+/, '');
+  var p = String(framePath || '').trim();
+  // RainViewer can return path-like values (preferred) or full URLs in some mirrors.
+  p = p.replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '');
   return API_URL+'/api/radar/tile?path='+encodeURIComponent(p+'/256/'+z+'/'+x+'/'+y+'/'+color+'/1_1.png');
 }
 
