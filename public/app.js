@@ -370,15 +370,18 @@ async function loadRadar() {
 
 async function prewarmCache() {
   if (!S.map || !S.frames.length) return;
-  const zoom   = Math.max(2, Math.min(10, Math.floor(S.map.getZoom())));
-  const bounds = S.map.getBounds();
-  const tiles  = getTiles(bounds, zoom);
-  const color  = S.cfg.radarColor || '6';
+  const z = Math.max(2, Math.min(8, Math.floor(S.map.getZoom()))); // limit to z8 for prewarm
+  const color = S.cfg.radarColor || '6';
+  const b   = S.map.getBounds();
+  const mn  = ll2t(b.getWest(), b.getNorth(), z);
+  const mx  = ll2t(b.getEast(), b.getSouth(), z);
+  const max = (1 << z) - 1;
   S.frames.forEach(frame => {
-    tiles.forEach(tile => {
-      const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
-      if (!tileCache.has(src)) loadTile(src);
-    });
+    for (let x = Math.max(0,mn.x); x <= Math.min(max,mx.x); x++)
+      for (let y = Math.max(0,mn.y); y <= Math.min(max,mx.y); y++) {
+        const src = `https://tilecache.rainviewer.com${frame.path}/256/${z}/${x}/${y}/${color}/1_1.png`;
+        if (!tileCache.has(src)) loadTile(src);
+      }
   });
 }
 
@@ -404,58 +407,62 @@ function scheduleRadarDraw() {
 
 async function drawFrame(idx) {
   if (!S.frames[idx] || !S.map || !S.ctx) return;
-  const seq   = ++_drawSeq;
-  const frame = S.frames[idx];
+  const seq    = ++_drawSeq;
+  const frame  = S.frames[idx];
+  const color  = S.cfg.radarColor || '6';
 
-  // RainViewer supports zoom 0–12. Clamp to valid range.
-  // At very low zooms use z2 tiles and scale them up to cover viewport.
-  const mapZoom = S.map.getZoom();
-  const tileZoom = Math.max(2, Math.min(12, Math.floor(mapZoom)));
-  const color = S.cfg.radarColor || '6';
+  // Clamp zoom: RainViewer tiles exist for z2–z12
+  const z = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
 
-  // Expand bounds slightly to avoid edge gaps during pan
-  const bounds  = S.map.getBounds();
-  const pad     = 0.5; // degrees padding
-  const padBounds = {
-    getNorthWest: () => ({ lng: bounds.getWest()-pad,  lat: Math.min(85, bounds.getNorth()+pad) }),
-    getSouthEast: () => ({ lng: bounds.getEast()+pad,  lat: Math.max(-85,bounds.getSouth()-pad) }),
-    getNorth: () => Math.min(85,  bounds.getNorth()+pad),
-    getSouth: () => Math.max(-85, bounds.getSouth()-pad),
-    getEast:  () => bounds.getEast()+pad,
-    getWest:  () => bounds.getWest()-pad,
-    getNorthWest: () => ({ lng: bounds.getWest()-pad, lat: Math.min(85,bounds.getNorth()+pad) }),
-    getSouthEast: () => ({ lng: bounds.getEast()+pad, lat: Math.max(-85,bounds.getSouth()-pad) }),
-  };
+  // Get viewport bounds with padding to fill edges during pan
+  const b   = S.map.getBounds();
+  const pad = 0.8;
+  const north = Math.min(85.05,  b.getNorth() + pad);
+  const south = Math.max(-85.05, b.getSouth() - pad);
+  const west  = b.getWest()  - pad;
+  const east  = b.getEast()  + pad;
 
-  const tiles = getTiles(padBounds, tileZoom);
+  // Convert to tile coordinates
+  const mn = ll2t(west,  north, z);
+  const mx = ll2t(east,  south, z);
+  const maxTile = (1 << z) - 1;
+
+  const tiles = [];
+  for (let x = Math.max(0, mn.x); x <= Math.min(maxTile, mx.x); x++)
+    for (let y = Math.max(0, mn.y); y <= Math.min(maxTile, mx.y); y++)
+      tiles.push({ x, y, z, b: t2b(x, y, z) });
+
   if (!tiles.length) return;
 
-  const loaded = await Promise.all(tiles.map(tile => {
-    const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
-    return loadTile(src).then(img => ({ tile, img }));
-  }));
+  // Fetch all tiles in parallel
+  const srcs = tiles.map(t =>
+    `https://tilecache.rainviewer.com${frame.path}/256/${t.z}/${t.x}/${t.y}/${color}/1_1.png`
+  );
+  const imgs = await Promise.all(srcs.map((src, i) =>
+    loadTile(src).then(img => ({ tile: tiles[i], img }))
+  ));
 
-  if (seq !== _drawSeq) return; // stale — newer draw in progress
+  if (seq !== _drawSeq) return; // newer draw started — abort
 
-  // Draw to offscreen canvas, blit in one shot → zero flicker
-  const offscreen = document.createElement('canvas');
-  offscreen.width  = S.canvas.width;
-  offscreen.height = S.canvas.height;
-  const octx = offscreen.getContext('2d');
+  // Composite onto offscreen canvas then blit — zero flicker
+  const off = document.createElement('canvas');
+  off.width  = S.canvas.width;
+  off.height = S.canvas.height;
+  const octx = off.getContext('2d');
   octx.globalAlpha = S.cfg.opacity;
 
-  loaded.forEach(({ tile, img }) => {
-    if (!img || !S.map) return;
-    // Re-project at draw time — map may have moved slightly during load
-    const nw = S.map.project([tile.b.west, tile.b.north]);
-    const se = S.map.project([tile.b.east, tile.b.south]);
-    const w  = Math.ceil(se.x - nw.x);
-    const h  = Math.ceil(se.y - nw.y);
-    if (w > 0 && h > 0) octx.drawImage(img, Math.floor(nw.x), Math.floor(nw.y), w, h);
+  imgs.forEach(({ tile, img }) => {
+    if (!img) return;
+    // Project tile corners to screen pixels at current map state
+    const nw = S.map.project([tile.b.west,  tile.b.north]);
+    const se = S.map.project([tile.b.east,  tile.b.south]);
+    const px = Math.round(nw.x), py = Math.round(nw.y);
+    const pw = Math.round(se.x - nw.x), ph = Math.round(se.y - nw.y);
+    if (pw > 0 && ph > 0) octx.drawImage(img, px, py, pw, ph);
   });
 
   S.ctx.clearRect(0, 0, S.canvas.width, S.canvas.height);
-  S.ctx.drawImage(offscreen, 0, 0);
+  S.ctx.drawImage(off, 0, 0);
 
   if (S.activeOverlay) drawOverlay(S.activeOverlay);
 }
@@ -494,15 +501,11 @@ function setOverlay(layer) {
 }
 
 function getTiles(bounds, z) {
+  // Simple helper used by overlay layer — takes a Mapbox LngLatBounds
   const tiles = [];
-  // Support both Mapbox LngLatBounds and our padded plain object
-  const north = typeof bounds.getNorth === 'function' ? bounds.getNorth() : bounds.getNorth?.();
-  const south = typeof bounds.getSouth === 'function' ? bounds.getSouth() : bounds.getSouth?.();
-  const east  = typeof bounds.getEast  === 'function' ? bounds.getEast()  : bounds.getEast?.();
-  const west  = typeof bounds.getWest  === 'function' ? bounds.getWest()  : bounds.getWest?.();
-  const mn = ll2t(west,  north, z);
-  const mx = ll2t(east,  south, z);
-  const max = 2**z - 1;
+  const mn = ll2t(bounds.getWest(), bounds.getNorth(), z);
+  const mx = ll2t(bounds.getEast(), bounds.getSouth(), z);
+  const max = (1 << z) - 1;
   for (let x = Math.max(0,mn.x); x <= Math.min(max,mx.x); x++)
     for (let y = Math.max(0,mn.y); y <= Math.min(max,mx.y); y++)
       tiles.push({ x, y, z, b: t2b(x,y,z) });
@@ -730,20 +733,27 @@ function openAlertModal(i){
   const onset=p.onset?new Date(p.onset):(p.sent?new Date(p.sent):null);
   const expires=p.expires?new Date(p.expires):null;
   set('mTitle',`${ico} ${p.event}`);
-  // Format NWS alert text — newlines → paragraphs, ALL CAPS headers highlighted
+  // Format NWS alert text — split on blank lines, detect ALL CAPS section headers
   function fmtAlertText(t) {
-    if (!t) return '';
-    return t.trim()
-      .split(/\n\n+/)
-      .map(para => {
-        const p = para.trim();
-        if (!p) return '';
-        // ALL CAPS line = section header
-        if (p === p.toUpperCase() && p.length < 80 && /[A-Z]/.test(p))
-          return `<div class="ad-para-head">${p}</div>`;
-        return `<p>${p.replace(/\n/g,'<br>')}</p>`;
-      })
-      .join('');
+    if (!t) return '<p style="color:var(--t3)">No details available.</p>';
+    const lines = t.trim().split('\n');
+    const paras = [];
+    let cur = [];
+    lines.forEach(line => {
+      if (line.trim() === '') {
+        if (cur.length) { paras.push(cur.join('\n')); cur = []; }
+      } else { cur.push(line); }
+    });
+    if (cur.length) paras.push(cur.join('\n'));
+    return paras.map(para => {
+      const trimmed = para.trim();
+      if (!trimmed) return '';
+      // ALL CAPS short line = NWS section header (WHAT, WHERE, WHEN, IMPACTS etc)
+      const upper = trimmed.replace(/[^A-Za-z]/g,'');
+      if (upper.length > 2 && upper === upper.toUpperCase() && trimmed.length < 100)
+        return '<div class="ad-para-head">' + trimmed + '</div>';
+      return '<p>' + trimmed.replace(/\n/g, '<br>') + '</p>';
+    }).join('');
   }
 
   id('mBody').innerHTML=`
@@ -1526,8 +1536,24 @@ function initUI(){
    ['sfSunTimes','showSunTimes'],['sfWind','showWind'],['sfRain','showRain'],
    ['sfCloud','showCloud'],['sfFeels','showFeels']
   ].forEach(([elId,key])=>{
-    const el=id(elId);if(!el)return;
-    el.addEventListener('change',e=>{S.cfg[key]=e.target.checked;saveCfg();if(S.weather)renderWeather(S.weather);});
+    const el=id(elId); if(!el)return;
+    el.addEventListener('change', e => {
+      S.cfg[key] = e.target.checked;
+      saveCfg();
+      // Immediately show/hide the row — don't wait for next weather load
+      const rowMap = {
+        showHumidity:'statHum', showPressure:'statPres', showUV:'statUV',
+        showSunTimes:'statSun', showWind:'statWind',     showRain:'statRain',
+        showCloud:'statCloud',  showFeels:'statFeels'
+      };
+      // Wind also controls direction row
+      if (key === 'showWind') {
+        const dr = id('statDir'); if(dr) dr.style.display = e.target.checked ? '' : 'none';
+      }
+      const rowEl = id(rowMap[key]);
+      if (rowEl) rowEl.style.display = e.target.checked ? '' : 'none';
+      if (S.weather) renderWeather(S.weather);
+    });
   });
 
   document.addEventListener('keydown',e=>{
