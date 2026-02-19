@@ -1,4 +1,4 @@
-/* ============/* ================================================================
+/* ================================================================
    STORM SURGE v10.0 — Complete Stylesheet
 ================================================================ */
 
@@ -942,6 +942,12 @@ a { text-decoration: none; }
   padding: 6px 10px; background: var(--bg3); border-radius: var(--r);
 }
 .ad-sender { font-size: 10px; color: var(--t3); margin-top: 14px; font-family: var(--mono); }
+.ad-para-head {
+  font-size: 10px; font-weight: 800; letter-spacing: .1em;
+  color: var(--acc); text-transform: uppercase; margin: 14px 0 4px;
+}
+.ad-text p { margin: 0 0 8px; }
+.ad-text p:last-child { margin-bottom: 0; }
 
 /* ── LAYER BAR OVERLAY BUTTONS ── */
 .lb-divider {

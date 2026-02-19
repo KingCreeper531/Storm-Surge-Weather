@@ -103,8 +103,13 @@ function initMap() {
       showMapError('Map error — check your token in token.js');
       loadWeather(); loadAlerts();
     });
-    ['move','zoom','rotate','pitch'].forEach(ev =>
+    // During pan/zoom — redraw current frame from cache (sync, no fetch)
+    ['move','rotate','pitch'].forEach(ev =>
       S.map.on(ev, () => { if (S.frames.length && !S.drawMode) scheduleRadarDraw(); })
+    );
+    // After pan/zoom ends — fetch any missing tiles for new viewport
+    ['moveend','zoomend'].forEach(ev =>
+      S.map.on(ev, () => { if (S.frames.length && !S.drawMode) { tileCache.clear(); prewarmCache(); scheduleRadarDraw(); } })
     );
     S.map.on('click', e => {
       if (S.drawMode) return;
@@ -399,19 +404,40 @@ function scheduleRadarDraw() {
 
 async function drawFrame(idx) {
   if (!S.frames[idx] || !S.map || !S.ctx) return;
-  const seq    = ++_drawSeq;
-  const frame  = S.frames[idx];
-  const zoom   = Math.max(2, Math.min(12, Math.floor(S.map.getZoom())));
-  const color  = S.cfg.radarColor || '6';
-  const tiles  = getTiles(S.map.getBounds(), zoom);
+  const seq   = ++_drawSeq;
+  const frame = S.frames[idx];
+
+  // RainViewer supports zoom 0–12. Clamp to valid range.
+  // At very low zooms use z2 tiles and scale them up to cover viewport.
+  const mapZoom = S.map.getZoom();
+  const tileZoom = Math.max(2, Math.min(12, Math.floor(mapZoom)));
+  const color = S.cfg.radarColor || '6';
+
+  // Expand bounds slightly to avoid edge gaps during pan
+  const bounds  = S.map.getBounds();
+  const pad     = 0.5; // degrees padding
+  const padBounds = {
+    getNorthWest: () => ({ lng: bounds.getWest()-pad,  lat: Math.min(85, bounds.getNorth()+pad) }),
+    getSouthEast: () => ({ lng: bounds.getEast()+pad,  lat: Math.max(-85,bounds.getSouth()-pad) }),
+    getNorth: () => Math.min(85,  bounds.getNorth()+pad),
+    getSouth: () => Math.max(-85, bounds.getSouth()-pad),
+    getEast:  () => bounds.getEast()+pad,
+    getWest:  () => bounds.getWest()-pad,
+    getNorthWest: () => ({ lng: bounds.getWest()-pad, lat: Math.min(85,bounds.getNorth()+pad) }),
+    getSouthEast: () => ({ lng: bounds.getEast()+pad, lat: Math.max(-85,bounds.getSouth()-pad) }),
+  };
+
+  const tiles = getTiles(padBounds, tileZoom);
+  if (!tiles.length) return;
 
   const loaded = await Promise.all(tiles.map(tile => {
     const src = `https://tilecache.rainviewer.com${frame.path}/256/${tile.z}/${tile.x}/${tile.y}/${color}/1_1.png`;
     return loadTile(src).then(img => ({ tile, img }));
   }));
 
-  if (seq !== _drawSeq) return;
+  if (seq !== _drawSeq) return; // stale — newer draw in progress
 
+  // Draw to offscreen canvas, blit in one shot → zero flicker
   const offscreen = document.createElement('canvas');
   offscreen.width  = S.canvas.width;
   offscreen.height = S.canvas.height;
@@ -420,16 +446,17 @@ async function drawFrame(idx) {
 
   loaded.forEach(({ tile, img }) => {
     if (!img || !S.map) return;
+    // Re-project at draw time — map may have moved slightly during load
     const nw = S.map.project([tile.b.west, tile.b.north]);
     const se = S.map.project([tile.b.east, tile.b.south]);
-    const w  = se.x - nw.x, h = se.y - nw.y;
-    if (w > 0 && h > 0) octx.drawImage(img, nw.x, nw.y, w, h);
+    const w  = Math.ceil(se.x - nw.x);
+    const h  = Math.ceil(se.y - nw.y);
+    if (w > 0 && h > 0) octx.drawImage(img, Math.floor(nw.x), Math.floor(nw.y), w, h);
   });
 
   S.ctx.clearRect(0, 0, S.canvas.width, S.canvas.height);
   S.ctx.drawImage(offscreen, 0, 0);
 
-  // Draw tomorrow.io overlay layer on top if active
   if (S.activeOverlay) drawOverlay(S.activeOverlay);
 }
 
@@ -467,11 +494,18 @@ function setOverlay(layer) {
 }
 
 function getTiles(bounds, z) {
-  const tiles=[], nw=bounds.getNorthWest(), se=bounds.getSouthEast();
-  const mn=ll2t(nw.lng,nw.lat,z), mx=ll2t(se.lng,se.lat,z), max=2**z-1;
-  for (let x=Math.max(0,mn.x);x<=Math.min(max,mx.x);x++)
-    for (let y=Math.max(0,mn.y);y<=Math.min(max,mx.y);y++)
-      tiles.push({x,y,z,b:t2b(x,y,z)});
+  const tiles = [];
+  // Support both Mapbox LngLatBounds and our padded plain object
+  const north = typeof bounds.getNorth === 'function' ? bounds.getNorth() : bounds.getNorth?.();
+  const south = typeof bounds.getSouth === 'function' ? bounds.getSouth() : bounds.getSouth?.();
+  const east  = typeof bounds.getEast  === 'function' ? bounds.getEast()  : bounds.getEast?.();
+  const west  = typeof bounds.getWest  === 'function' ? bounds.getWest()  : bounds.getWest?.();
+  const mn = ll2t(west,  north, z);
+  const mx = ll2t(east,  south, z);
+  const max = 2**z - 1;
+  for (let x = Math.max(0,mn.x); x <= Math.min(max,mx.x); x++)
+    for (let y = Math.max(0,mn.y); y <= Math.min(max,mx.y); y++)
+      tiles.push({ x, y, z, b: t2b(x,y,z) });
   return tiles;
 }
 function ll2t(lng,lat,z){
@@ -696,12 +730,21 @@ function openAlertModal(i){
   const onset=p.onset?new Date(p.onset):(p.sent?new Date(p.sent):null);
   const expires=p.expires?new Date(p.expires):null;
   set('mTitle',`${ico} ${p.event}`);
-  // Format text — replace newlines with <br>, clean up excessive whitespace
-  const fmtAlertText = t => (t||'').trim()
-    .replace(/\*([^*]+)\*/g,'<strong>$1</strong>') // *bold* → <strong>
-    .replace(/\n\n+/g,'</p><p>')
-    .replace(/\n/g,'<br>')
-    .replace(/^/,'<p>').replace(/$/,'</p>');
+  // Format NWS alert text — newlines → paragraphs, ALL CAPS headers highlighted
+  function fmtAlertText(t) {
+    if (!t) return '';
+    return t.trim()
+      .split(/\n\n+/)
+      .map(para => {
+        const p = para.trim();
+        if (!p) return '';
+        // ALL CAPS line = section header
+        if (p === p.toUpperCase() && p.length < 80 && /[A-Z]/.test(p))
+          return `<div class="ad-para-head">${p}</div>`;
+        return `<p>${p.replace(/\n/g,'<br>')}</p>`;
+      })
+      .join('');
+  }
 
   id('mBody').innerHTML=`
     <div class="ad-hdr">
