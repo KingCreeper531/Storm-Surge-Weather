@@ -31,6 +31,7 @@ const S = {
   lightning: [], hurricaneTrack: [], stormReports: [], metars: [], modelCmp: null,
   radarSource: 'rainviewer', radarDegraded: false,
   radarAdvanced: null,
+  nexradFocusMode: false, nexradFocus: null, compositeMeta: null,
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
     opacity: 0.75, speed: 600, autoPlay: false,
@@ -184,7 +185,15 @@ function initMap() {
         prewarmCache(); scheduleRadarDraw();
       });
     });
-    S.map.on('click',function(e){ if(!S.drawMode) handleMapClick(e); });
+    S.map.on('click',function(e){
+      if(S.nexradFocusMode && !S.drawMode){
+        S.nexradFocus={lat:e.lngLat.lat,lng:e.lngLat.lng};
+        prewarmCache(); scheduleRadarDraw();
+        showToast('🎯 NEXRAD focus set');
+        return;
+      }
+      if(!S.drawMode) handleMapClick(e);
+    });
   } catch(e) {
     console.error('Map init failed:',e);
     showMapError('Could not init map — set MAPBOX_TOKEN (or MAPBOX_ACCESS_TOKEN)');
@@ -375,14 +384,42 @@ function tileXRanges(mnX,mxX,maxX){
   return [[0,hi],[lo,maxX]];
 }
 
+function isUSCoord(lat,lng){
+  return lat>=24 && lat<=50 && lng>=-126 && lng<=-66;
+}
+
+function getRadarTileWindow(z){
+  var max=(1<<z)-1;
+  if(S.nexradFocusMode && S.nexradFocus && isUSCoord(S.nexradFocus.lat,S.nexradFocus.lng)){
+    var c=ll2t(S.nexradFocus.lng,S.nexradFocus.lat,z);
+    var r=(z>=8)?2:(z>=6?3:4);
+    return {
+      max:max,
+      y0:Math.max(0,c.y-r),
+      y1:Math.min(max,c.y+r),
+      xr:tileXRanges(c.x-r,c.x+r,max),
+      focused:true
+    };
+  }
+  var b=S.map?.getBounds?.();
+  if(!b) return null;
+  var mn=ll2t(b.getWest(),b.getNorth(),z), mx=ll2t(b.getEast(),b.getSouth(),z);
+  return {
+    max:max,
+    y0:Math.max(0,mn.y),
+    y1:Math.min(max,mx.y),
+    xr:tileXRanges(mn.x,mx.x,max),
+    focused:false
+  };
+}
+
 function preloadNextFrame(){
   if(!S.frames.length) return;
   var next=(S.frame+1)%S.frames.length;
   var frame=S.frames[next], z=Math.max(2,Math.min(8,Math.floor(S.map?.getZoom?.()||6))), color=S.cfg.radarColor||'6';
-  var b=S.map?.getBounds?.(); if(!b) return;
-  var mn=ll2t(b.getWest(),b.getNorth(),z), mx=ll2t(b.getEast(),b.getSouth(),z), max=(1<<z)-1;
-  var y0=Math.max(0,mn.y), y1=Math.min(max,mx.y);
-  tileXRanges(mn.x,mx.x,max).forEach(function(r){
+  var tw=getRadarTileWindow(z); if(!tw) return;
+  var y0=tw.y0, y1=tw.y1;
+  tw.xr.forEach(function(r){
     for(var x=r[0];x<=r[1];x++)
       for(var y=y0;y<=y1;y++)
         loadTile(radarTileUrl(frame.path,z,x,y,color));
@@ -392,6 +429,7 @@ function preloadNextFrame(){
 async function loadRadar(){
   try {
     var d;
+    if(!S.compositeMeta){ fetch(API_URL+'/api/radar/composite').then(function(r){return r.json();}).then(function(m){S.compositeMeta=m||null;}).catch(function(){}); }
     try{
       var r=await fetch(API_URL+'/api/radar/frames');
       if(!r.ok) throw new Error('Radar '+r.status);
@@ -419,11 +457,9 @@ function prewarmCache(){
   if(!S.map||!S.frames.length) return;
   var z=Math.max(2,Math.min(8,Math.floor(S.map.getZoom())));
   var color=S.cfg.radarColor||'6';
-  var b=S.map.getBounds();
-  var mn=ll2t(b.getWest(),b.getNorth(),z), mx=ll2t(b.getEast(),b.getSouth(),z);
-  var max=(1<<z)-1;
-  var y0=Math.max(0,mn.y), y1=Math.min(max,mx.y);
-  var xr=tileXRanges(mn.x,mx.x,max);
+  var tw=getRadarTileWindow(z); if(!tw) return;
+  var y0=tw.y0, y1=tw.y1;
+  var xr=tw.xr;
   S.frames.forEach(function(frame){
     xr.forEach(function(r){
       for(var x=r[0];x<=r[1];x++)
@@ -1398,6 +1434,13 @@ function initUI(){
   $('geoBtn').onclick  =geolocate;
   $('refreshBtn').onclick=function(){ loadWeather(); loadAlerts(); if(S.map) loadRadar(); showToast('↻ Refreshing...'); };
   $('playBtn').onclick =togglePlay;
+  $('nexradFocusBtn').onclick=function(){
+    S.nexradFocusMode=!S.nexradFocusMode;
+    $('nexradFocusBtn').classList.toggle('active',S.nexradFocusMode);
+    if(!S.nexradFocusMode){ S.nexradFocus=null; showToast('🎯 NEXRAD focus off'); }
+    else showToast('🎯 Click map to set NEXRAD focus');
+    prewarmCache(); scheduleRadarDraw();
+  };
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
   $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; scheduleRadarDraw(); saveCfg(); });
   $('tPrev').onclick   =function(){ if(S.frame>0) pickFrame(S.frame-1); };
@@ -1588,7 +1631,10 @@ function renderRadarInfo(){
   $('alertsBody').innerHTML='<div class="radar-info">'+
     '<div class="ri-title">Radar Status</div>'+
     '<div class="ri-stat"><span>Source</span><span>'+(S.radarSource||'unknown')+(S.radarDegraded?' (degraded)':'')+'</span></div>'+
+    '<div class="ri-stat"><span>Coverage</span><span>'+((S.compositeMeta?.global?.label)||'Global Composite')+'</span></div>'+
+    '<div class="ri-stat"><span>US Base</span><span>'+((S.compositeMeta?.us?.label)||'NEXRAD (on focus)')+'</span></div>'+
     '<div class="ri-stat"><span>Overlay</span><span>'+(S.activeOverlay?(overlayNames[S.activeOverlay]||S.activeOverlay)+'':'None')+'</span></div>'+
+    '<div class="ri-stat"><span>NEXRAD Focus</span><span>'+(S.nexradFocusMode?(S.nexradFocus?('ON @ '+S.nexradFocus.lat.toFixed(2)+', '+S.nexradFocus.lng.toFixed(2)):'Armed'):'Off')+'</span></div>'+
     '<div class="ri-stat"><span>Frames</span><span>'+S.frames.length+'/12</span></div>'+
     '<div class="ri-stat"><span>Storm Cells</span><span>'+((S.radarAdvanced?.stormCells||[]).length)+'</span></div>'+
     '<div class="ri-stat"><span>Echo Tops</span><span>'+((S.radarAdvanced?.echoTops||[]).length)+'</span></div>'+

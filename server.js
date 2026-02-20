@@ -951,6 +951,25 @@ app.post('/api/chat-rooms/:room/messages', requireAuth, (req, res) => {
 });
 
 
+
+app.get('/api/radar/composite', (req, res) => {
+  res.json({
+    aggregator: 'rainviewer-composite',
+    us: {
+      label: 'NEXRAD base (focus mode)',
+      region: 'US',
+      strategy: 'click-to-focus high-density tile window',
+      provider: 'rainviewer/us-composite'
+    },
+    global: {
+      label: 'National mosaics merged composite',
+      region: 'Europe + Global',
+      strategy: 'composite radar mosaic',
+      provider: 'rainviewer/global-composite'
+    }
+  });
+});
+
 app.get('/api/radar/frames', async (req, res) => {
   try {
     const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');

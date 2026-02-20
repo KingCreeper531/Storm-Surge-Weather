@@ -440,6 +440,10 @@ a { text-decoration: none; }
 .playbtn:hover   { opacity: .85; }
 .playbtn.playing { background: var(--acc2); }
 
+
+.t-focus{padding:4px 10px;border-radius:999px;background:var(--bg3);border:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--t2);transition:all .15s}
+.t-focus:hover{color:var(--t1);border-color:var(--border2)}
+.t-focus.active{background:var(--acc);border-color:var(--acc);color:var(--bg0)}
 #tRange { width: 160px; }
 .quick-op { display:flex; align-items:center; gap:6px; font-size:10px; color:var(--t3); font-family:var(--mono); }
 .quick-op input { width:80px; }
