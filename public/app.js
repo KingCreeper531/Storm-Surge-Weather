@@ -567,7 +567,7 @@ async function drawFrame(idx){
     var nw=project([item.tile.b.west,item.tile.b.north]);
     var se=project([item.tile.b.east,item.tile.b.south]);
     var pw=se.x-nw.x, ph=se.y-nw.y;
-    if(pw>0&&ph>0) _radarBufCtx.drawImage(item.img,nw.x,nw.y,pw,ph);
+    if(pw>0&&ph>0){ _radarBufCtx.filter='saturate(1.04)'; _radarBufCtx.drawImage(item.img,nw.x-0.35,nw.y-0.35,pw+0.7,ph+0.7); _radarBufCtx.filter='none'; }
   });
 
   S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
@@ -775,10 +775,15 @@ function renderForecast(d){
 // ── ALERTS ────────────────────────────────────────────────────────
 async function loadAlerts(){
   try {
-    var r=await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert',
-      {headers:{'User-Agent':'(StormSurgeWeather/10.3)','Accept':'application/geo+json'}});
-    if(!r.ok) throw new Error(r.status);
-    var d=await r.json();
+    var d;
+    try {
+      d = await fetchJsonSafe(API_URL+'/api/noaa/alerts');
+    } catch(_e) {
+      var r=await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert',
+        {headers:{'User-Agent':'Storm-Surge-Weather/1.0'}});
+      if(!r.ok) throw new Error(r.status);
+      d=await r.json();
+    }
     S.alerts=(d.features||[]).filter(function(f){
       return f.properties?.event&&new Date(f.properties.expires)>new Date();
     });
@@ -786,6 +791,7 @@ async function loadAlerts(){
     if(S.cfg.alertZones&&S.map) putAlertsOnMap();
   } catch(e){ S.alerts=[]; renderAlerts(); updateAlertCounts(); }
 }
+
 function updateAlertCounts(){
   var n=S.alerts.length; setText('alertBadge',n); setText('navAlertBadge',n);
   $('navAlertBadge').classList.toggle('show',n>0);
@@ -1008,7 +1014,7 @@ function renderNexradSitesOnMap(){
     S.map.addSource('nexrad-sites-src',{type:'geojson',data:fc});
   }
   if(!S.map.getLayer('nexrad-sites-dot')) S.map.addLayer({id:'nexrad-sites-dot',type:'circle',source:'nexrad-sites-src',paint:{
-    'circle-radius':4.2,'circle-color':'#1d4ed8','circle-stroke-color':'#dbeafe','circle-stroke-width':1
+    'circle-radius':['interpolate',['linear'],['zoom'],2,5.8,8,7.2],'circle-color':'#1d4ed8','circle-stroke-color':'#dbeafe','circle-stroke-width':1.25
   }});
   if(!S.map.getLayer('nexrad-sites-label')) S.map.addLayer({id:'nexrad-sites-label',type:'symbol',source:'nexrad-sites-src',layout:{
     'text-field':['get','id'],'text-size':10,'text-offset':[0,1.2],'text-font':['Open Sans Bold','Arial Unicode MS Bold'],'text-allow-overlap':true
@@ -1656,16 +1662,19 @@ function initUI(){
 
 async function loadAdvancedData(){
   try{
-    var [l,h,sr,m,mc,ra]=await Promise.all([
+    var [bz,l,h,sr,m,mc,ra,rf]=await Promise.all([
+      fetchJsonSafe(API_URL+'/api/lightning/blitzortung'),
       fetchJsonSafe(API_URL+'/api/lightning'),
       fetchJsonSafe(API_URL+'/api/hurricane-track'),
       fetchJsonSafe(API_URL+'/api/storm-reports'),
       fetchJsonSafe(API_URL+'/api/metar'),
       fetchJsonSafe(API_URL+'/api/model-comparison?lat='+S.lat+'&lng='+S.lng),
-      fetchJsonSafe(API_URL+'/api/radar/advanced?lat='+S.lat+'&lng='+S.lng)
+      fetchJsonSafe(API_URL+'/api/radar/advanced?lat='+S.lat+'&lng='+S.lng),
+      fetchJsonSafe(API_URL+'/api/rainfall/accumulation?lat='+S.lat+'&lng='+S.lng)
     ]);
-    S.lightning=l.items||[]; S.hurricaneTrack=h.points||[]; S.stormReports=sr.items||[]; S.metars=m.items||[]; S.modelCmp=mc||null;
+    S.lightning=(bz.items&&bz.items.length?bz.items:l.items)||[]; S.hurricaneTrack=h.points||[]; S.stormReports=sr.items||[]; S.metars=m.items||[]; S.modelCmp=mc||null;
     S.radarAdvanced=ra||null;
+    if(S.radarAdvanced&&rf){ S.radarAdvanced.rainfallTotals={ oneHourMm:rf.oneHourMm, twentyFourHourMm:rf.twentyFourHourMm, floodRisk:rf.floodRisk }; }
     renderLightningOnMap();
     renderRadarAdvancedOnMap();
     renderNexradSitesOnMap();
@@ -1696,6 +1705,7 @@ function renderRadarInfo(){
     '<div class="ri-stat"><span>Lightning</span><span>'+S.lightning.length+' live</span></div>'+
     '<div class="ri-stat"><span>Nowcast</span><span>'+((S.radarAdvanced?.nowcast?.source)||'synthetic')+'</span></div>'+
     '<div class="ri-stat"><span>Rainfall 24h</span><span>'+((S.radarAdvanced?.rainfallTotals?.twentyFourHourMm)||0).toFixed(1)+' mm</span></div>'+
+    '<div class="ri-stat"><span>Flood Risk</span><span>'+((S.radarAdvanced?.rainfallTotals?.floodRisk)||'low')+'</span></div>'+
     '<div class="ri-stat"><span>Storm Reports</span><span>'+S.stormReports.length+' reports</span></div>'+
     '<div class="ri-stat"><span>METAR</span><span>'+S.metars.length+' stations</span></div>'+
     '<div class="ri-stat"><span>Model Δ</span><span>'+(S.modelCmp?((S.modelCmp.gfsTemp-S.modelCmp.ecmwfTemp).toFixed(1)+'°'):'N/A')+'</span></div>'+

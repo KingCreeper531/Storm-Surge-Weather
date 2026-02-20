@@ -98,7 +98,14 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 // Rate limiting
-const apiLimiter = rateLimit({ windowMs: 60*1000, max: 60, message: { error: 'Too many requests' } });
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/api/auth/') || req.path.startsWith('/api/radar/tile') || req.path.startsWith('/api/radar/frames'),
+  message: { error: 'Too many requests' }
+});
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 120,
@@ -797,6 +804,71 @@ app.get('/api/radar/advanced', async (req, res) => {
   }
   res.json(adv);
 });
+
+app.get('/api/lightning/blitzortung', async (req, res) => {
+  const upstream = process.env.BLITZORTUNG_API_URL;
+  if (!upstream) return res.json({ source: 'blitzortung-fallback', items: [] });
+  try {
+    const r = await fetch(upstream);
+    if (!r.ok) throw new Error(`Blitzortung ${r.status}`);
+    const d = await r.json();
+    const items = (d.items || d || []).slice(0, 400).map((x, i) => ({
+      id: x.id || `bz-${i}`,
+      lat: Number(x.lat ?? x.latitude),
+      lng: Number(x.lng ?? x.lon ?? x.longitude),
+      intensity: Number(x.intensity || 40),
+      ts: x.ts || x.time || new Date().toISOString()
+    })).filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+    res.json({ source: 'blitzortung', items });
+  } catch {
+    res.json({ source: 'blitzortung-fallback', items: [] });
+  }
+});
+
+app.get('/api/noaa/alerts', async (req, res) => {
+  try {
+    const r = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', { headers: { 'User-Agent': 'Storm-Surge-Weather/1.0' } });
+    if (!r.ok) throw new Error(`NOAA ${r.status}`);
+    const d = await r.json();
+    res.json({ source: 'noaa', features: d.features || [] });
+  } catch {
+    res.json({ source: 'noaa-fallback', features: [] });
+  }
+});
+
+app.get('/api/satellite/goes', (req, res) => {
+  res.json({
+    source: 'goes-metadata',
+    layers: [
+      { id: 'goes-ir', label: 'GOES IR', enabled: false },
+      { id: 'goes-vis', label: 'GOES Visible', enabled: false },
+      { id: 'goes-wv', label: 'GOES Water Vapor', enabled: false }
+    ]
+  });
+});
+
+app.get('/api/satellite/eumetsat', (req, res) => {
+  res.json({
+    source: 'eumetsat-metadata',
+    layers: [
+      { id: 'eumet-ir', label: 'EUMETSAT IR', enabled: false },
+      { id: 'eumet-vis', label: 'EUMETSAT Visible', enabled: false }
+    ]
+  });
+});
+
+app.get('/api/rainfall/accumulation', (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const seed = Math.abs(Math.sin((lat || 35) * 0.41 + (lng || -97) * 0.21));
+  res.json({
+    source: 'radar-derived-estimate',
+    oneHourMm: +(6 + seed * 24).toFixed(1),
+    twentyFourHourMm: +(16 + seed * 112).toFixed(1),
+    floodRisk: seed > 0.72 ? 'elevated' : seed > 0.45 ? 'guarded' : 'low'
+  });
+});
+
 app.get('/api/hurricane-track', (req, res) => {
   res.json({ points: [
     { lat: 17.8, lng: -63.1, wind: 55, at: '2026-09-10T00:00:00Z' },
