@@ -5,7 +5,6 @@
 //           caching, username uniqueness
 //  Deploy to: Render.com
 // ================================================================
-
 require('dotenv').config(); // loads .env for local dev — ignored on Render
 const express    = require('express');
 const cors       = require('cors');
@@ -16,14 +15,12 @@ const NodeCache  = require('node-cache');
 const rateLimit  = require('express-rate-limit');
 const multer     = require('multer');
 const path       = require('path');
-
 const app   = express();
 const cache = new NodeCache({ stdTTL: 600 }); // 10 min default cache
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB max
 });
-
 // ── ENV ──────────────────────────────────────────────────────────
 const PORT       = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-render-dashboard';
@@ -35,32 +32,50 @@ const TOMORROW_KEY = process.env.TOMORROW_API_KEY || process.env.WEATHERNEXT_KEY
 const APP_VERSION = process.env.APP_VERSION || process.env.RENDER_GIT_COMMIT?.slice(0, 7) || '1.2.1';
 const DEPLOY_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null;
 const DEPLOY_BRANCH = process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || null;
-
 // ── GOOGLE CLOUD STORAGE ─────────────────────────────────────────
+function parseGoogleCloudCredentials(input) {
+  if (!input) return null;
+  const candidates = [];
+  const raw = String(input).trim();
+  if (!raw) return null;
+  // 1) Exact raw value (already JSON)
+  candidates.push(raw);
+  // 2) Unquoted/unescaped value commonly seen in env vars
+  let dequoted = raw;
+  if ((dequoted.startsWith('"') && dequoted.endsWith('"')) ||
+      (dequoted.startsWith("'") && dequoted.endsWith("'"))) {
+    dequoted = dequoted.slice(1, -1);
+  }
+  dequoted = dequoted.replace(/\\\"/g, '"').replace(/\\n/g, '\n');
+  candidates.push(dequoted);
+  // 3) Base64 value (strip accidental whitespace/newlines)
+  const compact = raw.replace(/\s+/g, '');
+  try {
+    candidates.push(Buffer.from(compact, 'base64').toString('utf8'));
+  } catch (_) {}
+  // 4) Base64URL variant
+  try {
+    const b64url = compact.replace(/-/g, '+').replace(/_/g, '/');
+    candidates.push(Buffer.from(b64url, 'base64').toString('utf8'));
+  } catch (_) {}
+  for (const candidate of candidates) {
+    if (!candidate || !candidate.trim().startsWith('{')) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch (_) {}
+  }
+  return null;
+}
 let storage, bucket;
 try {
   let credentials = null;
   if (GCS_KEY) {
-    let raw = GCS_KEY.trim();
-    // Try base64 decode first (recommended method)
-    try {
-      const decoded = Buffer.from(raw, 'base64').toString('utf8');
-      if (decoded.startsWith('{')) raw = decoded;
-    } catch(e) {}
-    // Strip surrounding quotes Render may have added
-    if ((raw.startsWith('"') && raw.endsWith('"')) ||
-        (raw.startsWith("'") && raw.endsWith("'"))) {
-      raw = raw.slice(1, -1);
-    }
-    raw = raw.replace(/\\"/g, '"').replace(/\\n/g, '\n');
-    try {
-      credentials = JSON.parse(raw);
-    } catch(parseErr) {
+    credentials = parseGoogleCloudCredentials(GCS_KEY);
+    if (!credentials) {
       console.error('⚠ GOOGLE_CLOUD_KEY is not valid JSON.');
-      console.error('  Best fix: base64 encode your service account JSON and paste that.');
-      console.error('  Mac/Linux: base64 -i service-account.json | tr -d "\n"');
+      console.error('  Best fix: base64 encode your service account JSON and paste that (single line).');
+      console.error('  Mac/Linux: base64 < service-account.json | tr -d "\\n"');
       console.error('  Windows:   [Convert]::ToBase64String([IO.File]::ReadAllBytes("service-account.json"))');
-      console.error('  Parse error:', parseErr.message);
     }
   }
   if (credentials) {
@@ -73,7 +88,6 @@ try {
 } catch(e) {
   console.warn('⚠ GCS init failed:', e.message);
 }
-
 // ── MIDDLEWARE ───────────────────────────────────────────────────
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
@@ -81,7 +95,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type','Authorization']
 }));
 app.use(express.json({ limit: '10mb' }));
-
 // Rate limiting
 const apiLimiter = rateLimit({ windowMs: 60*1000, max: 60, message: { error: 'Too many requests' } });
 const authLimiter = rateLimit({
@@ -93,7 +106,6 @@ const authLimiter = rateLimit({
   message: { error: 'Too many auth attempts — try again in a few minutes' }
 });
 app.use('/api/', apiLimiter);
-
 // ── AUTH MIDDLEWARE ──────────────────────────────────────────────
 function requireAuth(req, res, next) {
   const header = req.headers.authorization;
@@ -105,10 +117,8 @@ function requireAuth(req, res, next) {
     res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
-
 // ── IN-MEMORY FALLBACK (used when GCS not configured) ────────────
 const memStore = {};
-
 // ── GCS HELPERS ──────────────────────────────────────────────────
 async function gcsRead(filename, fallback = null) {
   if (!bucket) {
@@ -124,7 +134,6 @@ async function gcsRead(filename, fallback = null) {
     return memStore[filename] ?? fallback; // fallback to memory on error
   }
 }
-
 async function gcsWrite(filename, data) {
   // Always write to memory first so reads are fast
   memStore[filename] = data;
@@ -142,7 +151,6 @@ async function gcsWrite(filename, data) {
     // Don't throw — memory write succeeded, GCS failure is non-fatal
   }
 }
-
 async function gcsUploadImage(buffer, filename, contentType) {
   if (!bucket) {
     console.warn('GCS not configured — image cannot be stored persistently');
@@ -152,11 +160,9 @@ async function gcsUploadImage(buffer, filename, contentType) {
   await file.save(buffer, { contentType, public: true });
   return `https://storage.googleapis.com/${GCS_BUCKET}/images/${filename}`;
 }
-
 // ================================================================
 //  AUTH ROUTES
 // ================================================================
-
 // GET /api/auth/check-username — check if username is taken
 app.get('/api/auth/check-username', async (req, res) => {
   const { username } = req.query;
@@ -171,7 +177,6 @@ app.get('/api/auth/check-username', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // POST /api/auth/register
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   const { name, email, password } = req.body;
@@ -179,17 +184,13 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   if (password.length < 6) return res.status(400).json({ error: 'Password must be 6+ characters' });
   if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'Name must be 2-30 characters' });
   if (!/^[a-zA-Z0-9_]+$/.test(name)) return res.status(400).json({ error: 'Username: letters, numbers, _ only' });
-
   try {
     const users = await gcsRead('users.json', {});
-
     // Check email taken
     if (users[email.toLowerCase()]) return res.status(409).json({ error: 'Email already registered' });
-
     // Check username taken (case-insensitive)
     const nameTaken = Object.values(users).some(u => u.name.toLowerCase() === name.toLowerCase());
     if (nameTaken) return res.status(409).json({ error: 'Username already taken — try another' });
-
     // Hash password
     const hash = await bcrypt.hash(password, 12);
     users[email.toLowerCase()] = {
@@ -199,9 +200,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       joinedAt: new Date().toISOString(),
       avatar: null
     };
-
     await gcsWrite('users.json', users);
-
     const token = jwt.sign({ name, email: email.toLowerCase() }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { name, email: email.toLowerCase() } });
   } catch(e) {
@@ -209,20 +208,16 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // POST /api/auth/login
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-
   try {
     const users = await gcsRead('users.json', {});
     const user = users[email.toLowerCase()];
     if (!user) return res.status(401).json({ error: 'No account with that email' });
-
     const valid = await bcrypt.compare(password, user.hash);
     if (!valid) return res.status(401).json({ error: 'Wrong password' });
-
     const token = jwt.sign({ name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { name: user.name, email: user.email } });
   } catch(e) {
@@ -230,11 +225,9 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // ================================================================
 //  POSTS ROUTES
 // ================================================================
-
 // GET /api/posts — get all posts (with optional filters)
 app.get('/api/posts', async (req, res) => {
   try {
@@ -244,7 +237,6 @@ app.get('/api/posts', async (req, res) => {
       posts = await gcsRead('posts.json', []);
       cache.set(cacheKey, posts, 30); // 30s cache for posts
     }
-
     // Filter by bounding box (radar view)
     const { north, south, east, west } = req.query;
     const northN = Number(north);
@@ -258,34 +250,29 @@ app.get('/api/posts', async (req, res) => {
         p.lng >= westN  && p.lng <= eastN
       );
     }
-
     // Filter by location name
     const { location } = req.query;
     if (location) {
       const loc = location.toLowerCase();
       posts = posts.filter(p => p.location.toLowerCase().includes(loc));
     }
-
     res.json(posts.slice().reverse()); // newest first
   } catch(e) {
     console.error('Get posts error:', e);
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // POST /api/posts — create post
 app.post('/api/posts', requireAuth, async (req, res) => {
   const { text, location, lat, lng } = req.body;
   if (!text?.trim()) return res.status(400).json({ error: 'Post text required' });
   if (text.length > 500) return res.status(400).json({ error: 'Post too long (max 500 chars)' });
-
   try {
     const latN = lat === '' || lat == null ? null : Number(lat);
     const lngN = lng === '' || lng == null ? null : Number(lng);
     if ((latN != null && !Number.isFinite(latN)) || (lngN != null && !Number.isFinite(lngN))) {
       return res.status(400).json({ error: 'Invalid coordinates' });
     }
-
     const posts = await gcsRead('posts.json', []);
     const post = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
@@ -308,7 +295,6 @@ app.post('/api/posts', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // POST /api/posts/:id/image — upload image for post
 app.post('/api/posts/:id/image', requireAuth, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image provided' });
@@ -317,7 +303,6 @@ app.post('/api/posts/:id/image', requireAuth, upload.single('image'), async (req
     const post = posts.find(p => p.id === req.params.id);
     if (!post) return res.status(404).json({ error: 'Post not found' });
     if (post.author !== req.user.name) return res.status(403).json({ error: 'Not your post' });
-
     const ext = path.extname(req.file.originalname) || '.jpg';
     const filename = `${req.params.id}${ext}`;
     const url = await gcsUploadImage(req.file.buffer, filename, req.file.mimetype);
@@ -330,7 +315,6 @@ app.post('/api/posts/:id/image', requireAuth, upload.single('image'), async (req
     res.status(500).json({ error: 'Image upload failed' });
   }
 });
-
 // DELETE /api/posts/:id
 app.delete('/api/posts/:id', requireAuth, async (req, res) => {
   try {
@@ -346,7 +330,6 @@ app.delete('/api/posts/:id', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // PATCH /api/posts/:id/like — toggle like
 app.patch('/api/posts/:id/like', requireAuth, async (req, res) => {
   try {
@@ -363,7 +346,6 @@ app.patch('/api/posts/:id/like', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // POST /api/posts/:id/comments
 app.post('/api/posts/:id/comments', requireAuth, async (req, res) => {
   const { text } = req.body;
@@ -388,7 +370,6 @@ app.post('/api/posts/:id/comments', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // DELETE /api/posts/:id/comments/:cid
 app.delete('/api/posts/:id/comments/:cid', requireAuth, async (req, res) => {
   try {
@@ -406,7 +387,6 @@ app.delete('/api/posts/:id/comments/:cid', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 // ================================================================
 //  WEATHER PROXY — WeatherNext 2 with caching
 // ================================================================
@@ -416,11 +396,9 @@ app.get('/api/weather', async (req, res) => {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return res.status(400).json({ error: 'valid lat and lng required' });
   }
-
   const cacheKey = `weather_${lat.toFixed(2)}_${lng.toFixed(2)}`;
   const cached = cache.get(cacheKey);
   if (cached) return res.json({ ...cached, _cached: true });
-
   try {
     let weather;
     if (WEATHERNEXT_KEY) {
@@ -444,7 +422,6 @@ app.get('/api/weather', async (req, res) => {
     }
   }
 });
-
 async function fetchWeatherNext2(lat, lng) {
   const fields = [
     'temperature','temperatureApparent','humidity','precipitationProbability',
@@ -452,11 +429,9 @@ async function fetchWeatherNext2(lat, lng) {
     'pressureSurfaceLevel','cloudCover','uvIndex','sunriseTime','sunsetTime',
     'temperatureMax','temperatureMin','windSpeedMax'
   ].join(',');
-
   const bases = [
     'https://api.weathernext.io/v4/timelines'
   ];
-
   let lastErr = null;
   for (const base of bases) {
     try {
@@ -476,13 +451,11 @@ async function fetchWeatherNext2(lat, lng) {
   }
   throw lastErr || new Error('No WeatherNext2 endpoint succeeded');
 }
-
 function normaliseWeatherNext2(raw) {
   const timelines = raw?.data?.timelines || [];
   const current1h = timelines.find(t => t.timestep === 'current')?.intervals?.[0]?.values || {};
   const hourly = timelines.find(t => t.timestep === '1h')?.intervals || [];
   const daily = timelines.find(t => t.timestep === '1d')?.intervals || [];
-
   return {
     current: {
       temperature_2m: current1h.temperature ?? 0,
@@ -515,7 +488,6 @@ function normaliseWeatherNext2(raw) {
     }
   };
 }
-
 async function fetchOpenMeteo(lat, lng) {
   const url = 'https://api.open-meteo.com/v1/forecast'
     + `?latitude=${lat}&longitude=${lng}`
@@ -523,11 +495,9 @@ async function fetchOpenMeteo(lat, lng) {
     + '&hourly=temperature_2m,relative_humidity_2m,weather_code,precipitation_probability'
     + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max'
     + '&forecast_days=7&temperature_unit=celsius&wind_speed_unit=ms&timezone=auto';
-
   const r = await fetch(url);
   if (!r.ok) throw new Error(`Open-Meteo ${r.status}`);
   const d = await r.json();
-
   return {
     current: d.current || {},
     hourly: {
@@ -550,15 +520,11 @@ async function fetchOpenMeteo(lat, lng) {
     _source: 'open-meteo'
   };
 }
-
-
-
 function buildSyntheticWeather(lat, lng) {
   const now = new Date();
   const hour = now.getUTCHours();
   const base = 18 + 10 * Math.sin((hour / 24) * Math.PI * 2) - Math.abs(lat) * 0.05;
   const currentCode = base > 25 ? 1 : base > 10 ? 2 : 3;
-
   const hourlyTime = [];
   const hourlyTemp = [];
   const hourlyHum = [];
@@ -573,7 +539,6 @@ function buildSyntheticWeather(lat, lng) {
     hourlyCode.push(wave > 0.4 ? 1 : wave < -0.5 ? 3 : 2);
     hourlyP.push(Math.max(5, Math.min(85, Math.round(35 - wave * 20))));
   }
-
   const dailyTime = [];
   const tmax = [];
   const tmin = [];
@@ -597,7 +562,6 @@ function buildSyntheticWeather(lat, lng) {
     sunrise.push(sr.toISOString());
     sunset.push(ss.toISOString());
   }
-
   return {
     current: {
       temperature_2m: +base.toFixed(1),
@@ -631,7 +595,6 @@ function buildSyntheticWeather(lat, lng) {
     _source: 'synthetic-fallback'
   };
 }
-
 function buildSyntheticRadarFrames() {
   const now = Math.floor(Date.now() / 1000);
   const step = 600; // 10 minutes
@@ -641,7 +604,6 @@ function buildSyntheticRadarFrames() {
   }));
   return { frames, source: 'synthetic-radar' };
 }
-
 function buildSyntheticRadarTileSvg(pathSeed, z, x, y, color) {
   const seed = Math.abs((z * 92821) ^ (x * 68917) ^ (y * 1237) ^ String(pathSeed).length);
   const hue = (seed + Number(color || 0) * 43) % 360;
@@ -656,12 +618,9 @@ function buildSyntheticRadarTileSvg(pathSeed, z, x, y, color) {
     + `<path d="M-10 ${160 + (seed % 50)} C 60 ${135 + (seed % 60)}, 160 ${215 - (seed % 65)}, 266 ${165 + (seed % 60)}" stroke="hsl(${hue},90%,78%)" stroke-opacity="0.45" stroke-width="2" fill="none"/>`
     + `</svg>`;
 }
-
-
 function seededNoise(seed) {
   return Math.abs(Math.sin(seed * 12.9898) * 43758.5453) % 1;
 }
-
 async function fetchTomorrowNowcast(lat, lng) {
   if (!TOMORROW_KEY) return null;
   const fields = [
@@ -689,12 +648,10 @@ async function fetchTomorrowNowcast(lat, lng) {
     return null;
   }
 }
-
 function buildSyntheticRadarAdvanced(lat, lng) {
   const baseLat = Number.isFinite(lat) ? lat : 35;
   const baseLng = Number.isFinite(lng) ? lng : -97;
   const t = Date.now() / 60000;
-
   const stormCells = Array.from({ length: 4 }, (_, i) => {
     const n = seededNoise(t + i * 3.7);
     const cLat = baseLat + (n - 0.5) * 2.3;
@@ -717,7 +674,6 @@ function buildSyntheticRadarAdvanced(lat, lng) {
       }))
     };
   });
-
   const echoTops = stormCells.map((c, i) => ({
     id: `etop-${i}`,
     lat: c.lat,
@@ -725,13 +681,11 @@ function buildSyntheticRadarAdvanced(lat, lng) {
     heightKm: +(8 + seededNoise(i + t) * 8).toFixed(1),
     hailRisk: +(0.25 + seededNoise(i + t * 0.5) * 0.7).toFixed(2)
   }));
-
   const precipType = stormCells.map((c, i) => {
     const tempSignal = Math.sin((baseLat / 10) + i);
     const type = tempSignal < -0.45 ? 'snow' : tempSignal < -0.1 ? 'mix' : tempSignal < 0.1 ? 'sleet' : tempSignal < 0.2 ? 'freezing_rain' : 'rain';
     return { id: `ptype-${i}`, lat: c.lat + 0.15, lng: c.lng - 0.12, type, intensity: +(seededNoise(i + t) * 1.2).toFixed(2) };
   });
-
   const rotationZones = stormCells.slice(0, 2).map((c, i) => ({
     id: `rot-${i}`,
     lat: c.lat - 0.12,
@@ -739,14 +693,12 @@ function buildSyntheticRadarAdvanced(lat, lng) {
     risk: +(0.35 + seededNoise(t + i * 9) * 0.55).toFixed(2),
     shear: +(20 + seededNoise(t + i * 4) * 45).toFixed(1)
   }));
-
   const strikes = Array.from({ length: 22 }, (_, i) => ({
     id: `lt-${i}`,
     lat: +(baseLat + (seededNoise(i + t) - 0.5) * 3.5).toFixed(4),
     lng: +(baseLng + (seededNoise(i + t * 0.3) - 0.5) * 4.2).toFixed(4),
     ageSec: Math.round(seededNoise(i + t * 0.7) * 600)
   }));
-
   const nowcast = {
     source: 'synthetic-extrapolation',
     horizonMinutes: 90,
@@ -757,7 +709,6 @@ function buildSyntheticRadarAdvanced(lat, lng) {
       opacity: +(0.32 - i * 0.035).toFixed(2)
     }))
   };
-
   return {
     stormCells,
     echoTops,
@@ -785,7 +736,6 @@ function buildSyntheticRadarAdvanced(lat, lng) {
     layers: ['reflectivity', 'lightning', 'echo_tops', 'precip_type', 'rotation', 'rainfall_total', 'nowcast']
   };
 }
-
 function weatherNextCodeToWMO(code) {
   if (!code) return 0;
   const map = {
@@ -799,7 +749,6 @@ function weatherNextCodeToWMO(code) {
   };
   return map[code] ?? 0;
 }
-
 // ================================================================
 //  CAMERAS — Hazcams quick links
 // ================================================================
@@ -814,8 +763,6 @@ app.get('/api/cameras/search', (req, res) => {
     embedsAllowed: true
   });
 });
-
-
 // ================================================================
 //  ADVANCED WEATHER / COMMUNITY APIs
 // ================================================================
@@ -827,7 +774,6 @@ const chatRooms = {
   chase: { name: 'chase', messages: [] },
   severe: { name: 'severe', messages: [] }
 };
-
 app.get('/api/lightning', (req, res) => {
   const now = Date.now();
   const items = Array.from({ length: 18 }, (_, i) => ({
@@ -839,8 +785,6 @@ app.get('/api/lightning', (req, res) => {
   }));
   res.json({ items, source: 'simulated-live' });
 });
-
-
 app.get('/api/radar/advanced', async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
@@ -851,7 +795,6 @@ app.get('/api/radar/advanced', async (req, res) => {
   }
   res.json(adv);
 });
-
 app.get('/api/hurricane-track', (req, res) => {
   res.json({ points: [
     { lat: 17.8, lng: -63.1, wind: 55, at: '2026-09-10T00:00:00Z' },
@@ -860,7 +803,6 @@ app.get('/api/hurricane-track', (req, res) => {
     { lat: 23.2, lng: -70.5, wind: 85, at: '2026-09-11T12:00:00Z' }
   ]});
 });
-
 app.get('/api/storm-reports', (req, res) => {
   const types = ['hail', 'tornado', 'wind'];
   const items = Array.from({ length: 14 }, (_, i) => ({
@@ -874,21 +816,17 @@ app.get('/api/storm-reports', (req, res) => {
   }));
   res.json({ items });
 });
-
 app.post('/api/ai-severe-detection', (req, res) => {
   const t=String(req.body?.text||'').toLowerCase();
   const score=(['tornado','hail','rotation','funnel','wind damage'].filter(k=>t.includes(k)).length)/5;
   res.json({ severeProbability: +score.toFixed(2), tags: ['experimental-ai'] });
 });
-
 app.get('/api/mesoscale-discussions', (req, res) => {
   res.json({ items: [{ id: 'md-1001', title: 'Mesoscale Discussion 1001', risk: 'enhanced' }] });
 });
-
 app.get('/api/convective-outlook', (req, res) => {
   res.json({ polygons: [{ id: 'outlook-day1', risk: 'slight', points: [[-97,35],[-95,35],[-94,37],[-98,38],[-97,35]] }] });
 });
-
 app.get('/api/metar', (req, res) => {
   res.json({ items: [
     { id: 'KJFK', tempC: 18, windKt: 14, visMi: 10, flightCat: 'VFR' },
@@ -896,7 +834,6 @@ app.get('/api/metar', (req, res) => {
     { id: 'KDEN', tempC: 12, windKt: 22, visMi: 8, flightCat: 'MVFR' }
   ]});
 });
-
 app.get('/api/model-comparison', (req, res) => {
   const lat = Number(req.query.lat || 40);
   const base = 15 + (lat - 35) * 0.2;
@@ -904,7 +841,6 @@ app.get('/api/model-comparison', (req, res) => {
   const ecmwfTemp = +(base + (Math.random() * 2 - 1)).toFixed(1);
   res.json({ gfsTemp, ecmwfTemp, gfsWind: 16, ecmwfWind: 13, confidence: 'medium' });
 });
-
 app.get('/api/custom-alerts', requireAuth, (req, res) => {
   res.json(customAlertsByUser[req.user.email] || []);
 });
@@ -915,7 +851,6 @@ app.post('/api/custom-alerts', requireAuth, (req, res) => {
   customAlertsByUser[req.user.email] = list;
   res.json(item);
 });
-
 app.get('/api/favorites', requireAuth, (req, res) => {
   res.json(favoriteLocationsByUser[req.user.email] || []);
 });
@@ -926,14 +861,12 @@ app.post('/api/favorites', requireAuth, (req, res) => {
   favoriteLocationsByUser[req.user.email] = list;
   res.json(item);
 });
-
 app.post('/api/push-subscriptions', requireAuth, (req, res) => {
   const list = pushSubsByUser[req.user.email] || [];
   list.push({ id: `sub-${Date.now()}`, endpoint: req.body.endpoint || 'unknown' });
   pushSubsByUser[req.user.email] = list;
   res.json({ success: true, count: list.length });
 });
-
 app.get('/api/chat-rooms', (req, res) => {
   res.json(Object.values(chatRooms).map(r => ({ name: r.name, count: r.messages.length })));
 });
@@ -949,10 +882,6 @@ app.post('/api/chat-rooms/:room/messages', requireAuth, (req, res) => {
   room.messages.push(msg);
   res.json(msg);
 });
-
-
-
-
 const NEXRAD_SITES = [
   ['KTLX',35.333,-97.278],['KFDR',34.362,-98.976],['KINX',36.175,-95.564],['KDYX',32.538,-99.254],
   ['KAMA',35.234,-101.709],['KLBB',33.654,-101.814],['KBMX',33.172,-86.769],['KHTX',34.931,-86.084],
@@ -979,7 +908,6 @@ const NEXRAD_SITES = [
   ['KCBW',46.039,-67.806],['KCXX',44.511,-73.166],['KGYX',43.891,-70.256],['PHKI',21.894,-159.552],
   ['PHMO',21.132,-157.18],['PHKM',20.125,-155.778],['TJUA',18.116,-66.078]
 ];
-
 app.get('/api/radar/nexrad-sites', (req, res) => {
   res.json({
     source: 'nexrad-site-catalog',
@@ -987,7 +915,6 @@ app.get('/api/radar/nexrad-sites', (req, res) => {
     sites: NEXRAD_SITES.map(([id, lat, lng]) => ({ id, lat, lng }))
   });
 });
-
 app.get('/api/radar/composite', (req, res) => {
   res.json({
     aggregator: 'rainviewer-composite',
@@ -1005,7 +932,6 @@ app.get('/api/radar/composite', (req, res) => {
     }
   });
 });
-
 app.get('/api/radar/frames', async (req, res) => {
   try {
     const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
@@ -1023,8 +949,6 @@ app.get('/api/radar/frames', async (req, res) => {
     });
   }
 });
-
-
 app.get('/api/tiles/:layer/:z/:x/:y', async (req, res) => {
   const layer = String(req.params.layer || '').toLowerCase();
   const z = Number(req.params.z);
@@ -1033,7 +957,6 @@ app.get('/api/tiles/:layer/:z/:x/:y', async (req, res) => {
   if (!Number.isFinite(z) || !Number.isFinite(x) || !Number.isFinite(y)) {
     return res.status(400).json({ error: 'Invalid tile coordinates' });
   }
-
   const palettes = {
     temperature: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#ffffbf', '#fdae61', '#f46d43', '#a50026'],
     wind_speed: ['#1b1f3a', '#2f6c9f', '#4aa8b5', '#95d5b2', '#ffd166', '#f8961e', '#ef476f'],
@@ -1041,13 +964,11 @@ app.get('/api/tiles/:layer/:z/:x/:y', async (req, res) => {
     pressure: ['#0000cc', '#0080ff', '#00ffff', '#00ff00', '#ffff00', '#ff8000', '#ff0000']
   };
   const palette = palettes[layer] || palettes.temperature;
-
   const seed = (x * 73856093) ^ (y * 19349663) ^ (z * 83492791) ^ layer.length;
   const r1 = Math.abs(seed % palette.length);
   const r2 = Math.abs((seed >> 3) % palette.length);
   const c1 = palette[r1];
   const c2 = palette[r2];
-
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">`
     + `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
     + `<stop offset="0%" stop-color="${c1}" stop-opacity="0.18"/>`
@@ -1057,12 +978,10 @@ app.get('/api/tiles/:layer/:z/:x/:y', async (req, res) => {
     + `<path d="M0 ${64 + (seed % 64)} C 64 ${20 + (seed % 80)}, 128 ${120 + (seed % 80)}, 256 ${48 + (seed % 96)}" stroke="${c2}" stroke-opacity="0.45" stroke-width="2" fill="none"/>`
     + `<path d="M0 ${160 + (seed % 48)} C 84 ${120 + (seed % 72)}, 172 ${220 - (seed % 70)}, 256 ${180 + (seed % 40)}" stroke="${c1}" stroke-opacity="0.35" stroke-width="2" fill="none"/>`
     + `</svg>`;
-
   res.set('Content-Type', 'image/svg+xml; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=300');
   res.send(svg);
 });
-
 app.get('/api/radar/tile', async (req, res) => {
   const path = String(req.query.path || '');
   if (!path || path.includes('..')) return res.status(400).json({ error: 'Invalid tile path' });
@@ -1089,21 +1008,18 @@ app.get('/api/radar/tile', async (req, res) => {
     const x = Number(parts[parts.length - 4]);
     const y = Number(parts[parts.length - 3]);
     const color = Number(parts[parts.length - 2]);
-
     if (Number.isFinite(z) && Number.isFinite(x) && Number.isFinite(y)) {
       const svg = buildSyntheticRadarTileSvg(safePath, z, x, y, Number.isFinite(color) ? color : 6);
       res.set('Content-Type', 'image/svg+xml; charset=utf-8');
       res.set('Cache-Control', 'public, max-age=30');
       return res.send(svg);
     }
-
     const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/n1QAAAAASUVORK5CYII=', 'base64');
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=30');
     res.send(transparentPng);
   }
 });
-
 // ================================================================
 //  HEALTH CHECK
 // ================================================================
@@ -1117,7 +1033,6 @@ app.get('/api/version', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -1131,12 +1046,8 @@ app.get('/api/health', (req, res) => {
     uptime: Math.round(process.uptime()) + 's'
   });
 });
-
-
-
 // ── SERVE FRONTEND ──────────────────────────────────────────────
 const frontendPath = path.join(__dirname, 'public');
-
 // token.js MUST come before static middleware so env var wins over any file
 app.get('/token.js', (req, res) => {
   const token = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
@@ -1145,14 +1056,11 @@ app.get('/token.js', (req, res) => {
   res.set('Cache-Control', 'no-store'); // never cache — token could change
   res.send(`const MAPBOX_TOKEN = "${token}";`);
 });
-
 // Static files (index.html, app.js, style.css etc)
 app.use(express.static(frontendPath));
-
 // Anything else → index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
-
 // ── START ────────────────────────────────────────────────────────
 app.listen(PORT, () => console.log(`⛈  Storm Surge API running on port ${PORT}`));
