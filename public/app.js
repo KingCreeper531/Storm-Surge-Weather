@@ -30,9 +30,9 @@ const S = {
   compareMode: false, interpMode: true,
   lightning: [], hurricaneTrack: [], stormReports: [], metars: [], modelCmp: null,
   radarSource: 'rainviewer', radarDegraded: false,
-  radarAdvanced: null, precipTypeGeoJSON: null,
-  nexradFocusMode: true, nexradFocus: null, compositeMeta: null, nexradSites: [],
+  radarAdvanced: null, precipTypeGeoJSON: null, compositeMeta: null,
   radarRenderMode: 'mapbox', radarLayerIds: [],
+  tomorrowRadarEnabled: false, tomorrowOpacity: 0.55,
   radarDebug: !!(window.SS_DEBUG || localStorage.getItem('ss_debug_radar')==='1'),
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
@@ -42,7 +42,7 @@ const S = {
     showHumidity: true, showPressure: true, showUV: true,
     showSunTimes: true, showWind: true, showRain: true,
     showCloud: true, showFeels: true,
-    radarColor: '6', clickAction: 'nws', theme: 'dark'
+    radarColor: '6', theme: 'dark'
   }
 };
 
@@ -138,11 +138,42 @@ function renderRadarFrame(idx){
     S.radarLayerIds.forEach(function(id,j){
       try{ S.map.setPaintProperty(id,'raster-opacity', j===idx ? S.cfg.opacity : 0); }catch(e){}
     });
+    updateTomorrowRadarForFrame();
     return;
   }
   drawFrame(idx);
 }
 
+
+function tomorrowTileUrl(time,z,x,y){
+  var t = encodeURIComponent(time||'latest');
+  return API_URL+'/api/radar/tomorrow/tiles/'+z+'/'+x+'/'+y+'?time='+t;
+}
+
+function ensureTomorrowRadarLayer(){
+  if(!S.map||!S.map.isStyleLoaded()) return;
+  var frame=S.frames[S.frame]||{};
+  var tile=tomorrowTileUrl(frame.time||'latest','{z}','{x}','{y}');
+  if(!S.map.getSource('tomorrow-radar-src')){
+    S.map.addSource('tomorrow-radar-src',{type:'raster',tiles:[tile],tileSize:256});
+  }
+  if(!S.map.getLayer('tomorrow-radar-layer')){
+    S.map.addLayer({id:'tomorrow-radar-layer',type:'raster',source:'tomorrow-radar-src',paint:{'raster-opacity':0,'raster-resampling':'linear'}});
+  }
+}
+
+function updateTomorrowRadarForFrame(){
+  if(!S.map||!S.map.isStyleLoaded()) return;
+  ensureTomorrowRadarLayer();
+  var src=S.map.getSource('tomorrow-radar-src');
+  if(src&&src.setTiles){
+    var frame=S.frames[S.frame]||{};
+    src.setTiles([tomorrowTileUrl(frame.time||'latest','{z}','{x}','{y}')]);
+  }
+  if(S.map.getLayer('tomorrow-radar-layer')){
+    S.map.setPaintProperty('tomorrow-radar-layer','raster-opacity',S.tomorrowRadarEnabled?S.tomorrowOpacity:0);
+  }
+}
 function syncRadarRenderMode(){
   if(!S.canvas) return;
   if(S.radarRenderMode==='mapbox'){
@@ -154,7 +185,7 @@ function syncRadarRenderMode(){
 }
 
 function shouldRenderRadarNow(){
-  return !!(S.frames.length && (!S.nexradFocusMode || !!S.nexradFocus));
+  return !!S.frames.length;
 }
 
 function apiHeaders(auth) {
@@ -280,7 +311,7 @@ function initMap() {
     });
     S.map.on('load',function(){
       S.map.resize(); resizeCanvas();
-      loadRadar(); loadWeather(); loadAlerts(); loadAdvancedData(); renderNexradSitesOnMap();
+      loadRadar(); loadWeather(); loadAlerts(); loadAdvancedData();
     });
     S.map.on('error',function(e){
       console.error('Mapbox:',e);
@@ -303,14 +334,6 @@ function initMap() {
       });
     });
     S.map.on('click',function(e){
-      if(S.nexradFocusMode && !S.drawMode){
-        S.nexradFocus={lat:e.lngLat.lat,lng:e.lngLat.lng};
-        if(!S.frames.length) loadRadar();
-        if(S.radarRenderMode==='mapbox' && S.frames.length && !S.radarLayerIds.length) initRadarMapLayers();
-        prewarmCache(); scheduleRadarDraw();
-        showToast('🎯 NEXRAD focus set');
-        return;
-      }
       if(!S.drawMode) handleMapClick(e);
     });
   } catch(e) {
@@ -339,10 +362,10 @@ function cycleMapStyle() {
     renderLightningOnMap();
     renderRadarAdvancedOnMap();
     renderPrecipTypeOnMap(S.precipTypeGeoJSON);
-    renderNexradSitesOnMap();
     clearRadarMapLayers();
     syncRadarRenderMode();
     tileCache.clear(); loadRadar();
+    updateTomorrowRadarForFrame();
     showToast('🗺 '+S.mapStyle);
   });
 }
@@ -427,72 +450,45 @@ function handleMapClick(e) {
   }
   S.lat=lat; S.lng=lng;
   reverseGeocode(lat,lng);
-  if(S.cfg.clickAction==='nws'){ showToast('📡 Fetching NWS data...'); fetchNWSReport(lat,lng); }
-  else { showToast('📍 Loading weather...'); loadWeather(); }
+  showToast('📡 Fetching WeatherNext2 report...');
+  fetchWeatherReport(lat,lng);
 }
 
-async function fetchNWSReport(lat,lng){
+async function fetchWeatherReport(lat,lng){
   try {
-    var ptRes=await fetch(
-      'https://api.weather.gov/points/'+lat.toFixed(4)+','+lng.toFixed(4),
-      {headers:{'User-Agent':'(StormSurgeWeather/10.3)','Accept':'application/geo+json'}}
-    );
-    if(!ptRes.ok) throw new Error('NWS points: '+ptRes.status);
-    var pt=await ptRes.json();
-    if(!pt.properties?.forecast) throw new Error('Location not supported');
-    var props=pt.properties;
-    var results=await Promise.allSettled([
-      fetch(props.forecast,      {headers:{'User-Agent':'(StormSurgeWeather/10.3)'}}),
-      fetch(props.forecastHourly,{headers:{'User-Agent':'(StormSurgeWeather/10.3)'}})
-    ]);
-    var fcast =results[0].status==='fulfilled'&&results[0].value.ok ? await results[0].value.json() : null;
-    var hourly=results[1].status==='fulfilled'&&results[1].value.ok ? await results[1].value.json() : null;
-    openNWSModal(props,fcast,hourly);
+    var d = await fetchJsonWithRetry(API_URL+'/api/reports/weathernext2?lat='+lat.toFixed(4)+'&lng='+lng.toFixed(4), {}, 2);
+    openWeatherReportModal(d);
   } catch(e) {
-    console.warn('NWS error:',e.message);
-    showToast('⚠ NWS only covers the US'); loadWeather();
+    console.warn('WeatherNext2 report error:',e.message);
+    showToast('⚠ Reports unavailable');
+    loadWeather();
   }
 }
 
-function openNWSModal(props,fcast,hourly){
-  var city =props.relativeLocation?.properties?.city  ||S.locName;
-  var state=props.relativeLocation?.properties?.state ||'';
-  var hP   =hourly?.properties?.periods?.slice(0,12)||[];
-  var now  =hP[0];
-  setText('mTitle','📡 NWS — '+city+(state?', '+state:''));
+function openWeatherReportModal(d){
+  var loc=d.location||{};
+  var now=d.now||{};
+  var hourly=d.hourly||[];
+  var daily=d.daily||[];
+  setText('mTitle','📡 WeatherNext2 Report — '+(loc.name||S.locName));
   $('mBody').innerHTML=
     '<div class="nws-header">'+
       '<div class="nws-meta">'+
-        '<span class="nws-badge">'+(props.cwa||'NWS')+'</span>'+
-        '<span class="nws-coords">'+props.gridId+' '+props.gridX+','+props.gridY+'</span>'+
+        '<span class="nws-badge">WeatherNext2</span>'+
+        '<span class="nws-coords">'+(Number(loc.lat||S.lat).toFixed(3))+', '+(Number(loc.lng||S.lng).toFixed(3))+'</span>'+
       '</div>'+
-      (now?'<div class="nws-now">'+
-        '<div class="nws-now-temp">'+now.temperature+'°'+now.temperatureUnit+'</div>'+
-        '<div class="nws-now-desc">'+now.shortForecast+'</div>'+
-        '<div class="nws-now-wind">💨 '+now.windSpeed+' '+now.windDirection+'</div>'+
-      '</div>':'')+
+      '<div class="nws-now">'+
+        '<div class="nws-now-temp">'+Math.round(now.tempC||0)+'°C</div>'+
+        '<div class="nws-now-desc">'+(now.summary||'Current conditions')+'</div>'+
+        '<div class="nws-now-wind">💨 '+cvtWind(now.wind||0)+'</div>'+
+      '</div>'+
     '</div>'+
-    (hP.length?'<div class="nws-stitle">Hourly</div><div class="nws-hourly">'+
-      hP.map(function(p){
-        var t=new Date(p.startTime);
-        return '<div class="nws-hr">'+
-          '<div class="nws-hr-t">'+fmtTime(t)+'</div>'+
-          '<div class="nws-hr-i">'+(p.isDaytime?'☀️':'🌙')+'</div>'+
-          '<div class="nws-hr-v">'+p.temperature+'°</div>'+
-          '<div class="nws-hr-r">'+(p.probabilityOfPrecipitation?.value??0)+'%</div>'+
-        '</div>';
-      }).join('')+'</div>':'')+
-    (fcast?.properties?.periods?.length?'<div class="nws-stitle">Extended Forecast</div><div class="nws-periods">'+
-      fcast.properties.periods.slice(0,8).map(function(p){
-        return '<div class="nws-period '+(p.isDaytime?'day':'night')+'">'+
-          '<div class="nws-pd-name">'+p.name+'</div>'+
-          '<div class="nws-pd-temp">'+p.temperature+'°'+p.temperatureUnit+
-            (p.probabilityOfPrecipitation?.value!=null?'<span class="nws-pd-rain">💧'+p.probabilityOfPrecipitation.value+'%</span>':'')+
-          '</div>'+
-          '<div class="nws-pd-short">'+p.shortForecast+'</div>'+
-          '<div class="nws-pd-detail">'+p.detailedForecast+'</div>'+
-        '</div>';
-      }).join('')+'</div>':'');
+    (hourly.length?'<div class="nws-stitle">Hourly</div><div class="nws-hourly">'+
+      hourly.slice(0,12).map(function(h){ return '<div class="nws-hr"><div class="nws-hr-t">'+fmtTime(new Date(h.time))+'</div><div class="nws-hr-i">'+wIcon(h.code||0)+'</div><div class="nws-hr-v">'+Math.round(h.tempC||0)+'°</div><div class="nws-hr-r">'+Math.round(h.precipProb||0)+'%</div></div>'; }).join('')+
+    '</div>':'')+
+    (daily.length?'<div class="nws-stitle">Extended Forecast</div><div class="nws-periods">'+
+      daily.slice(0,7).map(function(p){ return '<div class="nws-period day"><div class="nws-pd-name">'+(p.name||'Day')+'</div><div class="nws-pd-temp">'+Math.round(p.maxC||0)+'°/'+Math.round(p.minC||0)+'°</div><div class="nws-pd-short">'+(p.summary||'')+'</div></div>'; }).join('')+
+    '</div>':'');
   openModal('alertModal');
 }
 
@@ -507,23 +503,8 @@ function tileXRanges(mnX,mxX,maxX){
   return [[0,hi],[lo,maxX]];
 }
 
-function isUSCoord(lat,lng){
-  return lat>=24 && lat<=50 && lng>=-126 && lng<=-66;
-}
-
 function getRadarTileWindow(z){
   var max=(1<<z)-1;
-  if(S.nexradFocusMode && S.nexradFocus && isUSCoord(S.nexradFocus.lat,S.nexradFocus.lng)){
-    var c=ll2t(S.nexradFocus.lng,S.nexradFocus.lat,z);
-    var r=(z>=8)?2:(z>=6?3:4);
-    return {
-      max:max,
-      y0:Math.max(0,c.y-r),
-      y1:Math.min(max,c.y+r),
-      xr:tileXRanges(c.x-r,c.x+r,max),
-      focused:true
-    };
-  }
   var b=S.map?.getBounds?.();
   if(!b) return null;
   var mn=ll2t(b.getWest(),b.getNorth(),z), mx=ll2t(b.getEast(),b.getSouth(),z);
@@ -558,7 +539,6 @@ async function loadRadar(){
     var sig=_radarLoadAbort.signal;
     var d;
     if(!S.compositeMeta){ fetchJsonSafe(API_URL+'/api/radar/composite',{signal:sig}).then(function(m){S.compositeMeta=m||null;}).catch(function(){}); }
-    if(!S.nexradSites.length){ fetchJsonSafe(API_URL+'/api/radar/nexrad-sites',{signal:sig}).then(function(d){ S.nexradSites=(d&&d.sites)||[]; renderNexradSitesOnMap(); }).catch(function(){}); }
     try{
       d=await fetchJsonWithRetry(API_URL+'/api/radar/frames',{signal:sig},3);
       if(!d?.frames?.length) throw new Error('No frames');
@@ -588,6 +568,7 @@ async function loadRadar(){
     }
     if(S.radarRenderMode==='mapbox'){ initRadarMapLayers(); }
     else { prewarmCache(); drawFrame(S.frame); }
+    updateTomorrowRadarForFrame();
     if(S.cfg.autoPlay) play();
     updateRadarDebugOverlay();
   } catch(e){
@@ -944,15 +925,7 @@ function renderForecast(d){
 // ── ALERTS ────────────────────────────────────────────────────────
 async function loadAlerts(){
   try {
-    var d;
-    try {
-      d = await fetchJsonSafe(API_URL+'/api/noaa/alerts');
-    } catch(_e) {
-      var r=await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert',
-        {headers:{'User-Agent':'Storm-Surge-Weather/1.0'}});
-      if(!r.ok) throw new Error(r.status);
-      d=await r.json();
-    }
+    var d = await fetchJsonSafe(API_URL+'/api/noaa/alerts');
     S.alerts=(d.features||[]).filter(function(f){
       return f.properties?.event&&new Date(f.properties.expires)>new Date();
     });
@@ -1061,7 +1034,7 @@ function fmtAlertText(text){
   return paras.map(function(para){
     var trimmed=para.trim();
     if(!trimmed) return '';
-    // NWS uses ALL CAPS for section headers: WHAT, WHERE, WHEN, IMPACTS, etc.
+    // Alert feeds often use ALL CAPS section headers: WHAT, WHERE, WHEN, IMPACTS, etc.
     var alpha=trimmed.replace(/[^A-Za-z]/g,'');
     if(alpha.length>1&&alpha===alpha.toUpperCase()&&trimmed.length<100)
       return '<div class="ad-para-head">'+trimmed+'</div>';
@@ -1170,54 +1143,6 @@ function renderLightningOnMap(){
   }});
 }
 
-
-function renderNexradSitesOnMap(){
-  if(!S.map||!S.map.isStyleLoaded()||!S.nexradSites.length) return;
-  var feats=S.nexradSites.map(function(s){
-    return {type:'Feature',geometry:{type:'Point',coordinates:[s.lng,s.lat]},properties:{id:s.id}};
-  });
-  var fc={type:'FeatureCollection',features:feats};
-  if(S.map.getSource('nexrad-sites-src')){
-    S.map.getSource('nexrad-sites-src').setData(fc);
-  }else{
-    S.map.addSource('nexrad-sites-src',{type:'geojson',data:fc});
-  }
-  if(!S.map.getLayer('nexrad-sites-hit')) S.map.addLayer({id:'nexrad-sites-hit',type:'circle',source:'nexrad-sites-src',paint:{
-    'circle-radius':['interpolate',['linear'],['zoom'],2,14,8,24],
-    'circle-color':'#60a5fa','circle-opacity':0.01
-  }});
-  if(!S.map.getLayer('nexrad-sites-dot')) S.map.addLayer({id:'nexrad-sites-dot',type:'circle',source:'nexrad-sites-src',paint:{
-    'circle-radius':['interpolate',['linear'],['zoom'],2,7.2,8,9.8],'circle-color':'#1d4ed8','circle-stroke-color':'#dbeafe','circle-stroke-width':1.5
-  }});
-  if(!S.map.getLayer('nexrad-sites-label')) S.map.addLayer({id:'nexrad-sites-label',type:'symbol',source:'nexrad-sites-src',layout:{
-    'text-field':['get','id'],'text-size':10,'text-offset':[0,1.2],'text-font':['Open Sans Bold','Arial Unicode MS Bold'],'text-allow-overlap':true
-  },paint:{'text-color':'#e5edff','text-halo-color':'#0b1a35','text-halo-width':2}});
-
-  function onSiteClick(e){
-    var f=e.features&&e.features[0]; if(!f) return;
-    var c=f.geometry.coordinates;
-    S.nexradFocus={lat:c[1],lng:c[0]};
-    S.nexradFocusMode=true;
-    var b=$('nexradFocusBtn'); if(b) b.classList.add('active');
-    if(!S.frames.length) loadRadar();
-    if(S.radarRenderMode==='mapbox' && S.frames.length && !S.radarLayerIds.length) initRadarMapLayers();
-    prewarmCache(); scheduleRadarDraw();
-    if(S.map) S.map.flyTo({center:c,zoom:6,duration:700});
-    showToast('📡 Focused '+(f.properties.id||'NEXRAD'));
-  }
-  if(!S._nexradClickBound){
-    S.map.on('click','nexrad-sites-hit',onSiteClick);
-    S.map.on('click','nexrad-sites-dot',onSiteClick);
-    S.map.on('click','nexrad-sites-label',onSiteClick);
-    S.map.on('mouseenter','nexrad-sites-hit',function(){S.map.getCanvas().style.cursor='pointer';});
-    S.map.on('mouseleave','nexrad-sites-hit',function(){S.map.getCanvas().style.cursor='';});
-    S.map.on('mouseenter','nexrad-sites-dot',function(){S.map.getCanvas().style.cursor='pointer';});
-    S.map.on('mouseleave','nexrad-sites-dot',function(){S.map.getCanvas().style.cursor='';});
-    S.map.on('mouseenter','nexrad-sites-label',function(){S.map.getCanvas().style.cursor='pointer';});
-    S.map.on('mouseleave','nexrad-sites-label',function(){S.map.getCanvas().style.cursor='';});
-    S._nexradClickBound=true;
-  }
-}
 
 function renderRadarAdvancedOnMap(){
   if(!S.map||!S.map.isStyleLoaded()||!S.radarAdvanced) return;
@@ -1693,21 +1618,11 @@ function initUI(){
       updateRadarDebugOverlay();
     };
   });
-  $('nexradFocusBtn').onclick=function(){
-    S.nexradFocusMode=!S.nexradFocusMode;
-    $('nexradFocusBtn').classList.toggle('active',S.nexradFocusMode);
-    if(!S.nexradFocusMode){
-      S.nexradFocus=null;
-      showToast('🎯 NEXRAD focus off (radar always visible)');
-      if(S.frames.length) loadRadar();
-    } else {
-      showToast('🎯 Click map or a NEXRAD site to load radar');
-      scheduleRadarDraw();
-    }
-    renderRadarInfo();
-  };
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
   $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; scheduleRadarDraw(); saveCfg(); });
+  $('rainOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; scheduleRadarDraw(); saveCfg(); });
+  $('tomorrowRadarBtn').onclick=function(){ S.tomorrowRadarEnabled=!S.tomorrowRadarEnabled; this.classList.toggle('active',S.tomorrowRadarEnabled); updateTomorrowRadarForFrame(); };
+  $('tomorrowOpacity').addEventListener('input',function(e){ S.tomorrowOpacity=Math.max(0,Math.min(1,+e.target.value/100)); updateTomorrowRadarForFrame(); });
   $('tPrev').onclick   =function(){ if(S.frame>0) pickFrame(S.frame-1); };
   $('tNext').onclick   =function(){ if(S.frame<S.frames.length-1) pickFrame(S.frame+1); };
 
@@ -1837,7 +1752,6 @@ function initUI(){
   $('sCrosshair').addEventListener('change',function(e){
     S.cfg.crosshair=e.target.checked; saveCfg(); $('crosshair').style.display=e.target.checked?'':'none';
   });
-  $('sClickAction').addEventListener('change',function(e){S.cfg.clickAction=e.target.checked?'nws':'weather';saveCfg();});
 
   // ★ FIXED: Checkboxes immediately toggle row visibility.
   //   ROW_MAP defined OUTSIDE the forEach so no closures capture
@@ -1894,24 +1808,9 @@ async function loadAdvancedData(){
     renderLightningOnMap();
     renderRadarAdvancedOnMap();
     renderPrecipTypeOnMap(S.precipTypeGeoJSON);
-    renderNexradSitesOnMap();
   }catch(e){ console.warn('Advanced data unavailable',e.message); }
 }
 
-
-function focusNexradSite(id){
-  var site=(S.nexradSites||[]).find(function(s){ return String(s.id).toUpperCase()===String(id).toUpperCase(); });
-  if(!site) return showToast('⚠ NEXRAD site not found');
-  S.nexradFocusMode=true;
-  S.nexradFocus={lat:site.lat,lng:site.lng};
-  var b=$('nexradFocusBtn'); if(b) b.classList.add('active');
-  if(!S.frames.length) loadRadar();
-  if(S.radarRenderMode==='mapbox' && S.frames.length && !S.radarLayerIds.length) initRadarMapLayers();
-  scheduleRadarDraw();
-  if(S.map) S.map.flyTo({center:[site.lng,site.lat],zoom:6,duration:700});
-  showToast('📡 Focused '+site.id);
-  renderRadarInfo();
-}
 
 // ── RADAR INFO PANEL ──────────────────────────────────────────────
 function renderRadarInfo(){
@@ -1922,10 +1821,7 @@ function renderRadarInfo(){
     '<div class="ri-title">Radar Status</div>'+
     '<div class="ri-stat"><span>Source</span><span>'+(S.radarSource||'unknown')+(S.radarDegraded?' (degraded)':'')+'</span></div>'+
     '<div class="ri-stat"><span>Coverage</span><span>'+((S.compositeMeta?.global?.label)||'Global Composite')+'</span></div>'+
-    '<div class="ri-stat"><span>US Base</span><span>'+((S.compositeMeta?.us?.label)||'NEXRAD (on focus)')+'</span></div>'+
-    '<div class="ri-stat"><span>NEXRAD Sites</span><span>'+(S.nexradSites.length||0)+'</span></div>'+
     '<div class="ri-stat"><span>Overlay</span><span>'+(S.activeOverlay?(overlayNames[S.activeOverlay]||S.activeOverlay)+'':'None')+'</span></div>'+
-    '<div class="ri-stat"><span>NEXRAD Focus</span><span>'+(S.nexradFocusMode?(S.nexradFocus?('ON @ '+S.nexradFocus.lat.toFixed(2)+', '+S.nexradFocus.lng.toFixed(2)):'Waiting for click'):'Off')+'</span></div>'+
     '<div class="ri-stat"><span>Frames</span><span>'+S.frames.length+'/12</span></div>'+
     '<div class="ri-stat"><span>Storm Cells</span><span>'+((S.radarAdvanced?.stormCells||[]).length)+'</span></div>'+
     '<div class="ri-stat"><span>Echo Tops</span><span>'+((S.radarAdvanced?.echoTops||[]).length)+'</span></div>'+
@@ -1945,11 +1841,6 @@ function renderRadarInfo(){
       '<button class="ri-refresh" onclick="tileCache.clear();loadRadar();showToast(\'↻ Radar refreshed\')">↻ Refresh Radar</button>'+
       '<button class="ri-refresh" onclick="S.compareMode=!S.compareMode;scheduleRadarDraw();renderRadarInfo();">⇄ Dual Compare</button>'+
       '<button class="ri-refresh" onclick="loadAdvancedData();renderRadarInfo();">⚡ Refresh Advanced</button>'+
-    '</div>'+
-    '<div class="ri-sites"><div class="ri-sites-title">Quick NEXRAD Sites</div>'+
-      ((S.nexradSites||[]).slice(0,18).map(function(site){
-        return '<button class=\"ri-site-btn\" onclick=\"focusNexradSite(\''+site.id+'\')\">'+site.id+'</button>';
-      }).join(''))+
     '</div>'+
   '</div>';
 }
@@ -1982,7 +1873,7 @@ function applySettingsUI(){
   $('quickOpacity').value=Math.round(c.opacity*100);
   $('sOpacityVal').textContent=Math.round(c.opacity*100)+'%';
   $('sAutoPlay').checked=c.autoPlay; $('sAlertZones').checked=c.alertZones;
-  $('sCrosshair').checked=c.crosshair; $('sClickAction').checked=c.clickAction==='nws';
+  $('sCrosshair').checked=c.crosshair;
   if(!c.crosshair) $('crosshair').style.display='none';
   [['sfHumidity','showHumidity'],['sfPressure','showPressure'],['sfUV','showUV'],
    ['sfSunTimes','showSunTimes'],['sfWind','showWind'],['sfRain','showRain'],

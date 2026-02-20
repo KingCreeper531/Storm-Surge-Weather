@@ -31,9 +31,16 @@ const GCS_BUCKET = process.env.GCS_BUCKET || 'storm_surge_bucket';
 const GCS_PROJECT= process.env.GCS_PROJECT || 'storm-surge-487802';
 const WEATHERNEXT_KEY = process.env.WEATHERNEXT_KEY || process.env.WEATHERNEXT2_KEY || process.env.TOMORROW_API_KEY;  // WeatherNext 2 API key
 const TOMORROW_KEY = process.env.TOMORROW_API_KEY || process.env.WEATHERNEXT_KEY || process.env.WEATHERNEXT2_KEY;
+const TOMORROW_RADAR_TILE_TEMPLATE = process.env.TOMORROW_RADAR_TILE_TEMPLATE || '';
+const DEBUG_RADAR = process.env.DEBUG_RADAR === '1';
 const APP_VERSION = process.env.APP_VERSION || process.env.RENDER_GIT_COMMIT?.slice(0, 7) || '1.2.1';
 const DEPLOY_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null;
 const DEPLOY_BRANCH = process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || null;
+
+function radarDebugLog(){
+  if(!DEBUG_RADAR) return;
+  console.log('[radar]', ...arguments);
+}
 // ── GOOGLE CLOUD STORAGE ─────────────────────────────────────────
 function parseGoogleCloudCredentials(input) {
   if (!input) return null;
@@ -431,6 +438,67 @@ app.get('/api/weather', async (req, res) => {
     }
   }
 });
+
+app.get('/api/reports/weathernext2', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'valid lat and lng required' });
+  const cacheKey = `wx2_report_${lat.toFixed(2)}_${lng.toFixed(2)}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json({ ...cached, _cached: true });
+  try {
+    const weather = WEATHERNEXT_KEY ? await fetchWeatherNext2(lat, lng) : await fetchOpenMeteo(lat, lng);
+    const hourlyTimes = weather.hourly?.time || [];
+    const report = {
+      provider: WEATHERNEXT_KEY ? 'weathernext2' : 'open-meteo-fallback',
+      location: { lat, lng, name: req.query.name || null },
+      now: {
+        tempC: Number(weather.current?.temperature_2m || 0),
+        wind: Number(weather.current?.wind_speed_10m || 0),
+        summary: `Code ${weather.current?.weather_code ?? 0}`
+      },
+      hourly: hourlyTimes.slice(0,24).map((t, i) => ({
+        time: t,
+        tempC: Number(weather.hourly?.temperature_2m?.[i] || 0),
+        precipProb: Number(weather.hourly?.precipitation_probability?.[i] || 0),
+        code: Number(weather.hourly?.weather_code?.[i] || 0)
+      })),
+      daily: (weather.daily?.time || []).slice(0,7).map((t, i) => ({
+        name: i===0 ? 'Today' : new Date(t).toLocaleDateString('en-US', { weekday: 'short' }),
+        maxC: Number(weather.daily?.temperature_2m_max?.[i] || 0),
+        minC: Number(weather.daily?.temperature_2m_min?.[i] || 0),
+        summary: `Code ${weather.daily?.weather_code?.[i] ?? 0}`
+      }))
+    };
+    cache.set(cacheKey, report, 300);
+    res.json(report);
+  } catch (e) {
+    const weather = buildSyntheticWeather(lat, lng);
+    const report = {
+      provider: 'synthetic-fallback',
+      location: { lat, lng, name: req.query.name || null },
+      now: {
+        tempC: Number(weather.current?.temperature_2m || 0),
+        wind: Number(weather.current?.wind_speed_10m || 0),
+        summary: `Code ${weather.current?.weather_code ?? 0}`
+      },
+      hourly: (weather.hourly?.time || []).slice(0,24).map((t, i) => ({
+        time: t,
+        tempC: Number(weather.hourly?.temperature_2m?.[i] || 0),
+        precipProb: Number(weather.hourly?.precipitation_probability?.[i] || 0),
+        code: Number(weather.hourly?.weather_code?.[i] || 0)
+      })),
+      daily: (weather.daily?.time || []).slice(0,7).map((t, i) => ({
+        name: i===0 ? 'Today' : new Date(t).toLocaleDateString('en-US', { weekday: 'short' }),
+        maxC: Number(weather.daily?.temperature_2m_max?.[i] || 0),
+        minC: Number(weather.daily?.temperature_2m_min?.[i] || 0),
+        summary: `Code ${weather.daily?.weather_code?.[i] ?? 0}`
+      }))
+    };
+    res.json(report);
+  }
+});
+
 async function fetchWeatherNext2(lat, lng) {
   const fields = [
     'temperature','temperatureApparent','humidity','precipitationProbability',
@@ -1010,48 +1078,9 @@ app.post('/api/chat-rooms/:room/messages', requireAuth, (req, res) => {
   room.messages.push(msg);
   res.json(msg);
 });
-const NEXRAD_SITES = [
-  ['KTLX',35.333,-97.278],['KFDR',34.362,-98.976],['KINX',36.175,-95.564],['KDYX',32.538,-99.254],
-  ['KAMA',35.234,-101.709],['KLBB',33.654,-101.814],['KBMX',33.172,-86.769],['KHTX',34.931,-86.084],
-  ['KGWX',33.896,-88.329],['KDGX',32.28,-89.984],['KLIX',30.337,-89.825],['KMXX',32.536,-85.789],
-  ['KTBW',27.706,-82.401],['KJAX',30.485,-81.702],['KAMX',25.611,-80.413],['KTLH',30.397,-84.329],
-  ['KFFC',33.364,-84.565],['KVAX',30.89,-83.001],['KGRK',30.722,-97.382],['KHGX',29.472,-95.079],
-  ['KEWX',29.704,-98.029],['KBRO',25.916,-97.419],['KCRP',27.784,-97.511],['KLCH',30.126,-93.216],
-  ['KSHV',32.451,-93.841],['KLZK',34.836,-92.262],['KSRX',35.291,-94.361],['KPAH',37.068,-88.772],
-  ['KILX',40.151,-89.337],['KLOT',41.604,-88.085],['KIND',39.707,-86.281],['KVWX',38.26,-87.724],
-  ['KGRR',42.893,-85.544],['KDTX',42.7,-83.471],['KAPX',44.907,-84.72],['KDLH',46.836,-92.209],
-  ['KMPX',44.848,-93.565],['KARX',43.822,-91.191],['KDMX',41.731,-93.723],['KOAX',41.32,-96.367],
-  ['KLNX',41.957,-100.576],['KUEX',40.321,-98.442],['KGLD',39.366,-101.7],['KDDC',37.76,-99.968],
-  ['KICT',37.654,-97.443],['KPUX',38.46,-104.181],['KFTG',39.786,-104.546],['KCYS',41.151,-104.806],
-  ['KRIW',43.066,-108.477],['KGGW',48.206,-106.625],['KBLX',45.853,-108.607],['KMSX',47.041,-113.986],
-  ['KTFX',47.46,-111.385],['KCBX',43.491,-116.236],['KMAX',42.081,-122.717],['KRTX',45.715,-122.965],
-  ['KDAX',38.501,-121.677],['KMUX',37.155,-121.899],['KBBX',39.496,-121.632],['KHNX',36.314,-119.632],
-  ['KEYX',35.098,-117.56],['KSOX',33.817,-117.636],['KNKX',32.919,-117.041],['KYUX',32.494,-114.656],
-  ['KIWA',33.289,-111.67],['KEMX',31.893,-110.63],['KFSX',34.574,-111.198],['KABX',35.149,-106.824],
-  ['KFDX',34.635,-103.619],['KHDX',33.077,-106.121],['KDOX',38.826,-75.44],['KDIX',39.947,-74.411],
-  ['KLWX',38.976,-77.487],['KAKQ',36.984,-77.007],['KRAX',35.665,-78.49],['KCLX',32.655,-81.042],
-  ['KCAE',33.948,-81.119],['KMRX',36.168,-83.402],['KOHX',36.247,-86.563],['KLVX',37.975,-85.943],
-  ['KILN',39.421,-83.821],['KCLE',41.413,-81.86],['KBUF',42.949,-78.737],['KENX',42.586,-74.064],
-  ['KBGM',42.2,-75.985],['KTYX',43.756,-75.68],['KOKX',40.866,-72.864],['KBOX',41.956,-71.137],
-  ['KCBW',46.039,-67.806],['KCXX',44.511,-73.166],['KGYX',43.891,-70.256],['PHKI',21.894,-159.552],
-  ['PHMO',21.132,-157.18],['PHKM',20.125,-155.778],['TJUA',18.116,-66.078]
-];
-app.get('/api/radar/nexrad-sites', (req, res) => {
-  res.json({
-    source: 'nexrad-site-catalog',
-    count: NEXRAD_SITES.length,
-    sites: NEXRAD_SITES.map(([id, lat, lng]) => ({ id, lat, lng }))
-  });
-});
 app.get('/api/radar/composite', (req, res) => {
   res.json({
     aggregator: 'rainviewer-composite',
-    us: {
-      label: 'NEXRAD base (focus mode)',
-      region: 'US',
-      strategy: 'click-to-focus high-density tile window',
-      provider: 'rainviewer/us-composite'
-    },
     global: {
       label: 'National mosaics merged composite',
       region: 'Europe + Global',
@@ -1060,6 +1089,50 @@ app.get('/api/radar/composite', (req, res) => {
     }
   });
 });
+
+app.get('/api/radar/tomorrow/metadata', async (req, res) => {
+  const enabled = !!(TOMORROW_KEY && TOMORROW_RADAR_TILE_TEMPLATE);
+  const latestTime = Math.floor(Date.now()/1000);
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({
+    enabled,
+    provider: enabled ? 'tomorrow.io' : 'fallback',
+    latestTime,
+    template: '/api/radar/tomorrow/tiles/{z}/{x}/{y}?time={time}'
+  });
+});
+
+app.get('/api/radar/tomorrow/tiles/:z/:x/:y', async (req, res) => {
+  const z = Number(req.params.z), x = Number(req.params.x), y = Number(req.params.y);
+  const time = String(req.query.time || 'latest');
+  if (![z,x,y].every(Number.isFinite)) return res.status(400).json({ error: 'Invalid tile coordinates' });
+  if (!TOMORROW_KEY || !TOMORROW_RADAR_TILE_TEMPLATE) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="rgba(0,0,0,0)"/></svg>`;
+    res.set('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=60');
+    return res.send(svg);
+  }
+  try {
+    const upstream = TOMORROW_RADAR_TILE_TEMPLATE
+      .replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y))
+      .replace('{time}', encodeURIComponent(time))
+      .replace('{apikey}', encodeURIComponent(TOMORROW_KEY));
+    radarDebugLog('tomorrow tile', z, x, y, time);
+    const r = await fetch(upstream);
+    if (!r.ok) throw new Error(`Tomorrow radar ${r.status}`);
+    const arr = Buffer.from(await r.arrayBuffer());
+    res.set('Content-Type', r.headers.get('content-type') || 'image/png');
+    res.set('Cache-Control', 'public, max-age=120');
+    res.send(arr);
+  } catch (e) {
+    radarDebugLog('tomorrow tile failed', e.message);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="rgba(0,0,0,0)"/></svg>`;
+    res.set('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=30');
+    res.send(svg);
+  }
+});
+
 app.get('/api/radar/frames', async (req, res) => {
   try {
     const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');

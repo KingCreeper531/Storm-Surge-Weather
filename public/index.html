@@ -165,8 +165,10 @@
         <button class="speed-pill" data-rate="2">2x</button>
         <button class="speed-pill" data-rate="4">4x</button>
       </div>
-      <button class="t-focus" id="nexradFocusBtn" title="Enable click-to-focus NEXRAD mode">🎯 NEXRAD Focus</button>
+      <button class="t-focus" id="tomorrowRadarBtn" title="Toggle Tomorrow.io radar layer">🛰 Tomorrow Radar</button>
       <button class="t-focus" id="debugRadarBtn" title="Toggle radar debug overlay">🐞 Radar Debug</button>
+      <label class="quick-op">Rain <input type="range" id="rainOpacity" min="20" max="100" value="75"></label>
+      <label class="quick-op">Tomorrow <input type="range" id="tomorrowOpacity" min="0" max="100" value="55"></label>
       <label class="quick-op">Opacity <input type="range" id="quickOpacity" min="20" max="100" value="75"></label>
     </div>
     <pre id="radarDebug" class="radar-debug" aria-live="polite"></pre>
@@ -194,7 +196,7 @@
   </div>
 </aside>
 
-<!-- NWS / ALERT MODAL -->
+<!-- WEATHER REPORT / ALERT MODAL -->
 <div class="modal" id="alertModal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
   <div class="mbox large">
     <div class="mbox-head">
@@ -347,9 +349,7 @@
         <div class="s-row"><span>Show Crosshair</span>
           <label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label>
         </div>
-        <div class="s-row"><span>Map Click → NWS Report</span>
-          <label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label>
-        </div>
+        
         <div class="s-row"><span>Weather Card Position</span>
           <div class="seg" id="sCardPos" role="group" aria-label="Card position">
             <button class="sb active" data-v="top-left">↖ TL</button>
@@ -384,9 +384,9 @@
         <div class="s-sec-title">About</div>
         <div class="about-box">
           <div>Storm Surge Weather <strong>v10.3</strong></div>
-          <div>Radar — RainViewer</div>
-                    <div>Forecast — WeatherNext2</div>
-          <div>Alerts + NWS Reports — weather.gov</div>
+          <div>Radar — RainViewer + Tomorrow.io (server proxy)</div>
+                    <div>Forecast + Reports — WeatherNext2</div>
+          <div>Alerts — weather.gov</div>
           <div>Maps — Mapbox GL JS</div>
           <div>Cameras — Hazcams</div>
           <div>Storage — Google Cloud Storage</div>
