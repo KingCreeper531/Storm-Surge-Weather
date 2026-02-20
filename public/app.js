@@ -30,8 +30,8 @@ const S = {
   compareMode: false, interpMode: true,
   lightning: [], hurricaneTrack: [], stormReports: [], metars: [], modelCmp: null,
   radarSource: 'rainviewer', radarDegraded: false,
-  radarAdvanced: null,
-  nexradFocusMode: false, nexradFocus: null, compositeMeta: null, nexradSites: [],
+  radarAdvanced: null, precipTypeGeoJSON: null,
+  nexradFocusMode: true, nexradFocus: null, compositeMeta: null, nexradSites: [],
   radarRenderMode: 'mapbox', radarLayerIds: [],
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
@@ -96,6 +96,11 @@ function initRadarMapLayers(){
 }
 
 function renderRadarFrame(idx){
+  if(!shouldRenderRadarNow()){
+    clearRadarMapLayers();
+    if(S.ctx&&S.canvas) S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
+    return;
+  }
   if(S.radarRenderMode==='mapbox'&&S.map&&S.radarLayerIds.length){
     if(S.ctx&&S.canvas){ S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height); }
     S.radarLayerIds.forEach(function(id,j){
@@ -114,6 +119,10 @@ function syncRadarRenderMode(){
   } else {
     S.canvas.style.opacity='1';
   }
+}
+
+function shouldRenderRadarNow(){
+  return !!(S.frames.length && (!S.nexradFocusMode || !!S.nexradFocus));
 }
 
 function apiHeaders(auth) {
@@ -283,7 +292,7 @@ function cycleMapStyle() {
     if(S.cfg.alertZones&&S.alerts.length) putAlertsOnMap();
     renderLightningOnMap();
     renderRadarAdvancedOnMap();
-    renderPrecipTypeOnMap(pt);
+    renderPrecipTypeOnMap(S.precipTypeGeoJSON);
     renderNexradSitesOnMap();
     clearRadarMapLayers();
     syncRadarRenderMode();
@@ -516,6 +525,12 @@ async function loadRadar(){
     }
     S.frame=S.frames.length-1;
     buildSlots(); resizeCanvas(); syncRadarRenderMode();
+    if(!shouldRenderRadarNow()){
+      clearRadarMapLayers();
+      if(S.ctx&&S.canvas) S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
+      renderRadarInfo();
+      return;
+    }
     if(S.radarRenderMode==='mapbox'){ initRadarMapLayers(); }
     else { prewarmCache(); drawFrame(S.frame); }
     if(S.cfg.autoPlay) play();
@@ -563,7 +578,7 @@ function loadTile(src){
 }
 
 function drawCachedFrame(){
-  if(S.radarRenderMode==='mapbox') return;
+  if(S.radarRenderMode==='mapbox' || !shouldRenderRadarNow()) return;
   if(!S.frames[S.frame]||!S.map||!S.ctx) return;
   var project=S.map.project.bind(S.map);
   S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
@@ -586,7 +601,7 @@ function scheduleRadarDraw(){
 }
 
 async function drawFrame(idx){
-  if(!S.frames[idx]||!S.map||!S.ctx) return;
+  if(!shouldRenderRadarNow()||!S.frames[idx]||!S.map||!S.ctx) return;
   var seq=++_drawSeq, frame=S.frames[idx], color=S.cfg.radarColor||'6';
   var z=Math.max(2,Math.min(12,Math.floor(S.map.getZoom())));
   var b=S.map.getBounds(), pad=0.8;
@@ -644,6 +659,7 @@ async function drawFrame(idx){
 
 
 function drawFrameQuick(idx,project){
+  if(!shouldRenderRadarNow()) return;
   var frame=S.frames[idx], color=S.cfg.radarColor||'6'; if(!frame||!S.map) return;
   var z=Math.max(2,Math.min(12,Math.floor(S.map.getZoom()))), b=S.map.getBounds();
   var mn=ll2t(b.getWest(),b.getNorth(),z), mx=ll2t(b.getEast(),b.getSouth(),z), maxT=(1<<z)-1;
@@ -1087,6 +1103,7 @@ function renderNexradSitesOnMap(){
     S.nexradFocus={lat:c[1],lng:c[0]};
     S.nexradFocusMode=true;
     var b=$('nexradFocusBtn'); if(b) b.classList.add('active');
+    if(!S.frames.length) loadRadar();
     prewarmCache(); scheduleRadarDraw();
     if(S.map) S.map.flyTo({center:c,zoom:6,duration:700});
     showToast('📡 Focused '+(f.properties.id||'NEXRAD'));
@@ -1567,9 +1584,15 @@ function initUI(){
   $('nexradFocusBtn').onclick=function(){
     S.nexradFocusMode=!S.nexradFocusMode;
     $('nexradFocusBtn').classList.toggle('active',S.nexradFocusMode);
-    if(!S.nexradFocusMode){ S.nexradFocus=null; showToast('🎯 NEXRAD focus off'); }
-    else showToast('🎯 Click map or a NEXRAD site');
-    prewarmCache(); scheduleRadarDraw();
+    if(!S.nexradFocusMode){
+      S.nexradFocus=null;
+      showToast('🎯 NEXRAD focus off (radar always visible)');
+      if(S.frames.length) loadRadar();
+    } else {
+      showToast('🎯 Click map or a NEXRAD site to load radar');
+      scheduleRadarDraw();
+    }
+    renderRadarInfo();
   };
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
   $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; scheduleRadarDraw(); saveCfg(); });
@@ -1751,10 +1774,11 @@ async function loadAdvancedData(){
     ]);
     S.lightning=(bz.items&&bz.items.length?bz.items:l.items)||[]; S.hurricaneTrack=h.points||[]; S.stormReports=sr.items||[]; S.metars=m.items||[]; S.modelCmp=mc||null;
     S.radarAdvanced=ra||null;
+    S.precipTypeGeoJSON=pt||null;
     if(S.radarAdvanced&&rf){ S.radarAdvanced.rainfallTotals={ oneHourMm:rf.oneHourMm, twentyFourHourMm:rf.twentyFourHourMm, floodRisk:rf.floodRisk }; }
     renderLightningOnMap();
     renderRadarAdvancedOnMap();
-    renderPrecipTypeOnMap(pt);
+    renderPrecipTypeOnMap(S.precipTypeGeoJSON);
     renderNexradSitesOnMap();
   }catch(e){ console.warn('Advanced data unavailable',e.message); }
 }
@@ -1771,7 +1795,7 @@ function renderRadarInfo(){
     '<div class="ri-stat"><span>US Base</span><span>'+((S.compositeMeta?.us?.label)||'NEXRAD (on focus)')+'</span></div>'+
     '<div class="ri-stat"><span>NEXRAD Sites</span><span>'+(S.nexradSites.length||0)+'</span></div>'+
     '<div class="ri-stat"><span>Overlay</span><span>'+(S.activeOverlay?(overlayNames[S.activeOverlay]||S.activeOverlay)+'':'None')+'</span></div>'+
-    '<div class="ri-stat"><span>NEXRAD Focus</span><span>'+(S.nexradFocusMode?(S.nexradFocus?('ON @ '+S.nexradFocus.lat.toFixed(2)+', '+S.nexradFocus.lng.toFixed(2)):'Armed'):'Off')+'</span></div>'+
+    '<div class="ri-stat"><span>NEXRAD Focus</span><span>'+(S.nexradFocusMode?(S.nexradFocus?('ON @ '+S.nexradFocus.lat.toFixed(2)+', '+S.nexradFocus.lng.toFixed(2)):'Waiting for click'):'Off')+'</span></div>'+
     '<div class="ri-stat"><span>Frames</span><span>'+S.frames.length+'/12</span></div>'+
     '<div class="ri-stat"><span>Storm Cells</span><span>'+((S.radarAdvanced?.stormCells||[]).length)+'</span></div>'+
     '<div class="ri-stat"><span>Echo Tops</span><span>'+((S.radarAdvanced?.echoTops||[]).length)+'</span></div>'+
