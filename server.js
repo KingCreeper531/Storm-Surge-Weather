@@ -83,7 +83,14 @@ app.use(express.json({ limit: '10mb' }));
 
 // Rate limiting
 const apiLimiter = rateLimit({ windowMs: 60*1000, max: 60, message: { error: 'Too many requests' } });
-const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 25, message: { error: 'Too many auth attempts' } });
+const authLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Too many auth attempts — try again in a few minutes' }
+});
 app.use('/api/', apiLimiter);
 
 // ── AUTH MIDDLEWARE ──────────────────────────────────────────────

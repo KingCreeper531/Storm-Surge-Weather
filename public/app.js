@@ -175,11 +175,11 @@ function initMap() {
         drawCachedFrame();
       });
     });
-    // After movement ends: refresh tile cache for newly visible area.
+    // After movement ends: prewarm any new tiles, but keep cache to avoid hard reload flashes.
     ['moveend','zoomend'].forEach(function(ev){
       S.map.on(ev,function(){
         if(!S.frames.length||S.drawMode) return;
-        tileCache.clear(); prewarmCache(); scheduleRadarDraw();
+        prewarmCache(); scheduleRadarDraw();
       });
     });
     S.map.on('click',function(e){ if(!S.drawMode) handleMapClick(e); });
@@ -833,30 +833,33 @@ function openAlertModal(idx){
   var onset  =props.onset  ?new Date(props.onset)  :(props.sent?new Date(props.sent):null);
   var expires=props.expires?new Date(props.expires):null;
   setText('mTitle',ico+' '+props.event);
+
+  var sev=(props.severity||'Unknown');
+  var certainty=(props.certainty||'Unknown');
+  var urgency=(props.urgency||'Unknown');
+  var areas=(props.areaDesc||'').split(';').map(function(s){return s.trim();}).filter(Boolean).slice(0,5).join(' · ');
+
   $('mBody').innerHTML=
-    '<div class="ad-hdr">'+
-      '<div class="ad-ico">'+ico+'</div>'+
-      '<div class="ad-title">'+(props.headline||props.event)+'</div>'+
-    '</div>'+
-    '<div class="ad-chips">'+
-      (onset  ?'<span class="ad-chip">📅 '+onset.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</span>':'')+
-      (expires?'<span class="ad-chip">⏱ '+fmtDateTime(expires)+'</span>':'')+
-      (props.severity ?'<span class="ad-chip">⚡ '+props.severity+'</span>':'')+
-      (props.certainty?'<span class="ad-chip">🎯 '+props.certainty+'</span>':'')+
-      (props.urgency  ?'<span class="ad-chip">⏰ '+props.urgency+'</span>':'')+
-    '</div>'+
-    (props.areaDesc?'<div class="ad-area-row">📍 '+props.areaDesc.split(';').map(function(s){return s.trim();}).filter(Boolean).slice(0,5).join(' · ')+'</div>':'')+
-    '<div class="ad-section">'+
-      '<div class="ad-sub-title">Description</div>'+
-      '<div class="ad-text">'+fmtAlertText(props.description)+'</div>'+
-    '</div>'+
-    (props.instruction?
-      '<div class="ad-section">'+
-        '<div class="ad-sub-title">⚠ Instructions</div>'+
-        '<div class="ad-text ad-instruction">'+fmtAlertText(props.instruction)+'</div>'+
-      '</div>':'')+
-        (props.senderName?'<div class="ad-sender">Issued by: '+props.senderName+'</div>':'')+
-    '<div class="ad-actions"><button class="ad-share-btn" id="alertShareBtn">⚡ Share to Storm Central</button></div>';
+    '<div class="aw-topline">'+ico+' '+escHtml(props.event||'Weather Alert')+'</div>'+
+    '<div class="aw-card">'+
+      '<div class="aw-title-row">'+
+        '<div class="aw-icon">'+ico+'</div>'+
+        '<div class="aw-title">'+escHtml(props.headline||props.event||'Alert')+'</div>'+
+      '</div>'+
+      '<div class="aw-chips">'+
+        (onset  ?'<span class="aw-chip">📅 '+onset.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</span>':'')+
+        (expires?'<span class="aw-chip">⏱ Expires '+fmtDateTime(expires)+'</span>':'')+
+        '<span class="aw-chip">⚡ '+escHtml(sev)+'</span>'+
+        '<span class="aw-chip">🎯 '+escHtml(certainty)+'</span>'+
+        '<span class="aw-chip">⏰ '+escHtml(urgency)+'</span>'+
+      '</div>'+
+      (areas?'<div class="aw-chip aw-area">📍 '+escHtml(areas)+'</div>':'')+
+      '<div class="aw-sec"><div class="aw-sec-title">DETAILS</div><div class="aw-scroll">'+fmtAlertText(props.description||'No description provided.')+'</div></div>'+
+      (props.instruction?'<div class="aw-sec"><div class="aw-sec-title">INSTRUCTIONS</div><div class="aw-scroll aw-instructions">'+fmtAlertText(props.instruction)+'</div></div>':'')+
+      (props.senderName?'<div class="aw-sender">Issued by '+escHtml(props.senderName)+'</div>':'')+
+      '<div class="ad-actions"><button class="ad-share-btn" id="alertShareBtn">⚡ Share to Storm Central</button></div>'+
+    '</div>';
+
   var sb=$('alertShareBtn');
   if(sb) sb.addEventListener('click',function(){
     alertDiscoveryData(alert);
@@ -866,6 +869,7 @@ function openAlertModal(idx){
   });
   openModal('alertModal');
 }
+
 
 function putAlertsOnMap(){
   if(!S.map||!S.map.isStyleLoaded()) return;
@@ -890,6 +894,45 @@ function rmLayers(layers,sources){
   if(!S.map) return;
   try{ layers.forEach(function(l){ if(S.map.getLayer(l)) S.map.removeLayer(l); }); }catch(e){}
   try{ sources.forEach(function(s){ if(S.map.getSource(s)) S.map.removeSource(s); }); }catch(e){}
+}
+
+function renderLightningOnMap(){
+  if(!S.map||!S.map.isStyleLoaded()) return;
+  var feats=(S.lightning||[]).filter(function(it){
+    return Number.isFinite(+it.lng)&&Number.isFinite(+it.lat);
+  }).map(function(it){
+    return {
+      type:'Feature',
+      geometry:{ type:'Point', coordinates:[+it.lng,+it.lat] },
+      properties:{ intensity: Number(it.intensity||30) }
+    };
+  });
+  var fc={type:'FeatureCollection',features:feats};
+  if(S.map.getSource('lt-src')){
+    S.map.getSource('lt-src').setData(fc);
+    return;
+  }
+  S.map.addSource('lt-src',{type:'geojson',data:fc});
+  S.map.addLayer({id:'lt-glow',type:'circle',source:'lt-src',paint:{
+    'circle-color':'#f9a825',
+    'circle-radius':['interpolate',['linear'],['get','intensity'],0,4,100,13],
+    'circle-opacity':0.18
+  }});
+  S.map.addLayer({id:'lt-layer',type:'circle',source:'lt-src',paint:{
+    'circle-color':['interpolate',['linear'],['get','intensity'],0,'#ffd166',100,'#ff4d00'],
+    'circle-radius':['interpolate',['linear'],['get','intensity'],0,1.8,100,4.8],
+    'circle-stroke-color':'#fff2b3',
+    'circle-stroke-width':0.7,
+    'circle-opacity':0.95
+  }});
+}
+
+function openCameraDock(url,title){
+  var dock=$('camDock'), frame=$('camDockFrame');
+  if(!dock||!frame) return;
+  setText('camDockTitle',title||'Hazcams Live');
+  frame.src=url;
+  dock.classList.add('open');
 }
 
 // ── STORM CENTRAL ─────────────────────────────────────────────────
@@ -1205,14 +1248,22 @@ function searchTrafficCams(query){
     return;
   }
   var url='https://hazcams.com/search?query='+encodeURIComponent(q);
+  var embed='https://hazcams.com/';
   grid.innerHTML='<div class="tc-note">🌐 Powered by Hazcams</div>'+
-    '<div class="empty-s" style="gap:12px">'+
+    '<div class="empty-s" style="gap:10px">'+
     '<div class="es-ico">📷</div>'+
-    '<div>Open live cameras for <strong>'+q+'</strong>.</div>'+
+    '<div>Camera results for <strong>'+escHtml(q)+'</strong>.</div>'+
+    '<button class="tc-ext-link" id="tcEmbedBtn" type="button">Embed Hazcams in map →</button>'+
     '<a class="tc-ext-link" href="'+url+'" target="_blank" rel="noopener noreferrer">Open Hazcams Search →</a>'+
     '<a class="tc-ext-link" href="https://hazcams.com/" target="_blank" rel="noopener noreferrer">Open Hazcams Home →</a>'+
     '</div>';
+  var eb=$('tcEmbedBtn');
+  if(eb) eb.onclick=function(){
+    openCameraDock(embed,'Hazcams · '+q);
+    showToast('📷 Camera panel opened on map');
+  };
 }
+
 
 // ── SEARCH ────────────────────────────────────────────────────────
 async function doSearch(q){
@@ -1379,12 +1430,14 @@ function initUI(){
   $('stormCentralModal').onclick=function(e){if(e.target===$('stormCentralModal'))closeModal('stormCentralModal');};
   $('tcClose').onclick=function(){closeModal('trafficModal');};
   $('trafficModal').onclick=function(e){if(e.target===$('trafficModal'))closeModal('trafficModal');};
+  $('camDockClose').onclick=function(){ $('camDock').classList.remove('open'); $('camDockFrame').src='about:blank'; };
 
   // Traffic cams
   $('tcSearchBtn').onclick=function(){searchTrafficCams($('tcSearch').value.trim());};
   $('tcSearch').addEventListener('keydown',function(e){if(e.key==='Enter')searchTrafficCams($('tcSearch').value.trim());});
 
   initSCAuth();
+  setInterval(loadAdvancedData, 60000);
 
   // Settings — segmented controls
   segBind('sTempUnit', function(v){S.cfg.tempUnit=v;saveCfg();if(S.weather){renderWeather(S.weather);renderForecast(S.weather);}});
@@ -1454,6 +1507,7 @@ async function loadAdvancedData(){
       fetch(API_URL+'/api/model-comparison?lat='+S.lat+'&lng='+S.lng).then(r=>r.json())
     ]);
     S.lightning=l.items||[]; S.hurricaneTrack=h.points||[]; S.stormReports=sr.items||[]; S.metars=m.items||[]; S.modelCmp=mc||null;
+    renderLightningOnMap();
   }catch(e){ console.warn('Advanced data unavailable',e.message); }
 }
 

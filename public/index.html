@@ -161,6 +161,15 @@
       <label class="quick-op">Opacity <input type="range" id="quickOpacity" min="20" max="100" value="75"></label>
     </div>
 
+    <div class="cam-dock" id="camDock" aria-label="Camera embed panel">
+      <div class="cam-dock-head">
+        <strong id="camDockTitle">Hazcams Live</strong>
+        <button id="camDockClose" aria-label="Close camera panel">✕</button>
+      </div>
+      <iframe id="camDockFrame" title="Hazcams Camera" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      <div class="cam-dock-note">If this camera is blocked from embedding, use “Open in new tab”.</div>
+    </div>
+
   </div>
 </main>
 
