@@ -857,6 +857,60 @@ app.get('/api/satellite/eumetsat', (req, res) => {
   });
 });
 
+
+app.get('/api/preciptype', async (req, res) => {
+  const lat = Number(req.query.lat || 39.0);
+  const lng = Number(req.query.lng || -95.0);
+  const key = process.env.TOMORROW_API_KEY || process.env.WEATHERNEXT_KEY || process.env.WEATHERNEXT2_KEY;
+  let ptypes = ['rain','snow','mix','sleet','freezing_rain'];
+
+  if (key) {
+    try {
+      const url = 'https://api.tomorrow.io/v4/weather/forecast?location=' + encodeURIComponent(`${lat},${lng}`)
+        + '&apikey=' + encodeURIComponent(key)
+        + '&timesteps=1h&units=metric';
+      const r = await fetch(url);
+      if (r.ok) {
+        const d = await r.json();
+        const vals = d?.timelines?.hourly?.slice(0, 5) || [];
+        if (vals.length) {
+          ptypes = vals.map(v => {
+            const t = Number(v.values?.temperature ?? 4);
+            if (t <= -1.5) return 'snow';
+            if (t <= -0.2) return 'mix';
+            if (t <= 0.8) return 'sleet';
+            if (t <= 1.6) return 'freezing_rain';
+            return 'rain';
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  const features = ptypes.map((ptype, i) => {
+    const dx = (i - 2) * 0.9;
+    const dy = ((i % 2) ? 0.55 : -0.55);
+    const x = lng + dx;
+    const y = lat + dy;
+    return {
+      type: 'Feature',
+      properties: { ptype },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [x - 0.45, y - 0.28],
+          [x + 0.45, y - 0.28],
+          [x + 0.45, y + 0.28],
+          [x - 0.45, y + 0.28],
+          [x - 0.45, y - 0.28]
+        ]]
+      }
+    };
+  });
+
+  res.json({ type: 'FeatureCollection', features, source: key ? 'tomorrow-fused' : 'synthetic-ptype' });
+});
+
 app.get('/api/rainfall/accumulation', (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
