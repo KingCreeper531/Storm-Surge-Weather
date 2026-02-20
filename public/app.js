@@ -97,12 +97,23 @@ function initRadarMapLayers(){
 
 function renderRadarFrame(idx){
   if(S.radarRenderMode==='mapbox'&&S.map&&S.radarLayerIds.length){
+    if(S.ctx&&S.canvas){ S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height); }
     S.radarLayerIds.forEach(function(id,j){
       try{ S.map.setPaintProperty(id,'raster-opacity', j===idx ? S.cfg.opacity : 0); }catch(e){}
     });
     return;
   }
   drawFrame(idx);
+}
+
+function syncRadarRenderMode(){
+  if(!S.canvas) return;
+  if(S.radarRenderMode==='mapbox'){
+    S.canvas.style.opacity='0';
+    if(S.ctx) S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
+  } else {
+    S.canvas.style.opacity='1';
+  }
 }
 
 function apiHeaders(auth) {
@@ -202,6 +213,7 @@ function applyTheme(theme) {
 function initMap() {
   S.canvas=$('radarCanvas');
   S.ctx=S.canvas.getContext('2d');
+  syncRadarRenderMode();
   window.addEventListener('resize',resizeCanvas);
   try {
     mapboxgl.accessToken=MAPBOX_TOKEN;
@@ -274,6 +286,7 @@ function cycleMapStyle() {
     renderPrecipTypeOnMap(pt);
     renderNexradSitesOnMap();
     clearRadarMapLayers();
+    syncRadarRenderMode();
     tileCache.clear(); loadRadar();
     showToast('🗺 '+S.mapStyle);
   });
@@ -502,7 +515,7 @@ async function loadRadar(){
       S.radarDegraded=false;
     }
     S.frame=S.frames.length-1;
-    buildSlots(); resizeCanvas();
+    buildSlots(); resizeCanvas(); syncRadarRenderMode();
     if(S.radarRenderMode==='mapbox'){ initRadarMapLayers(); }
     else { prewarmCache(); drawFrame(S.frame); }
     if(S.cfg.autoPlay) play();
@@ -550,6 +563,7 @@ function loadTile(src){
 }
 
 function drawCachedFrame(){
+  if(S.radarRenderMode==='mapbox') return;
   if(!S.frames[S.frame]||!S.map||!S.ctx) return;
   var project=S.map.project.bind(S.map);
   S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
@@ -568,7 +582,7 @@ function drawCachedFrame(){
 function scheduleRadarDraw(){
   if(_rafPending) return;
   _rafPending=true;
-  requestAnimationFrame(function(){ _rafPending=false; drawFrame(S.frame); });
+  requestAnimationFrame(function(){ _rafPending=false; renderRadarFrame(S.frame); });
 }
 
 async function drawFrame(idx){
