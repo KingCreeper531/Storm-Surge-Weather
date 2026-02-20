@@ -101,7 +101,8 @@ function renderRadarFrame(idx){
     if(S.ctx&&S.canvas) S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
     return;
   }
-  if(S.radarRenderMode==='mapbox'&&S.map&&S.radarLayerIds.length){
+  if(S.radarRenderMode==='mapbox'&&S.map){
+    if(!S.radarLayerIds.length){ initRadarMapLayers(); return; }
     if(S.ctx&&S.canvas){ S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height); }
     S.radarLayerIds.forEach(function(id,j){
       try{ S.map.setPaintProperty(id,'raster-opacity', j===idx ? S.cfg.opacity : 0); }catch(e){}
@@ -200,7 +201,9 @@ function updateDate() {
 }
 var _toastTimer;
 function showToast(msg) {
-  var t=$('toast'); t.textContent=msg; t.classList.add('show');
+  var t=$('toast'); if(!t) return;
+  var safe=(msg===undefined||msg===null||String(msg).trim()===''||String(msg).trim()==='undefined')?'⚠ Something went wrong':String(msg);
+  t.textContent=safe; t.classList.add('show');
   clearTimeout(_toastTimer); _toastTimer=setTimeout(function(){t.classList.remove('show');},3000);
 }
 function showLoader(show) { $('loader').classList.toggle('show',show); }
@@ -261,6 +264,8 @@ function initMap() {
     S.map.on('click',function(e){
       if(S.nexradFocusMode && !S.drawMode){
         S.nexradFocus={lat:e.lngLat.lat,lng:e.lngLat.lng};
+        if(!S.frames.length) loadRadar();
+        if(S.radarRenderMode==='mapbox' && S.frames.length && !S.radarLayerIds.length) initRadarMapLayers();
         prewarmCache(); scheduleRadarDraw();
         showToast('🎯 NEXRAD focus set');
         return;
@@ -1090,8 +1095,12 @@ function renderNexradSitesOnMap(){
   }else{
     S.map.addSource('nexrad-sites-src',{type:'geojson',data:fc});
   }
+  if(!S.map.getLayer('nexrad-sites-hit')) S.map.addLayer({id:'nexrad-sites-hit',type:'circle',source:'nexrad-sites-src',paint:{
+    'circle-radius':['interpolate',['linear'],['zoom'],2,14,8,24],
+    'circle-color':'#60a5fa','circle-opacity':0.01
+  }});
   if(!S.map.getLayer('nexrad-sites-dot')) S.map.addLayer({id:'nexrad-sites-dot',type:'circle',source:'nexrad-sites-src',paint:{
-    'circle-radius':['interpolate',['linear'],['zoom'],2,5.8,8,7.2],'circle-color':'#1d4ed8','circle-stroke-color':'#dbeafe','circle-stroke-width':1.25
+    'circle-radius':['interpolate',['linear'],['zoom'],2,7.2,8,9.8],'circle-color':'#1d4ed8','circle-stroke-color':'#dbeafe','circle-stroke-width':1.5
   }});
   if(!S.map.getLayer('nexrad-sites-label')) S.map.addLayer({id:'nexrad-sites-label',type:'symbol',source:'nexrad-sites-src',layout:{
     'text-field':['get','id'],'text-size':10,'text-offset':[0,1.2],'text-font':['Open Sans Bold','Arial Unicode MS Bold'],'text-allow-overlap':true
@@ -1104,13 +1113,17 @@ function renderNexradSitesOnMap(){
     S.nexradFocusMode=true;
     var b=$('nexradFocusBtn'); if(b) b.classList.add('active');
     if(!S.frames.length) loadRadar();
+    if(S.radarRenderMode==='mapbox' && S.frames.length && !S.radarLayerIds.length) initRadarMapLayers();
     prewarmCache(); scheduleRadarDraw();
     if(S.map) S.map.flyTo({center:c,zoom:6,duration:700});
     showToast('📡 Focused '+(f.properties.id||'NEXRAD'));
   }
   if(!S._nexradClickBound){
+    S.map.on('click','nexrad-sites-hit',onSiteClick);
     S.map.on('click','nexrad-sites-dot',onSiteClick);
     S.map.on('click','nexrad-sites-label',onSiteClick);
+    S.map.on('mouseenter','nexrad-sites-hit',function(){S.map.getCanvas().style.cursor='pointer';});
+    S.map.on('mouseleave','nexrad-sites-hit',function(){S.map.getCanvas().style.cursor='';});
     S.map.on('mouseenter','nexrad-sites-dot',function(){S.map.getCanvas().style.cursor='pointer';});
     S.map.on('mouseleave','nexrad-sites-dot',function(){S.map.getCanvas().style.cursor='';});
     S.map.on('mouseenter','nexrad-sites-label',function(){S.map.getCanvas().style.cursor='pointer';});
@@ -1783,6 +1796,21 @@ async function loadAdvancedData(){
   }catch(e){ console.warn('Advanced data unavailable',e.message); }
 }
 
+
+function focusNexradSite(id){
+  var site=(S.nexradSites||[]).find(function(s){ return String(s.id).toUpperCase()===String(id).toUpperCase(); });
+  if(!site) return showToast('⚠ NEXRAD site not found');
+  S.nexradFocusMode=true;
+  S.nexradFocus={lat:site.lat,lng:site.lng};
+  var b=$('nexradFocusBtn'); if(b) b.classList.add('active');
+  if(!S.frames.length) loadRadar();
+  if(S.radarRenderMode==='mapbox' && S.frames.length && !S.radarLayerIds.length) initRadarMapLayers();
+  scheduleRadarDraw();
+  if(S.map) S.map.flyTo({center:[site.lng,site.lat],zoom:6,duration:700});
+  showToast('📡 Focused '+site.id);
+  renderRadarInfo();
+}
+
 // ── RADAR INFO PANEL ──────────────────────────────────────────────
 function renderRadarInfo(){
   var newest=S.frames.length?new Date(S.frames[S.frames.length-1].time*1000):null;
@@ -1815,6 +1843,11 @@ function renderRadarInfo(){
       '<button class="ri-refresh" onclick="tileCache.clear();loadRadar();showToast(\'↻ Radar refreshed\')">↻ Refresh Radar</button>'+
       '<button class="ri-refresh" onclick="S.compareMode=!S.compareMode;scheduleRadarDraw();renderRadarInfo();">⇄ Dual Compare</button>'+
       '<button class="ri-refresh" onclick="loadAdvancedData();renderRadarInfo();">⚡ Refresh Advanced</button>'+
+    '</div>'+
+    '<div class="ri-sites"><div class="ri-sites-title">Quick NEXRAD Sites</div>'+
+      ((S.nexradSites||[]).slice(0,18).map(function(site){
+        return '<button class=\"ri-site-btn\" onclick=\"focusNexradSite(\''+site.id+'\')\">'+site.id+'</button>';
+      }).join(''))+
     '</div>'+
   '</div>';
 }

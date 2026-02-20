@@ -1007,3 +1007,9 @@ a { text-decoration: none; }
 
 #camDockOpen{color:var(--acc2);text-decoration:underline}
 #camDockOpen:hover{opacity:.86}
+
+
+.ri-sites { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08); display:flex; flex-wrap:wrap; gap:6px; }
+.ri-sites-title { width:100%; font-size:11px; color:var(--txt-dim); margin-bottom:2px; }
+.ri-site-btn { border:1px solid rgba(147,197,253,.45); background:rgba(30,58,138,.28); color:#dbeafe; border-radius:999px; padding:6px 10px; font-size:11px; cursor:pointer; }
+.ri-site-btn:hover { border-color:#93c5fd; background:rgba(30,64,175,.5); }
