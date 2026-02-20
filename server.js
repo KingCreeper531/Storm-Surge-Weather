@@ -16,6 +16,8 @@ const rateLimit  = require('express-rate-limit');
 const multer     = require('multer');
 const path       = require('path');
 const app   = express();
+// Render/Reverse-proxy setup: required so express-rate-limit reads real client IP from X-Forwarded-For.
+app.set('trust proxy', 1);
 const cache = new NodeCache({ stdTTL: 600 }); // 10 min default cache
 const upload = multer({
   storage: multer.memoryStorage(),
