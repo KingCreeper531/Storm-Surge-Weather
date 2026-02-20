@@ -33,6 +33,7 @@ const S = {
   radarAdvanced: null, precipTypeGeoJSON: null,
   nexradFocusMode: true, nexradFocus: null, compositeMeta: null, nexradSites: [],
   radarRenderMode: 'mapbox', radarLayerIds: [],
+  radarDebug: !!(window.SS_DEBUG || localStorage.getItem('ss_debug_radar')==='1'),
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
     opacity: 0.75, speed: 600, autoPlay: false,
@@ -46,6 +47,17 @@ const S = {
 };
 
 const API_URL = (window.SS_API_URL || window.location.origin || '').replace(/\/$/, '');
+const TILE_CACHE_MAX = 900; // Keep memory bounded to avoid long-session slowdowns.
+const RADAR_DEBUG = !!(window.SS_DEBUG || localStorage.getItem('ss_debug_radar')==='1');
+var _radarLoadAbort = null;
+var _radarStatus = { frameFetch: 'idle', tileErrors: 0, retries: 0, lastError: '' };
+
+function radarLog(){
+  if(!RADAR_DEBUG && !S.radarDebug) return;
+  var args = Array.prototype.slice.call(arguments);
+  args.unshift('[radar]');
+  console.log.apply(console, args);
+}
 
 async function fetchJsonSafe(url, opts){
   var r=await fetch(url, opts);
@@ -55,6 +67,24 @@ async function fetchJsonSafe(url, opts){
   catch(e){ throw new Error('JSON parse error for '+url+': '+e.message+' | '+txt.slice(0,120)); }
   if(!r.ok) throw new Error((data&&data.error)||('HTTP '+r.status));
   return data;
+}
+
+async function fetchJsonWithRetry(url, opts, attempts){
+  var max=Math.max(1, attempts||1), lastErr=null;
+  for(var i=0;i<max;i++){
+    try{
+      return await fetchJsonSafe(url, opts);
+    }catch(e){
+      lastErr=e;
+      if(opts && opts.signal && opts.signal.aborted) throw e;
+      if(i===max-1) break;
+      _radarStatus.retries++;
+      var wait=180*Math.pow(2,i);
+      radarLog('retry', url, 'in', wait+'ms', e.message);
+      await new Promise(function(r){ setTimeout(r, wait); });
+    }
+  }
+  throw lastErr||new Error('fetch failed');
 }
 
 function radarTileUrl(framePath, z, x, y, color){
@@ -93,6 +123,7 @@ function initRadarMapLayers(){
     S.radarLayerIds.push(id);
   });
   renderRadarFrame(S.frame);
+  updateRadarDebugOverlay();
 }
 
 function renderRadarFrame(idx){
@@ -207,6 +238,16 @@ function showToast(msg) {
   clearTimeout(_toastTimer); _toastTimer=setTimeout(function(){t.classList.remove('show');},3000);
 }
 function showLoader(show) { $('loader').classList.toggle('show',show); }
+
+function updateRadarDebugOverlay(){
+  var el=$('radarDebug');
+  if(!el) return;
+  if(!S.radarDebug){ el.style.display='none'; return; }
+  el.style.display='block';
+  var frame=S.frames[S.frame];
+  var ts=frame&&frame.time?new Date(frame.time*1000).toLocaleTimeString():'n/a';
+  el.textContent='Radar Debug\nframe: '+S.frame+'/'+Math.max(0,S.frames.length-1)+' @ '+ts+'\nstatus: '+_radarStatus.frameFetch+'\ncache: '+tileCache.size+' inflight: '+_tileInflight.size+'\nretries: '+_radarStatus.retries+' tileErrors: '+_radarStatus.tileErrors+(_radarStatus.lastError?'\nlast: '+_radarStatus.lastError:'');
+}
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -510,23 +551,31 @@ function preloadNextFrame(){
 
 async function loadRadar(){
   try {
+    _radarStatus.frameFetch='loading';
+    updateRadarDebugOverlay();
+    if(_radarLoadAbort) _radarLoadAbort.abort();
+    _radarLoadAbort = new AbortController();
+    var sig=_radarLoadAbort.signal;
     var d;
-    if(!S.compositeMeta){ fetchJsonSafe(API_URL+'/api/radar/composite').then(function(m){S.compositeMeta=m||null;}).catch(function(){}); }
-    if(!S.nexradSites.length){ fetchJsonSafe(API_URL+'/api/radar/nexrad-sites').then(function(d){ S.nexradSites=(d&&d.sites)||[]; renderNexradSitesOnMap(); }).catch(function(){}); }
+    if(!S.compositeMeta){ fetchJsonSafe(API_URL+'/api/radar/composite',{signal:sig}).then(function(m){S.compositeMeta=m||null;}).catch(function(){}); }
+    if(!S.nexradSites.length){ fetchJsonSafe(API_URL+'/api/radar/nexrad-sites',{signal:sig}).then(function(d){ S.nexradSites=(d&&d.sites)||[]; renderNexradSitesOnMap(); }).catch(function(){}); }
     try{
-      d=await fetchJsonSafe(API_URL+'/api/radar/frames');
+      d=await fetchJsonWithRetry(API_URL+'/api/radar/frames',{signal:sig},3);
       if(!d?.frames?.length) throw new Error('No frames');
       S.frames=d.frames.slice(-12);
       S.radarSource=d.source||'backend';
       S.radarDegraded=!!d.degraded;
+      _radarStatus.frameFetch='ok';
+      radarLog('frames loaded', S.frames.length, 'source=', S.radarSource, 'degraded=', S.radarDegraded);
     }catch(err){
-      var rr=await fetch('https://api.rainviewer.com/public/weather-maps.json');
-      if(!rr.ok) throw new Error('RainViewer '+rr.status);
-      var rd=await rr.text(); try{ rd=JSON.parse(rd); }catch(pe){ throw new Error('RainViewer JSON parse: '+pe.message); }
+      _radarStatus.lastError=err.message;
+      radarLog('backend frames failed, falling back to direct rainviewer:', err.message);
+      var rd=await fetchJsonWithRetry('https://api.rainviewer.com/public/weather-maps.json',{signal:sig},2);
       if(!rd?.radar?.past?.length) throw new Error('No frames');
       S.frames=rd.radar.past.slice(-12);
       S.radarSource='rainviewer-direct';
       S.radarDegraded=false;
+      _radarStatus.frameFetch='fallback';
     }
     S.frame=S.frames.length-1;
     buildSlots(); resizeCanvas(); syncRadarRenderMode();
@@ -534,12 +583,21 @@ async function loadRadar(){
       clearRadarMapLayers();
       if(S.ctx&&S.canvas) S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height);
       renderRadarInfo();
+      updateRadarDebugOverlay();
       return;
     }
     if(S.radarRenderMode==='mapbox'){ initRadarMapLayers(); }
     else { prewarmCache(); drawFrame(S.frame); }
     if(S.cfg.autoPlay) play();
-  } catch(e){ console.warn('RainViewer unavailable:',e.message); }
+    updateRadarDebugOverlay();
+  } catch(e){
+    if(e && e.name==='AbortError') return;
+    _radarStatus.frameFetch='error';
+    _radarStatus.lastError=e.message;
+    updateRadarDebugOverlay();
+    console.warn('RainViewer unavailable:',e.message);
+    showToast('⚠ Radar unavailable: '+e.message);
+  }
 }
 
 function prewarmCache(){
@@ -558,25 +616,50 @@ function prewarmCache(){
   });
 }
 
+function _rememberTile(src,img){
+  tileCache.set(src,img);
+  if(tileCache.size>TILE_CACHE_MAX){
+    var oldest=tileCache.keys().next();
+    if(!oldest.done) tileCache.delete(oldest.value);
+  }
+}
+
+function _loadImageWithRetry(src, fallback, tries){
+  var max=Math.max(1,tries||1);
+  return new Promise(function(res){
+    function attempt(url,n){
+      var img=new Image(); img.crossOrigin='anonymous';
+      img.onload=function(){ res(img); };
+      img.onerror=function(){
+        if(url!==fallback && fallback){ return attempt(fallback,n); }
+        if(n<max-1){
+          _radarStatus.retries++;
+          var wait=80*Math.pow(2,n);
+          return setTimeout(function(){ attempt(src,n+1); }, wait);
+        }
+        _radarStatus.tileErrors++;
+        _radarStatus.lastError='tile failed';
+        res(null);
+      };
+      img.src=url;
+    }
+    attempt(src,0);
+  });
+}
+
 function loadTile(src){
   if(tileCache.has(src)) return Promise.resolve(tileCache.get(src));
   if(_tileInflight.has(src)) return _tileInflight.get(src);
-  var p=new Promise(function(res){
-    var img=new Image(); img.crossOrigin='anonymous';
-    img.onload=function(){ tileCache.set(src,img); _tileInflight.delete(src); res(img); };
-    img.onerror=function(){
-      if(src.indexOf('/api/radar/tile?path=')!==-1){
-        var qp=src.split('path=')[1]||'';
-        var direct='https://tilecache.rainviewer.com/'+decodeURIComponent(qp);
-        var img2=new Image(); img2.crossOrigin='anonymous';
-        img2.onload=function(){ tileCache.set(src,img2); _tileInflight.delete(src); res(img2); };
-        img2.onerror=function(){ _tileInflight.delete(src); res(null); };
-        img2.src=direct;
-        return;
-      }
-      _tileInflight.delete(src); res(null);
-    };
-    img.src=src;
+  var fallback=null;
+  if(src.indexOf('/api/radar/tile?path=')!==-1){
+    var qp=src.split('path=')[1]||'';
+    fallback='https://tilecache.rainviewer.com/'+decodeURIComponent(qp);
+  }
+  var p=_loadImageWithRetry(src,fallback,2).then(function(img){
+    _tileInflight.delete(src);
+    if(img) _rememberTile(src,img);
+    updateRadarDebugOverlay();
+    return img;
   });
   _tileInflight.set(src,p);
   return p;
@@ -748,12 +831,14 @@ function pickFrame(i){
   document.querySelectorAll('.tslot').forEach(function(s,j){ s.classList.toggle('active',j===S.frame); });
   var tr=$('tRange'); if(tr) tr.value=S.frame;
   renderRadarFrame(S.frame);
+  updateRadarDebugOverlay();
 }
 function play(){
   if(S.playing||!S.frames.length) return;
   S.playing=true;
   var b=$('playBtn'); b.textContent='⏸'; b.classList.add('playing');
-  var target=Math.max(120, S.cfg.speed - Math.min(200, S.frames.length*10));
+  var mult=(S.playbackRate||1);
+  var target=Math.max(80, (S.cfg.speed / mult) - Math.min(200, S.frames.length*10));
   var last=performance.now(), acc=0;
   function tick(ts){
     if(!S.playing) return;
@@ -766,12 +851,14 @@ function play(){
     S.playTimer=requestAnimationFrame(tick);
   }
   S.playTimer=requestAnimationFrame(tick);
+  updateRadarDebugOverlay();
 }
 function pause(){
   S.playing=false;
   if(S.playTimer) cancelAnimationFrame(S.playTimer);
   S.playTimer=null;
   var b=$('playBtn'); b.textContent='▶'; b.classList.remove('playing');
+  updateRadarDebugOverlay();
 }
 function togglePlay(){ S.playing?pause():play(); }
 
@@ -1594,6 +1681,18 @@ function initUI(){
   $('geoBtn').onclick  =geolocate;
   $('refreshBtn').onclick=function(){ loadWeather(); loadAlerts(); if(S.map) loadRadar(); showToast('↻ Refreshing...'); };
   $('playBtn').onclick =togglePlay;
+  $('latestBtn').onclick=function(){ if(!S.frames.length) return; pickFrame(S.frames.length-1); pause(); showToast('⏱ Latest frame'); };
+  $('debugRadarBtn').onclick=function(){ S.radarDebug=!S.radarDebug; localStorage.setItem('ss_debug_radar', S.radarDebug?'1':'0'); this.classList.toggle('active',S.radarDebug); updateRadarDebugOverlay(); };
+  document.querySelectorAll('.speed-pill').forEach(function(btn){
+    btn.onclick=function(){
+      document.querySelectorAll('.speed-pill').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      S.playbackRate=Math.max(0.5, parseFloat(btn.dataset.rate)||1);
+      if(S.playing){ pause(); play(); }
+      radarLog('speed set', S.playbackRate+'x');
+      updateRadarDebugOverlay();
+    };
+  });
   $('nexradFocusBtn').onclick=function(){
     S.nexradFocusMode=!S.nexradFocusMode;
     $('nexradFocusBtn').classList.toggle('active',S.nexradFocusMode);
@@ -1768,7 +1867,10 @@ function initUI(){
   });
 
   applySettingsUI();
+  var drb=$('debugRadarBtn'); if(drb) drb.classList.toggle('active',S.radarDebug);
+  var speedBtn=document.querySelector('.speed-pill[data-rate="1"]'); if(speedBtn) speedBtn.classList.add('active');
   updateLegend();
+  updateRadarDebugOverlay();
 }
 
 
