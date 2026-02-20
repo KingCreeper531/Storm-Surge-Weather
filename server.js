@@ -31,6 +31,7 @@ const GCS_KEY    = process.env.GOOGLE_CLOUD_KEY;      // JSON string of service 
 const GCS_BUCKET = process.env.GCS_BUCKET || 'storm_surge_bucket';
 const GCS_PROJECT= process.env.GCS_PROJECT || 'storm-surge-487802';
 const WEATHERNEXT_KEY = process.env.WEATHERNEXT_KEY || process.env.WEATHERNEXT2_KEY || process.env.TOMORROW_API_KEY;  // WeatherNext 2 API key
+const TOMORROW_KEY = process.env.TOMORROW_API_KEY || process.env.WEATHERNEXT_KEY || process.env.WEATHERNEXT2_KEY;
 const APP_VERSION = process.env.APP_VERSION || process.env.RENDER_GIT_COMMIT?.slice(0, 7) || '1.2.1';
 const DEPLOY_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null;
 const DEPLOY_BRANCH = process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || null;
@@ -656,6 +657,135 @@ function buildSyntheticRadarTileSvg(pathSeed, z, x, y, color) {
     + `</svg>`;
 }
 
+
+function seededNoise(seed) {
+  return Math.abs(Math.sin(seed * 12.9898) * 43758.5453) % 1;
+}
+
+async function fetchTomorrowNowcast(lat, lng) {
+  if (!TOMORROW_KEY) return null;
+  const fields = [
+    'precipitationIntensity', 'windSpeed', 'windDirection', 'cloudCover', 'temperature'
+  ].join(',');
+  const endTime = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+  const url = 'https://api.tomorrow.io/v4/timelines?location=' + encodeURIComponent(`${lat},${lng}`)
+    + '&fields=' + encodeURIComponent(fields)
+    + '&timesteps=5m&units=metric&endTime=' + encodeURIComponent(endTime)
+    + '&apikey=' + encodeURIComponent(TOMORROW_KEY);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Tomorrow ${r.status}`);
+    const d = await r.json();
+    const ints = d?.data?.timelines?.[0]?.intervals || [];
+    const frames = ints.slice(0, 18).map((it, i) => ({
+      minutes: i * 5,
+      precipitationIntensity: Number(it.values?.precipitationIntensity || 0),
+      windSpeed: Number(it.values?.windSpeed || 0),
+      windDirection: Number(it.values?.windDirection || 0),
+      cloudCover: Number(it.values?.cloudCover || 0)
+    }));
+    return { source: 'tomorrow.io', horizonMinutes: 90, frames };
+  } catch {
+    return null;
+  }
+}
+
+function buildSyntheticRadarAdvanced(lat, lng) {
+  const baseLat = Number.isFinite(lat) ? lat : 35;
+  const baseLng = Number.isFinite(lng) ? lng : -97;
+  const t = Date.now() / 60000;
+
+  const stormCells = Array.from({ length: 4 }, (_, i) => {
+    const n = seededNoise(t + i * 3.7);
+    const cLat = baseLat + (n - 0.5) * 2.3;
+    const cLng = baseLng + (seededNoise(t + i * 5.1) - 0.5) * 2.8;
+    const speedKts = 18 + Math.round(seededNoise(t + i) * 42);
+    const directionDeg = Math.round(seededNoise(t + i * 2) * 360);
+    const dLat = Math.cos(directionDeg * Math.PI / 180) * speedKts * 0.008;
+    const dLng = Math.sin(directionDeg * Math.PI / 180) * speedKts * 0.010;
+    return {
+      id: `cell-${i}`,
+      lat: +cLat.toFixed(4),
+      lng: +cLng.toFixed(4),
+      speedKts,
+      directionDeg,
+      movementVector: { dLat: +dLat.toFixed(4), dLng: +dLng.toFixed(4) },
+      future: [15, 30, 45, 60].map(m => ({
+        minutes: m,
+        lat: +(cLat + dLat * (m / 15)).toFixed(4),
+        lng: +(cLng + dLng * (m / 15)).toFixed(4)
+      }))
+    };
+  });
+
+  const echoTops = stormCells.map((c, i) => ({
+    id: `etop-${i}`,
+    lat: c.lat,
+    lng: c.lng,
+    heightKm: +(8 + seededNoise(i + t) * 8).toFixed(1),
+    hailRisk: +(0.25 + seededNoise(i + t * 0.5) * 0.7).toFixed(2)
+  }));
+
+  const precipType = stormCells.map((c, i) => {
+    const tempSignal = Math.sin((baseLat / 10) + i);
+    const type = tempSignal < -0.45 ? 'snow' : tempSignal < -0.1 ? 'mix' : tempSignal < 0.1 ? 'sleet' : tempSignal < 0.2 ? 'freezing_rain' : 'rain';
+    return { id: `ptype-${i}`, lat: c.lat + 0.15, lng: c.lng - 0.12, type, intensity: +(seededNoise(i + t) * 1.2).toFixed(2) };
+  });
+
+  const rotationZones = stormCells.slice(0, 2).map((c, i) => ({
+    id: `rot-${i}`,
+    lat: c.lat - 0.12,
+    lng: c.lng + 0.09,
+    risk: +(0.35 + seededNoise(t + i * 9) * 0.55).toFixed(2),
+    shear: +(20 + seededNoise(t + i * 4) * 45).toFixed(1)
+  }));
+
+  const strikes = Array.from({ length: 22 }, (_, i) => ({
+    id: `lt-${i}`,
+    lat: +(baseLat + (seededNoise(i + t) - 0.5) * 3.5).toFixed(4),
+    lng: +(baseLng + (seededNoise(i + t * 0.3) - 0.5) * 4.2).toFixed(4),
+    ageSec: Math.round(seededNoise(i + t * 0.7) * 600)
+  }));
+
+  const nowcast = {
+    source: 'synthetic-extrapolation',
+    horizonMinutes: 90,
+    frames: [15, 30, 45, 60, 75, 90].map((m, i) => ({
+      minutes: m,
+      shiftLat: +((i + 1) * 0.03).toFixed(3),
+      shiftLng: +((i + 1) * 0.04).toFixed(3),
+      opacity: +(0.32 - i * 0.035).toFixed(2)
+    }))
+  };
+
+  return {
+    stormCells,
+    echoTops,
+    lightning: {
+      strikes,
+      density: {
+        recent5m: strikes.filter(s => s.ageSec <= 300).length,
+        recent15m: strikes.length
+      },
+      trend: ['rising', 'steady', 'falling'][Math.floor(seededNoise(t) * 3)]
+    },
+    precipType,
+    rotationZones,
+    rainfallTotals: {
+      oneHourMm: +(8 + seededNoise(t) * 30).toFixed(1),
+      twentyFourHourMm: +(22 + seededNoise(t + 7) * 120).toFixed(1),
+      floodRisk: ['low', 'guarded', 'elevated'][Math.floor(seededNoise(t + 11) * 3)]
+    },
+    nowcast,
+    signatureAlerts: [
+      { type: 'hail-core', confidence: +(0.45 + seededNoise(t + 2) * 0.4).toFixed(2) },
+      { type: 'rapid-intensification', confidence: +(0.4 + seededNoise(t + 3) * 0.45).toFixed(2) },
+      { type: 'bow-echo', confidence: +(0.3 + seededNoise(t + 4) * 0.5).toFixed(2) }
+    ],
+    layers: ['reflectivity', 'lightning', 'echo_tops', 'precip_type', 'rotation', 'rainfall_total', 'nowcast']
+  };
+}
+
 function weatherNextCodeToWMO(code) {
   if (!code) return 0;
   const map = {
@@ -708,6 +838,18 @@ app.get('/api/lightning', (req, res) => {
     ts: new Date(now - Math.random() * 600000).toISOString()
   }));
   res.json({ items, source: 'simulated-live' });
+});
+
+
+app.get('/api/radar/advanced', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const adv = buildSyntheticRadarAdvanced(lat, lng);
+  const tm = await fetchTomorrowNowcast(lat, lng);
+  if (tm) {
+    adv.nowcast = tm;
+  }
+  res.json(adv);
 });
 
 app.get('/api/hurricane-track', (req, res) => {

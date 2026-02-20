@@ -30,6 +30,7 @@ const S = {
   compareMode: false, interpMode: true,
   lightning: [], hurricaneTrack: [], stormReports: [], metars: [], modelCmp: null,
   radarSource: 'rainviewer', radarDegraded: false,
+  radarAdvanced: null,
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
     opacity: 0.75, speed: 600, autoPlay: false,
@@ -207,6 +208,8 @@ function cycleMapStyle() {
   S.map.setStyle(MAP_STYLES[S.mapStyle]);
   S.map.once('style.load',function(){
     if(S.cfg.alertZones&&S.alerts.length) putAlertsOnMap();
+    renderLightningOnMap();
+    renderRadarAdvancedOnMap();
     tileCache.clear(); loadRadar();
     showToast('🗺 '+S.mapStyle);
   });
@@ -620,12 +623,27 @@ function pickFrame(i){
   drawFrame(S.frame);
 }
 function play(){
-  if(S.playing) return; S.playing=true;
+  if(S.playing||!S.frames.length) return;
+  S.playing=true;
   var b=$('playBtn'); b.textContent='⏸'; b.classList.add('playing');
-  S.playTimer=setInterval(function(){ pickFrame((S.frame+1)%S.frames.length); preloadNextFrame(); }, Math.max(120, S.cfg.speed - Math.min(200, S.frames.length*10)));
+  var target=Math.max(120, S.cfg.speed - Math.min(200, S.frames.length*10));
+  var last=performance.now(), acc=0;
+  function tick(ts){
+    if(!S.playing) return;
+    var dt=ts-last; last=ts; acc+=dt;
+    if(acc>=target){
+      acc=0;
+      pickFrame((S.frame+1)%S.frames.length);
+      preloadNextFrame();
+    }
+    S.playTimer=requestAnimationFrame(tick);
+  }
+  S.playTimer=requestAnimationFrame(tick);
 }
 function pause(){
-  S.playing=false; clearInterval(S.playTimer);
+  S.playing=false;
+  if(S.playTimer) cancelAnimationFrame(S.playTimer);
+  S.playTimer=null;
   var b=$('playBtn'); b.textContent='▶'; b.classList.remove('playing');
 }
 function togglePlay(){ S.playing?pause():play(); }
@@ -930,6 +948,36 @@ function renderLightningOnMap(){
     'circle-stroke-width':0.7,
     'circle-opacity':0.95
   }});
+}
+
+
+function renderRadarAdvancedOnMap(){
+  if(!S.map||!S.map.isStyleLoaded()||!S.radarAdvanced) return;
+  var adv=S.radarAdvanced;
+
+  var cellPts=(adv.stormCells||[]).map(function(c){ return {type:'Feature',geometry:{type:'Point',coordinates:[c.lng,c.lat]},properties:{label:(Math.round(c.speedKts||0)+'kt '+Math.round(c.directionDeg||0)+'°')}}; });
+  var cellVec=(adv.stormCells||[]).map(function(c){
+    var end=c.future?.[0]||{lat:c.lat,lng:c.lng};
+    return {type:'Feature',geometry:{type:'LineString',coordinates:[[c.lng,c.lat],[end.lng,end.lat]]},properties:{}};
+  });
+  var rotation=(adv.rotationZones||[]).map(function(z){ return {type:'Feature',geometry:{type:'Point',coordinates:[z.lng,z.lat]},properties:{risk:z.risk||0.4}}; });
+  var precip=(adv.precipType||[]).map(function(p){ return {type:'Feature',geometry:{type:'Point',coordinates:[p.lng,p.lat]},properties:{type:p.type||'rain'}}; });
+
+  function ensure(id,data){
+    if(S.map.getSource(id)){ S.map.getSource(id).setData(data); return; }
+    S.map.addSource(id,{type:'geojson',data:data});
+  }
+
+  ensure('cell-pts-src',{type:'FeatureCollection',features:cellPts});
+  ensure('cell-vec-src',{type:'FeatureCollection',features:cellVec});
+  ensure('rotation-src',{type:'FeatureCollection',features:rotation});
+  ensure('precip-src',{type:'FeatureCollection',features:precip});
+
+  if(!S.map.getLayer('cell-vectors')) S.map.addLayer({id:'cell-vectors',type:'line',source:'cell-vec-src',paint:{'line-color':'#7dd3fc','line-width':2.2,'line-opacity':0.8}});
+  if(!S.map.getLayer('cell-points')) S.map.addLayer({id:'cell-points',type:'circle',source:'cell-pts-src',paint:{'circle-color':'#38bdf8','circle-radius':4.2,'circle-stroke-color':'#e0f2fe','circle-stroke-width':1}});
+  if(!S.map.getLayer('cell-labels')) S.map.addLayer({id:'cell-labels',type:'symbol',source:'cell-pts-src',layout:{'text-field':['get','label'],'text-size':10,'text-offset':[0,1.2]},paint:{'text-color':'#dbeafe','text-halo-color':'#0b1220','text-halo-width':1}});
+  if(!S.map.getLayer('rotation-zones')) S.map.addLayer({id:'rotation-zones',type:'circle',source:'rotation-src',paint:{'circle-color':'#f43f5e','circle-opacity':0.2,'circle-radius':['interpolate',['linear'],['get','risk'],0,8,1,20]}});
+  if(!S.map.getLayer('precip-type')) S.map.addLayer({id:'precip-type',type:'circle',source:'precip-src',paint:{'circle-radius':2.5,'circle-color':['match',['get','type'],'snow','#93c5fd','mix','#c4b5fd','sleet','#a78bfa','freezing_rain','#60a5fa','#22c55e'],'circle-opacity':0.7}});
 }
 
 function openCameraDock(url,title,fallbackUrl){
@@ -1517,15 +1565,18 @@ function initUI(){
 
 async function loadAdvancedData(){
   try{
-    var [l,h,sr,m,mc]=await Promise.all([
+    var [l,h,sr,m,mc,ra]=await Promise.all([
       fetch(API_URL+'/api/lightning').then(r=>r.json()),
       fetch(API_URL+'/api/hurricane-track').then(r=>r.json()),
       fetch(API_URL+'/api/storm-reports').then(r=>r.json()),
       fetch(API_URL+'/api/metar').then(r=>r.json()),
-      fetch(API_URL+'/api/model-comparison?lat='+S.lat+'&lng='+S.lng).then(r=>r.json())
+      fetch(API_URL+'/api/model-comparison?lat='+S.lat+'&lng='+S.lng).then(r=>r.json()),
+      fetch(API_URL+'/api/radar/advanced?lat='+S.lat+'&lng='+S.lng).then(r=>r.json())
     ]);
     S.lightning=l.items||[]; S.hurricaneTrack=h.points||[]; S.stormReports=sr.items||[]; S.metars=m.items||[]; S.modelCmp=mc||null;
+    S.radarAdvanced=ra||null;
     renderLightningOnMap();
+    renderRadarAdvancedOnMap();
   }catch(e){ console.warn('Advanced data unavailable',e.message); }
 }
 
@@ -1539,12 +1590,16 @@ function renderRadarInfo(){
     '<div class="ri-stat"><span>Source</span><span>'+(S.radarSource||'unknown')+(S.radarDegraded?' (degraded)':'')+'</span></div>'+
     '<div class="ri-stat"><span>Overlay</span><span>'+(S.activeOverlay?(overlayNames[S.activeOverlay]||S.activeOverlay)+'':'None')+'</span></div>'+
     '<div class="ri-stat"><span>Frames</span><span>'+S.frames.length+'/12</span></div>'+
+    '<div class="ri-stat"><span>Storm Cells</span><span>'+((S.radarAdvanced?.stormCells||[]).length)+'</span></div>'+
+    '<div class="ri-stat"><span>Echo Tops</span><span>'+((S.radarAdvanced?.echoTops||[]).length)+'</span></div>'+
     '<div class="ri-stat"><span>Latest</span><span>'+(newest?fmtTime(newest,true):'N/A')+'</span></div>'+
     '<div class="ri-stat"><span>Oldest</span><span>'+(oldest?fmtTime(oldest,true):'N/A')+'</span></div>'+
     '<div class="ri-stat"><span>Color</span><span>'+({'1':'Original','2':'Universal','4':'Rainbow','6':'NOAA'}[S.cfg.radarColor]||'NOAA')+'</span></div>'+
     '<div class="ri-stat"><span>Opacity</span><span>'+Math.round(S.cfg.opacity*100)+'%</span></div>'+
     '<div class="ri-stat"><span>Compare Mode</span><span>'+(S.compareMode?'ON':'OFF')+'</span></div>'+
     '<div class="ri-stat"><span>Lightning</span><span>'+S.lightning.length+' live</span></div>'+
+    '<div class="ri-stat"><span>Nowcast</span><span>'+((S.radarAdvanced?.nowcast?.source)||'synthetic')+'</span></div>'+
+    '<div class="ri-stat"><span>Rainfall 24h</span><span>'+((S.radarAdvanced?.rainfallTotals?.twentyFourHourMm)||0).toFixed(1)+' mm</span></div>'+
     '<div class="ri-stat"><span>Storm Reports</span><span>'+S.stormReports.length+' reports</span></div>'+
     '<div class="ri-stat"><span>METAR</span><span>'+S.metars.length+' stations</span></div>'+
     '<div class="ri-stat"><span>Model Δ</span><span>'+(S.modelCmp?((S.modelCmp.gfsTemp-S.modelCmp.ecmwfTemp).toFixed(1)+'°'):'N/A')+'</span></div>'+
