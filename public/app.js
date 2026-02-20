@@ -29,6 +29,7 @@ const S = {
   scDraft: null,
   compareMode: false, interpMode: true,
   lightning: [], hurricaneTrack: [], stormReports: [], metars: [], modelCmp: null,
+  radarSource: 'rainviewer', radarDegraded: false,
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
     opacity: 0.75, speed: 600, autoPlay: false,
@@ -394,12 +395,16 @@ async function loadRadar(){
       d=await r.json();
       if(!d?.frames?.length) throw new Error('No frames');
       S.frames=d.frames.slice(-12);
+      S.radarSource=d.source||'backend';
+      S.radarDegraded=!!d.degraded;
     }catch(err){
       var rr=await fetch('https://api.rainviewer.com/public/weather-maps.json');
       if(!rr.ok) throw new Error('RainViewer '+rr.status);
       var rd=await rr.json();
       if(!rd?.radar?.past?.length) throw new Error('No frames');
       S.frames=rd.radar.past.slice(-12);
+      S.radarSource='rainviewer-direct';
+      S.radarDegraded=false;
     }
     S.frame=S.frames.length-1;
     buildSlots(); resizeCanvas(); prewarmCache(); drawFrame(S.frame);
@@ -927,11 +932,15 @@ function renderLightningOnMap(){
   }});
 }
 
-function openCameraDock(url,title){
-  var dock=$('camDock'), frame=$('camDockFrame');
+function openCameraDock(url,title,fallbackUrl){
+  var dock=$('camDock'), frame=$('camDockFrame'), link=$('camDockOpen');
   if(!dock||!frame) return;
+  var src=url||'https://hazcams.com/';
   setText('camDockTitle',title||'Hazcams Live');
-  frame.src=url;
+  frame.src=src;
+  if(link){
+    link.href=fallbackUrl||src;
+  }
   dock.classList.add('open');
 }
 
@@ -1247,22 +1256,31 @@ function searchTrafficCams(query){
     grid.innerHTML='<div class="empty-s"><div class="es-ico">📷</div><div>Enter a city, state, or route</div></div>';
     return;
   }
-  var url='https://hazcams.com/search?query='+encodeURIComponent(q);
-  var embed='https://hazcams.com/';
-  grid.innerHTML='<div class="tc-note">🌐 Powered by Hazcams</div>'+
-    '<div class="empty-s" style="gap:10px">'+
-    '<div class="es-ico">📷</div>'+
-    '<div>Camera results for <strong>'+escHtml(q)+'</strong>.</div>'+
-    '<button class="tc-ext-link" id="tcEmbedBtn" type="button">Embed Hazcams in map →</button>'+
-    '<a class="tc-ext-link" href="'+url+'" target="_blank" rel="noopener noreferrer">Open Hazcams Search →</a>'+
-    '<a class="tc-ext-link" href="https://hazcams.com/" target="_blank" rel="noopener noreferrer">Open Hazcams Home →</a>'+
-    '</div>';
-  var eb=$('tcEmbedBtn');
-  if(eb) eb.onclick=function(){
-    openCameraDock(embed,'Hazcams · '+q);
-    showToast('📷 Camera panel opened on map');
-  };
+  grid.innerHTML='<div class="empty-s"><div class="es-ico">📷</div><div>Loading cameras...</div></div>';
+  fetch(API_URL+'/api/cameras/search?q='+encodeURIComponent(q))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var searchUrl=data.url||('https://hazcams.com/search?query='+encodeURIComponent(q));
+      var embedUrl=data.embedUrl||'https://hazcams.com/';
+      grid.innerHTML='<div class="tc-note">🌐 Powered by Hazcams</div>'+
+        '<div class="empty-s" style="gap:10px">'+
+        '<div class="es-ico">📷</div>'+
+        '<div>Camera results for <strong>'+escHtml(q)+'</strong>.</div>'+
+        '<button class="tc-ext-link" id="tcEmbedBtn" type="button">Embed Hazcams in map →</button>'+
+        '<a class="tc-ext-link" href="'+searchUrl+'" target="_blank" rel="noopener noreferrer">Open Hazcams Search →</a>'+
+        '<a class="tc-ext-link" href="https://hazcams.com/" target="_blank" rel="noopener noreferrer">Open Hazcams Home →</a>'+
+        '</div>';
+      var eb=$('tcEmbedBtn');
+      if(eb) eb.onclick=function(){
+        openCameraDock(embedUrl,'Hazcams · '+q,searchUrl);
+        showToast('📷 Camera panel opened on map');
+      };
+    })
+    .catch(function(){
+      grid.innerHTML='<div class="empty-s"><div class="es-ico">⚠</div><div>Camera search unavailable right now.</div></div>';
+    });
 }
+
 
 
 // ── SEARCH ────────────────────────────────────────────────────────
@@ -1430,7 +1448,7 @@ function initUI(){
   $('stormCentralModal').onclick=function(e){if(e.target===$('stormCentralModal'))closeModal('stormCentralModal');};
   $('tcClose').onclick=function(){closeModal('trafficModal');};
   $('trafficModal').onclick=function(e){if(e.target===$('trafficModal'))closeModal('trafficModal');};
-  $('camDockClose').onclick=function(){ $('camDock').classList.remove('open'); $('camDockFrame').src='about:blank'; };
+  $('camDockClose').onclick=function(){ $('camDock').classList.remove('open'); $('camDockFrame').src='about:blank'; $('camDockOpen').href='https://hazcams.com/'; };
 
   // Traffic cams
   $('tcSearchBtn').onclick=function(){searchTrafficCams($('tcSearch').value.trim());};
@@ -1518,7 +1536,7 @@ function renderRadarInfo(){
   var overlayNames={};
   $('alertsBody').innerHTML='<div class="radar-info">'+
     '<div class="ri-title">Radar Status</div>'+
-    '<div class="ri-stat"><span>Source</span><span>RainViewer</span></div>'+
+    '<div class="ri-stat"><span>Source</span><span>'+(S.radarSource||'unknown')+(S.radarDegraded?' (degraded)':'')+'</span></div>'+
     '<div class="ri-stat"><span>Overlay</span><span>'+(S.activeOverlay?(overlayNames[S.activeOverlay]||S.activeOverlay)+'':'None')+'</span></div>'+
     '<div class="ri-stat"><span>Frames</span><span>'+S.frames.length+'/12</span></div>'+
     '<div class="ri-stat"><span>Latest</span><span>'+(newest?fmtTime(newest,true):'N/A')+'</span></div>'+

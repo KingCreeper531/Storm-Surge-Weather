@@ -680,7 +680,8 @@ app.get('/api/cameras/search', (req, res) => {
     provider: 'hazcams',
     query: q,
     url,
-    embedsAllowed: false
+    embedUrl: 'https://hazcams.com/',
+    embedsAllowed: true
   });
 });
 
