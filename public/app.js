@@ -31,7 +31,7 @@ const S = {
   lightning: [], hurricaneTrack: [], stormReports: [], metars: [], modelCmp: null,
   radarSource: 'rainviewer', radarDegraded: false,
   radarAdvanced: null,
-  nexradFocusMode: false, nexradFocus: null, compositeMeta: null,
+  nexradFocusMode: false, nexradFocus: null, compositeMeta: null, nexradSites: [],
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
     opacity: 0.75, speed: 600, autoPlay: false,
@@ -46,6 +46,15 @@ const S = {
 
 const API_URL = (window.SS_API_URL || window.location.origin || '').replace(/\/$/, '');
 
+async function fetchJsonSafe(url, opts){
+  var r=await fetch(url, opts);
+  var txt=await r.text();
+  var data=null;
+  try{ data=txt?JSON.parse(txt):null; }
+  catch(e){ throw new Error('JSON parse error for '+url+': '+e.message+' | '+txt.slice(0,120)); }
+  if(!r.ok) throw new Error((data&&data.error)||('HTTP '+r.status));
+  return data;
+}
 
 function radarTileUrl(framePath, z, x, y, color){
   var p = String(framePath || '').trim();
@@ -164,7 +173,7 @@ function initMap() {
     });
     S.map.on('load',function(){
       S.map.resize(); resizeCanvas();
-      loadRadar(); loadWeather(); loadAlerts(); loadAdvancedData();
+      loadRadar(); loadWeather(); loadAlerts(); loadAdvancedData(); renderNexradSitesOnMap();
     });
     S.map.on('error',function(e){
       console.error('Mapbox:',e);
@@ -219,6 +228,7 @@ function cycleMapStyle() {
     if(S.cfg.alertZones&&S.alerts.length) putAlertsOnMap();
     renderLightningOnMap();
     renderRadarAdvancedOnMap();
+    renderNexradSitesOnMap();
     tileCache.clear(); loadRadar();
     showToast('🗺 '+S.mapStyle);
   });
@@ -429,11 +439,10 @@ function preloadNextFrame(){
 async function loadRadar(){
   try {
     var d;
-    if(!S.compositeMeta){ fetch(API_URL+'/api/radar/composite').then(function(r){return r.json();}).then(function(m){S.compositeMeta=m||null;}).catch(function(){}); }
+    if(!S.compositeMeta){ fetchJsonSafe(API_URL+'/api/radar/composite').then(function(m){S.compositeMeta=m||null;}).catch(function(){}); }
+    if(!S.nexradSites.length){ fetchJsonSafe(API_URL+'/api/radar/nexrad-sites').then(function(d){ S.nexradSites=(d&&d.sites)||[]; renderNexradSitesOnMap(); }).catch(function(){}); }
     try{
-      var r=await fetch(API_URL+'/api/radar/frames');
-      if(!r.ok) throw new Error('Radar '+r.status);
-      d=await r.json();
+      d=await fetchJsonSafe(API_URL+'/api/radar/frames');
       if(!d?.frames?.length) throw new Error('No frames');
       S.frames=d.frames.slice(-12);
       S.radarSource=d.source||'backend';
@@ -441,7 +450,7 @@ async function loadRadar(){
     }catch(err){
       var rr=await fetch('https://api.rainviewer.com/public/weather-maps.json');
       if(!rr.ok) throw new Error('RainViewer '+rr.status);
-      var rd=await rr.json();
+      var rd=await rr.text(); try{ rd=JSON.parse(rd); }catch(pe){ throw new Error('RainViewer JSON parse: '+pe.message); }
       if(!rd?.radar?.past?.length) throw new Error('No frames');
       S.frames=rd.radar.past.slice(-12);
       S.radarSource='rainviewer-direct';
@@ -987,6 +996,45 @@ function renderLightningOnMap(){
 }
 
 
+function renderNexradSitesOnMap(){
+  if(!S.map||!S.map.isStyleLoaded()||!S.nexradSites.length) return;
+  var feats=S.nexradSites.map(function(s){
+    return {type:'Feature',geometry:{type:'Point',coordinates:[s.lng,s.lat]},properties:{id:s.id}};
+  });
+  var fc={type:'FeatureCollection',features:feats};
+  if(S.map.getSource('nexrad-sites-src')){
+    S.map.getSource('nexrad-sites-src').setData(fc);
+  }else{
+    S.map.addSource('nexrad-sites-src',{type:'geojson',data:fc});
+  }
+  if(!S.map.getLayer('nexrad-sites-dot')) S.map.addLayer({id:'nexrad-sites-dot',type:'circle',source:'nexrad-sites-src',paint:{
+    'circle-radius':4.2,'circle-color':'#1d4ed8','circle-stroke-color':'#dbeafe','circle-stroke-width':1
+  }});
+  if(!S.map.getLayer('nexrad-sites-label')) S.map.addLayer({id:'nexrad-sites-label',type:'symbol',source:'nexrad-sites-src',layout:{
+    'text-field':['get','id'],'text-size':10,'text-offset':[0,1.2],'text-font':['Open Sans Bold','Arial Unicode MS Bold'],'text-allow-overlap':true
+  },paint:{'text-color':'#e5edff','text-halo-color':'#0b1a35','text-halo-width':2}});
+
+  function onSiteClick(e){
+    var f=e.features&&e.features[0]; if(!f) return;
+    var c=f.geometry.coordinates;
+    S.nexradFocus={lat:c[1],lng:c[0]};
+    S.nexradFocusMode=true;
+    var b=$('nexradFocusBtn'); if(b) b.classList.add('active');
+    prewarmCache(); scheduleRadarDraw();
+    if(S.map) S.map.flyTo({center:c,zoom:6,duration:700});
+    showToast('📡 Focused '+(f.properties.id||'NEXRAD'));
+  }
+  if(!S._nexradClickBound){
+    S.map.on('click','nexrad-sites-dot',onSiteClick);
+    S.map.on('click','nexrad-sites-label',onSiteClick);
+    S.map.on('mouseenter','nexrad-sites-dot',function(){S.map.getCanvas().style.cursor='pointer';});
+    S.map.on('mouseleave','nexrad-sites-dot',function(){S.map.getCanvas().style.cursor='';});
+    S.map.on('mouseenter','nexrad-sites-label',function(){S.map.getCanvas().style.cursor='pointer';});
+    S.map.on('mouseleave','nexrad-sites-label',function(){S.map.getCanvas().style.cursor='';});
+    S._nexradClickBound=true;
+  }
+}
+
 function renderRadarAdvancedOnMap(){
   if(!S.map||!S.map.isStyleLoaded()||!S.radarAdvanced) return;
   var adv=S.radarAdvanced;
@@ -1438,7 +1486,7 @@ function initUI(){
     S.nexradFocusMode=!S.nexradFocusMode;
     $('nexradFocusBtn').classList.toggle('active',S.nexradFocusMode);
     if(!S.nexradFocusMode){ S.nexradFocus=null; showToast('🎯 NEXRAD focus off'); }
-    else showToast('🎯 Click map to set NEXRAD focus');
+    else showToast('🎯 Click map or a NEXRAD site');
     prewarmCache(); scheduleRadarDraw();
   };
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
@@ -1609,17 +1657,18 @@ function initUI(){
 async function loadAdvancedData(){
   try{
     var [l,h,sr,m,mc,ra]=await Promise.all([
-      fetch(API_URL+'/api/lightning').then(r=>r.json()),
-      fetch(API_URL+'/api/hurricane-track').then(r=>r.json()),
-      fetch(API_URL+'/api/storm-reports').then(r=>r.json()),
-      fetch(API_URL+'/api/metar').then(r=>r.json()),
-      fetch(API_URL+'/api/model-comparison?lat='+S.lat+'&lng='+S.lng).then(r=>r.json()),
-      fetch(API_URL+'/api/radar/advanced?lat='+S.lat+'&lng='+S.lng).then(r=>r.json())
+      fetchJsonSafe(API_URL+'/api/lightning'),
+      fetchJsonSafe(API_URL+'/api/hurricane-track'),
+      fetchJsonSafe(API_URL+'/api/storm-reports'),
+      fetchJsonSafe(API_URL+'/api/metar'),
+      fetchJsonSafe(API_URL+'/api/model-comparison?lat='+S.lat+'&lng='+S.lng),
+      fetchJsonSafe(API_URL+'/api/radar/advanced?lat='+S.lat+'&lng='+S.lng)
     ]);
     S.lightning=l.items||[]; S.hurricaneTrack=h.points||[]; S.stormReports=sr.items||[]; S.metars=m.items||[]; S.modelCmp=mc||null;
     S.radarAdvanced=ra||null;
     renderLightningOnMap();
     renderRadarAdvancedOnMap();
+    renderNexradSitesOnMap();
   }catch(e){ console.warn('Advanced data unavailable',e.message); }
 }
 
@@ -1633,6 +1682,7 @@ function renderRadarInfo(){
     '<div class="ri-stat"><span>Source</span><span>'+(S.radarSource||'unknown')+(S.radarDegraded?' (degraded)':'')+'</span></div>'+
     '<div class="ri-stat"><span>Coverage</span><span>'+((S.compositeMeta?.global?.label)||'Global Composite')+'</span></div>'+
     '<div class="ri-stat"><span>US Base</span><span>'+((S.compositeMeta?.us?.label)||'NEXRAD (on focus)')+'</span></div>'+
+    '<div class="ri-stat"><span>NEXRAD Sites</span><span>'+(S.nexradSites.length||0)+'</span></div>'+
     '<div class="ri-stat"><span>Overlay</span><span>'+(S.activeOverlay?(overlayNames[S.activeOverlay]||S.activeOverlay)+'':'None')+'</span></div>'+
     '<div class="ri-stat"><span>NEXRAD Focus</span><span>'+(S.nexradFocusMode?(S.nexradFocus?('ON @ '+S.nexradFocus.lat.toFixed(2)+', '+S.nexradFocus.lng.toFixed(2)):'Armed'):'Off')+'</span></div>'+
     '<div class="ri-stat"><span>Frames</span><span>'+S.frames.length+'/12</span></div>'+
