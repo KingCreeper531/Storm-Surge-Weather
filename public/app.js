@@ -109,6 +109,24 @@ function clearRadarMapLayers(){
   S.radarLayerIds=[];
 }
 
+
+function initRadarMapLayersFallback(){
+  // Fallback path if RadarAnimator script fails to load in production cache/CDN edge cases.
+  if(!S.map||!S.map.isStyleLoaded()||!S.frames.length) return;
+  clearRadarMapLayers();
+  var color=S.cfg.radarColor||'6';
+  S.frames.forEach(function(frame,i){
+    var id='rv-radar-'+i;
+    S.map.addSource(id,{type:'raster',tiles:[radarTileTemplate(frame.path,color)],tileSize:256});
+    S.map.addLayer({id:id,type:'raster',source:id,paint:{
+      'raster-opacity': i===S.frame ? S.cfg.opacity : 0,
+      'raster-opacity-transition':{duration:300,delay:0},
+      'raster-resampling':'nearest'
+    }});
+    S.radarLayerIds.push(id);
+  });
+}
+
 function initRadarMapLayers(){
   if(!S.map||!S.map.isStyleLoaded()||!S.frames.length) return;
   clearRadarMapLayers();
@@ -127,7 +145,15 @@ function initRadarMapLayers(){
       radarAnimator.goto(S.frame);
       if(S.playing) radarAnimator.play();
       updateTomorrowRadarForFrame();
+    }).catch(function(err){
+      radarLog('RadarAnimator init failed, falling back', err&&err.message);
+      initRadarMapLayersFallback();
+      renderRadarFrame(S.frame);
     });
+  } else {
+    radarLog('RadarAnimator missing, using fallback path');
+    initRadarMapLayersFallback();
+    renderRadarFrame(S.frame);
   }
   updateRadarDebugOverlay();
 }
@@ -139,10 +165,14 @@ function renderRadarFrame(idx){
     return;
   }
   if(S.radarRenderMode==='mapbox'&&S.map){
-    if(!S.radarLayerIds.length || !radarAnimator){ initRadarMapLayers(); return; }
+    if(!S.radarLayerIds.length){ initRadarMapLayers(); return; }
     if(S.ctx&&S.canvas){ S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height); }
-    radarAnimator.goto(idx);
-    radarAnimator.setOpacity(S.cfg.opacity);
+    if(radarAnimator){
+      radarAnimator.goto(idx);
+      radarAnimator.setOpacity(S.cfg.opacity);
+    } else {
+      S.radarLayerIds.forEach(function(id,j){ try{ S.map.setPaintProperty(id,'raster-opacity', j===idx ? S.cfg.opacity : 0); }catch(e){} });
+    }
     updateTomorrowRadarForFrame();
     return;
   }
@@ -859,17 +889,29 @@ function pause(){
 }
 function togglePlay(){ S.playing?pause():play(); }
 
+
+function buildClientSyntheticWeather(){
+  var base=new Date();
+  var h=Array.from({length:24},function(_,i){ return new Date(base.getTime()+i*3600000).toISOString(); });
+  var d=Array.from({length:7},function(_,i){ return new Date(base.getTime()+i*86400000).toISOString().slice(0,10); });
+  return {
+    current:{ temperature_2m:22, apparent_temperature:22, relative_humidity_2m:60, precipitation:0, weather_code:2, wind_speed_10m:4, wind_direction_10m:220, surface_pressure:1014, cloud_cover:35, uv_index:3 },
+    hourly:{ time:h, temperature_2m:h.map((_,i)=>22+Math.sin(i/3)*2), relative_humidity_2m:h.map((_,i)=>55+Math.sin(i/5)*10), weather_code:h.map(()=>2), precipitation_probability:h.map((_,i)=>Math.max(0,Math.round(20*Math.sin(i/4)))) },
+    daily:{ time:d, temperature_2m_max:d.map((_,i)=>26+i%2), temperature_2m_min:d.map((_,i)=>17+i%2), weather_code:d.map(()=>2), sunrise:d.map(()=>new Date(base.setHours(6,20,0,0)).toISOString()), sunset:d.map(()=>new Date(base.setHours(18,10,0,0)).toISOString()), precipitation_probability_max:d.map((_,i)=>20+i*5), wind_speed_10m_max:d.map((_,i)=>4+i*0.4) }
+  };
+}
+
 // ── WEATHER ───────────────────────────────────────────────────────
 async function loadWeather(){
   showLoader(true);
   try {
-    var r=await fetch(API_URL+'/api/weather?lat='+S.lat+'&lng='+S.lng);
-    var d=await r.json();
-    if(!r.ok) throw new Error(d.error||r.status);
+    var d = await fetchJsonWithRetry(API_URL+'/api/weather?lat='+S.lat+'&lng='+S.lng, {}, 2);
     S.weather=d; renderWeather(d); renderForecast(d);
   } catch(e){
     console.warn('Weather load failed:',e.message);
-    showToast('⚠ Weather service unavailable');
+    var fallback = buildClientSyntheticWeather();
+    S.weather=fallback; renderWeather(fallback); renderForecast(fallback);
+    showToast('⚠ Weather service unavailable (showing fallback)');
   }
   showLoader(false);
 }
