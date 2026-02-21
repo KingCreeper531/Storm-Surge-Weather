@@ -159,12 +159,7 @@
       <button class="t-arr" id="tNext" aria-label="Next frame">›</button>
       <button class="playbtn" id="playBtn" aria-label="Play/pause animation">▶</button>
       <button class="t-arr" id="latestBtn" aria-label="Jump to latest frame">⏭</button>
-      <div class="speed-pills" role="group" aria-label="Animation speed">
-        <button class="speed-pill" data-rate="0.5">0.5x</button>
-        <button class="speed-pill" data-rate="1">1x</button>
-        <button class="speed-pill" data-rate="2">2x</button>
-        <button class="speed-pill" data-rate="4">4x</button>
-      </div>
+      <label class="quick-op">FPS <input type="range" id="radarFps" min="2" max="16" value="8"></label>
       <button class="t-focus" id="tomorrowRadarBtn" title="Toggle Tomorrow.io radar layer">🛰 Tomorrow Radar</button>
       <button class="t-focus" id="debugRadarBtn" title="Toggle radar debug overlay">🐞 Radar Debug</button>
       <label class="quick-op">Rain <input type="range" id="rainOpacity" min="20" max="100" value="75"></label>
@@ -403,6 +398,7 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
+<script src="RadarAnimator.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

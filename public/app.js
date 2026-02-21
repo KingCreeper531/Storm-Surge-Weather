@@ -32,7 +32,7 @@ const S = {
   radarSource: 'rainviewer', radarDegraded: false,
   radarAdvanced: null, precipTypeGeoJSON: null, compositeMeta: null,
   radarRenderMode: 'mapbox', radarLayerIds: [],
-  tomorrowRadarEnabled: false, tomorrowOpacity: 0.55,
+  tomorrowRadarEnabled: false, tomorrowOpacity: 0.55, radarFps: 8,
   radarDebug: !!(window.SS_DEBUG || localStorage.getItem('ss_debug_radar')==='1'),
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
@@ -100,6 +100,7 @@ function radarTileTemplate(framePath, color){
 }
 
 function clearRadarMapLayers(){
+  if(radarAnimator){ radarAnimator.destroy(); radarAnimator=null; }
   if(!S.map) return;
   (S.radarLayerIds||[]).forEach(function(id){
     try{ if(S.map.getLayer(id)) S.map.removeLayer(id); }catch(e){}
@@ -111,18 +112,23 @@ function clearRadarMapLayers(){
 function initRadarMapLayers(){
   if(!S.map||!S.map.isStyleLoaded()||!S.frames.length) return;
   clearRadarMapLayers();
-  var color=S.cfg.radarColor||'6';
-  S.frames.forEach(function(frame,i){
-    var id='rv-radar-'+i;
-    S.map.addSource(id,{type:'raster',tiles:[radarTileTemplate(frame.path,color)],tileSize:256});
-    S.map.addLayer({id:id,type:'raster',source:id,paint:{
-      'raster-opacity':0,
-      'raster-opacity-transition':{duration:300,delay:0},
-      'raster-resampling':'linear'
-    }});
-    S.radarLayerIds.push(id);
-  });
-  renderRadarFrame(S.frame);
+  var framePaths = S.frames.map(function(f){ return f.path; });
+  var urls = (window.buildFrameUrls ? window.buildFrameUrls('', framePaths, { apiBase: API_URL, color: (S.cfg.radarColor||'6') }) : framePaths.map(function(fp){ return radarTileTemplate(fp, S.cfg.radarColor||'6'); }));
+  if(window.RadarAnimator){
+    radarAnimator = new window.RadarAnimator(S.map, {
+      frameUrls: urls,
+      layerPrefix: 'rv-radar',
+      opacity: S.cfg.opacity,
+      fps: S.radarFps || 8,
+      crossfadeMs: 300
+    });
+    radarAnimator.init().then(function(){
+      S.radarLayerIds = urls.map(function(_, i){ return 'rv-radar-'+i; });
+      radarAnimator.goto(S.frame);
+      if(S.playing) radarAnimator.play();
+      updateTomorrowRadarForFrame();
+    });
+  }
   updateRadarDebugOverlay();
 }
 
@@ -133,11 +139,10 @@ function renderRadarFrame(idx){
     return;
   }
   if(S.radarRenderMode==='mapbox'&&S.map){
-    if(!S.radarLayerIds.length){ initRadarMapLayers(); return; }
+    if(!S.radarLayerIds.length || !radarAnimator){ initRadarMapLayers(); return; }
     if(S.ctx&&S.canvas){ S.ctx.clearRect(0,0,S.canvas.width,S.canvas.height); }
-    S.radarLayerIds.forEach(function(id,j){
-      try{ S.map.setPaintProperty(id,'raster-opacity', j===idx ? S.cfg.opacity : 0); }catch(e){}
-    });
+    radarAnimator.goto(idx);
+    radarAnimator.setOpacity(S.cfg.opacity);
     updateTomorrowRadarForFrame();
     return;
   }
@@ -152,8 +157,7 @@ function tomorrowTileUrl(time,z,x,y){
 
 function ensureTomorrowRadarLayer(){
   if(!S.map||!S.map.isStyleLoaded()) return;
-  var frame=S.frames[S.frame]||{};
-  var tile=tomorrowTileUrl(frame.time||'latest','{z}','{x}','{y}');
+  var tile=tomorrowTileUrl('latest','{z}','{x}','{y}');
   if(!S.map.getSource('tomorrow-radar-src')){
     S.map.addSource('tomorrow-radar-src',{type:'raster',tiles:[tile],tileSize:256});
   }
@@ -166,10 +170,6 @@ function updateTomorrowRadarForFrame(){
   if(!S.map||!S.map.isStyleLoaded()) return;
   ensureTomorrowRadarLayer();
   var src=S.map.getSource('tomorrow-radar-src');
-  if(src&&src.setTiles){
-    var frame=S.frames[S.frame]||{};
-    src.setTiles([tomorrowTileUrl(frame.time||'latest','{z}','{x}','{y}')]);
-  }
   if(S.map.getLayer('tomorrow-radar-layer')){
     S.map.setPaintProperty('tomorrow-radar-layer','raster-opacity',S.tomorrowRadarEnabled?S.tomorrowOpacity:0);
   }
@@ -277,7 +277,7 @@ function updateRadarDebugOverlay(){
   el.style.display='block';
   var frame=S.frames[S.frame];
   var ts=frame&&frame.time?new Date(frame.time*1000).toLocaleTimeString():'n/a';
-  el.textContent='Radar Debug\nframe: '+S.frame+'/'+Math.max(0,S.frames.length-1)+' @ '+ts+'\nstatus: '+_radarStatus.frameFetch+'\ncache: '+tileCache.size+' inflight: '+_tileInflight.size+'\nretries: '+_radarStatus.retries+' tileErrors: '+_radarStatus.tileErrors+(_radarStatus.lastError?'\nlast: '+_radarStatus.lastError:'');
+  el.textContent='Radar Debug\nframe: '+S.frame+'/'+Math.max(0,S.frames.length-1)+' @ '+ts+'\nstatus: '+_radarStatus.frameFetch+'\nfps: '+(S.radarFps||8)+' playing: '+(S.playing?'yes':'no')+'\ncache: '+tileCache.size+' inflight: '+_tileInflight.size+'\nretries: '+_radarStatus.retries+' tileErrors: '+_radarStatus.tileErrors+(_radarStatus.lastError?'\nlast: '+_radarStatus.lastError:'');
 }
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -494,6 +494,7 @@ function openWeatherReportModal(d){
 
 // ── RADAR ─────────────────────────────────────────────────────────
 var tileCache=new Map(), _rafPending=false, _drawSeq=0, _tileInflight=new Map();
+var radarAnimator = null;
 var _radarBuffer=document.createElement('canvas'), _radarBufCtx=_radarBuffer.getContext('2d');
 
 function tileXRanges(mnX,mxX,maxX){
@@ -818,8 +819,14 @@ function play(){
   if(S.playing||!S.frames.length) return;
   S.playing=true;
   var b=$('playBtn'); b.textContent='⏸'; b.classList.add('playing');
-  var mult=(S.playbackRate||1);
-  var target=Math.max(80, (S.cfg.speed / mult) - Math.min(200, S.frames.length*10));
+  if(S.radarRenderMode==='mapbox' && radarAnimator){
+    radarAnimator.setFPS(S.radarFps||8);
+    radarAnimator.setOpacity(S.cfg.opacity);
+    radarAnimator.play();
+    updateRadarDebugOverlay();
+    return;
+  }
+  var target=Math.max(80, S.cfg.speed - Math.min(200, S.frames.length*10));
   var last=performance.now(), acc=0;
   function tick(ts){
     if(!S.playing) return;
@@ -836,6 +843,7 @@ function play(){
 }
 function pause(){
   S.playing=false;
+  if(radarAnimator) radarAnimator.pause();
   if(S.playTimer) cancelAnimationFrame(S.playTimer);
   S.playTimer=null;
   var b=$('playBtn'); b.textContent='▶'; b.classList.remove('playing');
@@ -1608,19 +1616,15 @@ function initUI(){
   $('playBtn').onclick =togglePlay;
   $('latestBtn').onclick=function(){ if(!S.frames.length) return; pickFrame(S.frames.length-1); pause(); showToast('⏱ Latest frame'); };
   $('debugRadarBtn').onclick=function(){ S.radarDebug=!S.radarDebug; localStorage.setItem('ss_debug_radar', S.radarDebug?'1':'0'); this.classList.toggle('active',S.radarDebug); updateRadarDebugOverlay(); };
-  document.querySelectorAll('.speed-pill').forEach(function(btn){
-    btn.onclick=function(){
-      document.querySelectorAll('.speed-pill').forEach(function(b){ b.classList.remove('active'); });
-      btn.classList.add('active');
-      S.playbackRate=Math.max(0.5, parseFloat(btn.dataset.rate)||1);
-      if(S.playing){ pause(); play(); }
-      radarLog('speed set', S.playbackRate+'x');
-      updateRadarDebugOverlay();
-    };
+  $('radarFps').addEventListener('input',function(e){
+    S.radarFps=Math.max(2,Math.min(16,parseInt(e.target.value,10)||8));
+    if(radarAnimator) radarAnimator.setFPS(S.radarFps);
+    if(S.playing && radarAnimator){ radarAnimator.pause(); radarAnimator.play(); }
+    updateRadarDebugOverlay();
   });
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
-  $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; scheduleRadarDraw(); saveCfg(); });
-  $('rainOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; scheduleRadarDraw(); saveCfg(); });
+  $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; if(radarAnimator) radarAnimator.setOpacity(S.cfg.opacity); scheduleRadarDraw(); saveCfg(); });
+  $('rainOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; if(radarAnimator) radarAnimator.setOpacity(S.cfg.opacity); scheduleRadarDraw(); saveCfg(); });
   $('tomorrowRadarBtn').onclick=function(){ S.tomorrowRadarEnabled=!S.tomorrowRadarEnabled; this.classList.toggle('active',S.tomorrowRadarEnabled); updateTomorrowRadarForFrame(); };
   $('tomorrowOpacity').addEventListener('input',function(e){ S.tomorrowOpacity=Math.max(0,Math.min(1,+e.target.value/100)); updateTomorrowRadarForFrame(); });
   $('tPrev').onclick   =function(){ if(S.frame>0) pickFrame(S.frame-1); };
@@ -1782,7 +1786,7 @@ function initUI(){
 
   applySettingsUI();
   var drb=$('debugRadarBtn'); if(drb) drb.classList.toggle('active',S.radarDebug);
-  var speedBtn=document.querySelector('.speed-pill[data-rate="1"]'); if(speedBtn) speedBtn.classList.add('active');
+  $('radarFps').value=String(S.radarFps||8);
   updateLegend();
   updateRadarDebugOverlay();
 }
