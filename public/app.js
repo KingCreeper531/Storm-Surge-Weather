@@ -198,6 +198,8 @@ function ensureTomorrowRadarLayer(){
 
 function updateTomorrowRadarForFrame(){
   if(!S.map||!S.map.isStyleLoaded()) return;
+  // Tomorrow overlay is currently hidden in UI; keep disabled to avoid confusion.
+  S.tomorrowRadarEnabled=false;
   ensureTomorrowRadarLayer();
   var src=S.map.getSource('tomorrow-radar-src');
   if(S.map.getLayer('tomorrow-radar-layer')){
@@ -855,16 +857,27 @@ function pickFrame(i){
 }
 function play(){
   if(S.playing||!S.frames.length) return;
+  if(S.radarRenderMode==='mapbox'){
+    if(!S.radarLayerIds.length) initRadarMapLayers();
+    renderRadarFrame(S.frame);
+  }
   S.playing=true;
   var b=$('playBtn'); b.textContent='⏸'; b.classList.add('playing');
   if(S.radarRenderMode==='mapbox' && radarAnimator){
-    radarAnimator.setFPS(S.cfg.radarFps||8);
-    radarAnimator.setOpacity(S.cfg.opacity);
-    radarAnimator.play();
+    try {
+      radarAnimator.setFPS(S.cfg.radarFps||8);
+      radarAnimator.setOpacity(S.cfg.opacity);
+      radarAnimator.play();
+    } catch(err){
+      radarLog('Animator play failed, using fallback loop', err&&err.message);
+      radarAnimator=null;
+    }
+  }
+  if(S.radarRenderMode==='mapbox' && radarAnimator){
     updateRadarDebugOverlay();
     return;
   }
-  var target=Math.max(80, S.cfg.speed - Math.min(200, S.frames.length*10));
+  var target=Math.round(1000/Math.max(2,Math.min(16,S.cfg.radarFps||8)));
   var last=performance.now(), acc=0;
   function tick(ts){
     if(!S.playing) return;
@@ -1669,20 +1682,12 @@ function initUI(){
   $('radarFps').addEventListener('input',function(e){
     S.cfg.radarFps=Math.max(2,Math.min(16,parseInt(e.target.value,10)||8));
     if(radarAnimator) radarAnimator.setFPS(S.cfg.radarFps);
-    if(S.playing && radarAnimator){ radarAnimator.pause(); radarAnimator.play(); }
+    if(S.playing){ pause(); play(); }
     saveCfg();
     updateRadarDebugOverlay();
   });
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
   $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; if(radarAnimator) radarAnimator.setOpacity(S.cfg.opacity); scheduleRadarDraw(); saveCfg(); });
-  $('rainOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; if(radarAnimator) radarAnimator.setOpacity(S.cfg.opacity); scheduleRadarDraw(); saveCfg(); });
-  $('tomorrowRadarBtn').onclick=function(){
-    S.tomorrowRadarEnabled=!S.tomorrowRadarEnabled;
-    S.cfg.tomorrowRadarEnabled=S.tomorrowRadarEnabled;
-    this.classList.toggle('active',S.tomorrowRadarEnabled);
-    saveCfg();
-    updateTomorrowRadarForFrame();
-  };
   $('tPrev').onclick   =function(){ if(S.frame>0) pickFrame(S.frame-1); };
   $('tNext').onclick   =function(){ if(S.frame<S.frames.length-1) pickFrame(S.frame+1); };
 
@@ -1931,11 +1936,9 @@ function applySettingsUI(){
   });
   $('sOpacity').value=Math.round(c.opacity*100);
   $('quickOpacity').value=Math.round(c.opacity*100);
-  $('rainOpacity').value=Math.round(c.opacity*100);
   $('sOpacityVal').textContent=Math.round(c.opacity*100)+'%';
   $('sAutoPlay').checked=c.autoPlay; $('sAlertZones').checked=c.alertZones;
-  S.tomorrowRadarEnabled=!!c.tomorrowRadarEnabled;
-  $('tomorrowRadarBtn').classList.toggle('active',S.tomorrowRadarEnabled);
+  S.tomorrowRadarEnabled=false;
   $('sCrosshair').checked=c.crosshair;
   $('radarFps').value=String(c.radarFps||8);
   if(!c.crosshair) $('crosshair').style.display='none';
