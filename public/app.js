@@ -314,9 +314,16 @@ function initMap() {
       loadRadar(); loadWeather(); loadAlerts(); loadAdvancedData();
     });
     S.map.on('error',function(e){
-      console.error('Mapbox:',e);
-      showMapError('Map error — check your Mapbox token');
-      loadWeather(); loadAlerts();
+      // Mapbox emits many recoverable source/tile errors; only hard-fail UI for auth/style token errors.
+      var msg = String(e?.error?.message || e?.message || '');
+      var hardAuth = /access token|unauthorized|forbidden|401|403|account\.mapbox/i.test(msg);
+      if(hardAuth){
+        console.error('Mapbox auth/style error:',e);
+        showMapError('Map error — check your Mapbox token');
+        loadWeather(); loadAlerts();
+      } else {
+        radarLog('recoverable map source error', msg || e?.type || 'unknown');
+      }
     });
     // Keep radar visually attached during map movement by drawing from cached tiles immediately.
     ['move','rotate','pitch'].forEach(function(ev){
