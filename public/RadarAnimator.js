@@ -75,7 +75,7 @@
           paint:{
             'raster-opacity': i===0 ? self.opacity : 0,
             'raster-opacity-transition': { duration: 0, delay: 0 },
-            'raster-resampling':'linear'
+            'raster-resampling':'nearest'
           }
         });
       }
