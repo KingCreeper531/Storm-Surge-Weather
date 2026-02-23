@@ -18,6 +18,8 @@
 // ── STATE ────────────────────────────────────────────────────────
 const S = {
   map: null, canvas: null, ctx: null,
+  windCanvas: null, windCtx: null, windEnabled: false,
+  fxCanvas: null, fxCtx: null,
   drawCanvas: null, drawCtx: null, drawing: false, drawMode: false,
   drawStrokes: [], drawColor: '#f0a500', drawSize: 3,
   lat: 40.7128, lng: -74.006, locName: 'New York',
@@ -43,7 +45,7 @@ const S = {
     showHumidity: true, showPressure: true, showUV: true,
     showSunTimes: true, showWind: true, showRain: true,
     showCloud: true, showFeels: true,
-    radarColor: '6', radarFps: 8, radarSpeedFactor: 1, tomorrowRadarEnabled: false, theme: 'dark'
+    radarColor: '6', radarFps: 8, radarSpeedFactor: 1, windOpacity: 0.45, tomorrowRadarEnabled: false, theme: 'dark'
   }
 };
 
@@ -331,6 +333,10 @@ function applyTheme(theme) {
 function initMap() {
   S.canvas=$('radarCanvas');
   S.ctx=S.canvas.getContext('2d');
+  S.windCanvas=$('windCanvas');
+  S.windCtx=S.windCanvas?S.windCanvas.getContext('2d'):null;
+  S.fxCanvas=$('fxCanvas');
+  S.fxCtx=S.fxCanvas?S.fxCanvas.getContext('2d'):null;
   syncRadarRenderMode();
   window.addEventListener('resize',resizeCanvas);
   try {
@@ -346,6 +352,7 @@ function initMap() {
     S.map.on('load',function(){
       S.map.resize(); resizeCanvas();
       loadRadar(); loadWeather(); loadAlerts(); loadAdvancedData();
+      if(S.windEnabled) startWindLayer();
     });
     S.map.on('error',function(e){
       // Mapbox emits many recoverable source/tile errors; only hard-fail UI for auth/style token errors.
@@ -412,7 +419,7 @@ function cycleMapStyle() {
 }
 
 function resizeCanvas() {
-  [S.canvas,S.drawCanvas].forEach(function(c){
+  [S.canvas,S.windCanvas,S.fxCanvas,S.drawCanvas].forEach(function(c){
     if(!c) return;
     c.width=c.parentElement.clientWidth;
     c.height=c.parentElement.clientHeight;
@@ -922,12 +929,15 @@ async function loadWeather(){
   try {
     var d = await fetchJsonWithRetry(API_URL+'/api/weather?lat='+S.lat+'&lng='+S.lng, {}, 2);
     S.weather=d; renderWeather(d); renderForecast(d);
+    updateWeatherFx();
   } catch(e){
     console.warn('Weather load failed:',e.message);
     var fallback = buildClientSyntheticWeather();
     S.weather=fallback; renderWeather(fallback); renderForecast(fallback);
+    updateWeatherFx();
     showToast('⚠ Weather service unavailable (showing fallback)');
   }
+  if(S.windEnabled) startWindLayer();
   showLoader(false);
 }
 
@@ -939,6 +949,55 @@ async function loadGraphcastExperimental(){
     showToast('🧪 GraphCast Exp: risk '+risk+'% · confidence '+conf+'%');
   } catch(e){
     showToast('⚠ GraphCast experiment unavailable: '+(e.message||'try again'));
+  }
+}
+
+let _windAnim=0, _windParticles=[];
+async function startWindLayer(){
+  if(!S.windCtx||!S.windEnabled) return;
+  try {
+    var f=await fetchJsonSafe(API_URL+'/api/wind/field?lat='+S.lat+'&lng='+S.lng);
+    var u=(f.grid?.u?.[0]||0), v=(f.grid?.v?.[0]||0);
+    var w=S.windCanvas.width, h=S.windCanvas.height;
+    var lowPerf = (navigator.hardwareConcurrency||4) <= 4;
+    var count = lowPerf ? 70 : 140;
+    _windParticles=Array.from({length:count},function(){ return {x:Math.random()*w,y:Math.random()*h}; });
+    cancelAnimationFrame(_windAnim);
+    function tick(){
+      if(!S.windEnabled||!S.windCtx){ S.windCtx&&S.windCtx.clearRect(0,0,w,h); return; }
+      var ctx=S.windCtx; ctx.clearRect(0,0,w,h);
+      ctx.globalAlpha=Math.max(0.1,Math.min(0.9,S.cfg.windOpacity||0.45));
+      ctx.strokeStyle='rgba(125,211,252,0.9)';
+      _windParticles.forEach(function(p){
+        var dx=u*0.45, dy=-v*0.45;
+        p.x=(p.x+dx+w)%w; p.y=(p.y+dy+h)%h;
+        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x-dx*2,p.y-dy*2); ctx.stroke();
+      });
+      _windAnim=requestAnimationFrame(tick);
+    }
+    _windAnim=requestAnimationFrame(tick);
+  } catch(e){
+    showToast('⚠ Wind layer unavailable');
+  }
+}
+
+function updateWeatherFx(){
+  if(!S.fxCtx||!S.weather?.current) return;
+  var code=Number(S.weather.current.weather_code||0);
+  var w=S.fxCanvas.width,h=S.fxCanvas.height,ctx=S.fxCtx;
+  ctx.clearRect(0,0,w,h);
+  var lowPerf=(navigator.hardwareConcurrency||4)<=4;
+  if(code>=71&&code<=77){ // snow
+    var n=lowPerf?50:100;
+    ctx.fillStyle='rgba(255,255,255,0.75)';
+    for(var i=0;i<n;i++){ ctx.beginPath(); ctx.arc((i*53)%w, (Date.now()/25+i*19)%h, lowPerf?1.2:1.8, 0, Math.PI*2); ctx.fill(); }
+  } else if(code>=61&&code<=67){ // rain
+    var m=lowPerf?60:140;
+    ctx.strokeStyle='rgba(125,211,252,0.45)';
+    for(var j=0;j<m;j++){ var x=(j*47)%w, y=(Date.now()/14+j*23)%h; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x-2,y+10); ctx.stroke(); }
+  } else if(code===45||code===48){ // fog
+    ctx.fillStyle='rgba(203,213,225,0.14)';
+    for(var k=0;k<6;k++){ ctx.fillRect(0, (k*80 + (Date.now()/60)%80)%h, w, 26); }
   }
 }
 function renderWeather(d){
@@ -1279,7 +1338,9 @@ function openCameraDock(url,title,fallbackUrl){
   if(!dock||!frame) return;
   var src=url||'https://hazcams.com/';
   setText('camDockTitle',title||'Hazcams Live');
+  frame.dataset.src=src;
   frame.src=src;
+  if(window.lazySizes && frame.classList.contains('lazyload')) window.lazySizes.loader.unveil(frame);
   if(link){
     link.href=fallbackUrl||src;
   }
@@ -1707,6 +1768,16 @@ function initUI(){
     if(S.playing){ pause(); play(); }
     saveCfg();
   });
+  $('windToggleBtn').onclick=function(){
+    S.windEnabled=!S.windEnabled;
+    this.classList.toggle('active',S.windEnabled);
+    if(S.windEnabled) startWindLayer();
+    else if(S.windCtx) S.windCtx.clearRect(0,0,S.windCanvas.width,S.windCanvas.height);
+  };
+  $('windOpacity').addEventListener('input',function(e){
+    S.cfg.windOpacity=Math.max(0.1,Math.min(0.9,(parseInt(e.target.value,10)||45)/100));
+    saveCfg();
+  });
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
   $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; if(radarAnimator) radarAnimator.setOpacity(S.cfg.opacity); scheduleRadarDraw(); saveCfg(); });
   $('tPrev').onclick   =function(){ if(S.frame>0) pickFrame(S.frame-1); };
@@ -1872,6 +1943,7 @@ function initUI(){
   var drb=$('debugRadarBtn'); if(drb) drb.classList.toggle('active',S.radarDebug);
   $('radarFps').value=String(S.cfg.radarFps||8);
   var rs=$('radarSpeed'); if(rs) rs.value=String(Math.round((S.cfg.radarSpeedFactor||1)*100));
+  var wo=$('windOpacity'); if(wo) wo.value=String(Math.round((S.cfg.windOpacity||0.45)*100));
   updateLegend();
   updateRadarDebugOverlay();
 }

@@ -104,6 +104,8 @@
   <div class="mapzone" id="mapzone">
     <div id="map"></div>
     <canvas id="radarCanvas" aria-hidden="true"></canvas>
+    <canvas id="windCanvas" aria-hidden="true"></canvas>
+    <canvas id="fxCanvas" aria-hidden="true"></canvas>
     <canvas id="drawCanvas" aria-hidden="true"></canvas>
 
     <!-- WEATHER CARD -->
@@ -163,6 +165,8 @@
       <label class="quick-op">FPS <input type="range" id="radarFps" min="2" max="16" value="8"></label>
       <label class="quick-op">Speed <input type="range" id="radarSpeed" min="50" max="150" step="10" value="100"></label>
       <label class="quick-op">Opacity <input type="range" id="quickOpacity" min="20" max="100" value="75"></label>
+      <button class="t-focus" id="windToggleBtn" title="Toggle animated wind layer">💨 Wind</button>
+      <label class="quick-op">Wind Opacity <input type="range" id="windOpacity" min="10" max="90" value="45"></label>
     </div>
     <pre id="radarDebug" class="radar-debug" aria-live="polite"></pre>
 
@@ -171,7 +175,7 @@
         <strong id="camDockTitle">Hazcams Live</strong>
         <button id="camDockClose" aria-label="Close camera panel">✕</button>
       </div>
-      <iframe id="camDockFrame" title="Hazcams Camera" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      <iframe id="camDockFrame" class="lazyload" data-src="https://hazcams.com/" title="Hazcams Camera" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
       <div class="cam-dock-note">If this camera is blocked from embedding, use <a id="camDockOpen" href="https://hazcams.com/" target="_blank" rel="noopener noreferrer">Open in new tab</a>.</div>
     </div>
 
@@ -395,6 +399,7 @@
 <div class="loader" id="loader" role="status" aria-label="Loading"><div class="spin"></div><div class="load-txt">Loading...</div></div>
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lazysizes/5.3.2/lazysizes.min.js" async></script>
 <script src="token.js"></script>
 <script src="RadarAnimator.js"></script>
 <script src="app.js"></script>

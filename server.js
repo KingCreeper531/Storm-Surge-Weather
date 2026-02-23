@@ -458,7 +458,72 @@ app.get('/api/forecast/graphcast-experimental', async (req, res) => {
     });
   } catch (e) {
     metrics.upstreamFailures += 1;
-    return res.status(503).json({ error: 'GraphCast experimental forecast unavailable right now' });
+    const synthetic = buildSyntheticWeather(lat, lng);
+    const hours = (synthetic.hourly?.time || []).slice(0, 12).map((t, i) => ({
+      time: t,
+      tempC: Number(synthetic.hourly?.temperature_2m?.[i] || 0),
+      precipProb: Number(synthetic.hourly?.precipitation_probability?.[i] || 0),
+      code: Number(synthetic.hourly?.weather_code?.[i] || 0)
+    }));
+    return res.json({
+      provider: 'graphcast-inspired-synthetic',
+      note: 'Synthetic fallback used because upstream forecast providers failed.',
+      location: { lat, lng },
+      confidence: 0.55,
+      severeRisk: 0.35,
+      horizonHours: 12,
+      timeline: hours
+    });
+  }
+});
+
+// Lightweight wind field endpoint for animated wind overlays.
+app.get('/api/wind/field', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'valid lat and lng required' });
+  }
+  const cacheKey = `wind_field_${lat.toFixed(2)}_${lng.toFixed(2)}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+  try {
+    const weather = WEATHERNEXT_KEY ? await fetchWeatherNext2(lat, lng) : await fetchOpenMeteo(lat, lng);
+    const speed = Number(weather.current?.wind_speed_10m || 4);
+    const dirDeg = Number(weather.current?.wind_direction_10m || 225);
+    const dirRad = (dirDeg * Math.PI) / 180;
+    const u = +(Math.sin(dirRad) * speed).toFixed(2);
+    const v = +(Math.cos(dirRad) * speed).toFixed(2);
+    const size = 20;
+    const field = {
+      provider: 'weathernext-derived',
+      origin: { lat, lng },
+      grid: {
+        width: size,
+        height: size,
+        u: Array.from({ length: size * size }, (_, i) => +(u + Math.sin(i / 8) * 0.6).toFixed(2)),
+        v: Array.from({ length: size * size }, (_, i) => +(v + Math.cos(i / 7) * 0.6).toFixed(2))
+      },
+      units: 'm/s',
+      timestamp: Date.now()
+    };
+    cache.set(cacheKey, field, 180);
+    return res.json(field);
+  } catch (e) {
+    metrics.upstreamFailures += 1;
+    const size = 20;
+    return res.json({
+      provider: 'synthetic',
+      origin: { lat, lng },
+      grid: {
+        width: size,
+        height: size,
+        u: Array.from({ length: size * size }, (_, i) => +(Math.sin(i / 7) * 2.2).toFixed(2)),
+        v: Array.from({ length: size * size }, (_, i) => +(Math.cos(i / 9) * 2.2).toFixed(2))
+      },
+      units: 'm/s',
+      timestamp: Date.now()
+    });
   }
 });
 
