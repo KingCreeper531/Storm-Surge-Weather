@@ -15,6 +15,11 @@ const NodeCache  = require('node-cache');
 const rateLimit  = require('express-rate-limit');
 const multer     = require('multer');
 const path       = require('path');
+const { buildAuthMiddleware } = require('./middleware/auth');
+const { buildTokenService } = require('./services/tokenService');
+const { buildUserService } = require('./services/userService');
+const { buildAuthRoutes } = require('./routes/authRoutes');
+
 const app   = express();
 // Render/Reverse-proxy setup: required so express-rate-limit reads real client IP from X-Forwarded-For.
 app.set('trust proxy', 1);
@@ -36,6 +41,16 @@ const DEBUG_RADAR = process.env.DEBUG_RADAR === '1';
 const APP_VERSION = process.env.APP_VERSION || process.env.RENDER_GIT_COMMIT?.slice(0, 7) || '1.2.1';
 const DEPLOY_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null;
 const DEPLOY_BRANCH = process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || null;
+
+const logger = {
+  info: (msg, meta = {}) => console.log('[info]', msg, meta),
+  warn: (msg, meta = {}) => console.warn('[warn]', msg, meta),
+  error: (msg, meta = {}) => console.error('[error]', msg, meta)
+};
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change-this-in-render-dashboard') {
+  logger.warn('env.jwt_secret_default', { message: 'JWT_SECRET is using a default value; set a strong value in Render env' });
+}
 
 function radarDebugLog(){
   if(!DEBUG_RADAR) return;
@@ -101,9 +116,17 @@ try {
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
   methods: ['GET','POST','DELETE','PATCH'],
-  allowedHeaders: ['Content-Type','Authorization']
+  allowedHeaders: ['Content-Type','Authorization','X-CSRF-Token']
 }));
 app.use(express.json({ limit: '10mb' }));
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    if (ms > 1200) logger.warn('slow_request', { method: req.method, path: req.path, status: res.statusCode, ms });
+  });
+  next();
+});
 // Rate limiting
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -123,16 +146,7 @@ const authLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 // ── AUTH MIDDLEWARE ──────────────────────────────────────────────
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Not authenticated' });
-  try {
-    req.user = jwt.verify(header.slice(7), JWT_SECRET);
-    next();
-  } catch(e) {
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
-}
+const { requireAuth, requireRole } = buildAuthMiddleware({ jwtSecret: JWT_SECRET });
 // ── IN-MEMORY FALLBACK (used when GCS not configured) ────────────
 const memStore = {};
 // ── GCS HELPERS ──────────────────────────────────────────────────
@@ -176,71 +190,19 @@ async function gcsUploadImage(buffer, filename, contentType) {
   await file.save(buffer, { contentType, public: true });
   return `https://storage.googleapis.com/${GCS_BUCKET}/images/${filename}`;
 }
+
+const tokenService = buildTokenService({
+  jwtSecret: JWT_SECRET,
+  cache,
+  secureCookies: process.env.NODE_ENV === 'production'
+});
+const userService = buildUserService({ gcsRead, gcsWrite, bcrypt });
+
+app.use('/api/auth', buildAuthRoutes({ authLimiter, tokenService, userService, logger }));
+
 // ================================================================
 //  AUTH ROUTES
 // ================================================================
-// GET /api/auth/check-username — check if username is taken
-app.get('/api/auth/check-username', async (req, res) => {
-  const { username } = req.query;
-  if (!username || username.length < 2) return res.json({ available: false, reason: 'Too short' });
-  if (username.length > 30) return res.json({ available: false, reason: 'Too long (max 30 chars)' });
-  if (!/^[a-zA-Z0-9_]+$/.test(username)) return res.json({ available: false, reason: 'Letters, numbers and _ only' });
-  try {
-    const users = await gcsRead('users.json', {});
-    const taken = Object.values(users).some(u => u.name.toLowerCase() === username.toLowerCase());
-    res.json({ available: !taken, reason: taken ? 'Username already taken' : null });
-  } catch(e) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-// POST /api/auth/register
-app.post('/api/auth/register', authLimiter, async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ error: 'All fields required' });
-  if (password.length < 6) return res.status(400).json({ error: 'Password must be 6+ characters' });
-  if (name.length < 2 || name.length > 30) return res.status(400).json({ error: 'Name must be 2-30 characters' });
-  if (!/^[a-zA-Z0-9_]+$/.test(name)) return res.status(400).json({ error: 'Username: letters, numbers, _ only' });
-  try {
-    const users = await gcsRead('users.json', {});
-    // Check email taken
-    if (users[email.toLowerCase()]) return res.status(409).json({ error: 'Email already registered' });
-    // Check username taken (case-insensitive)
-    const nameTaken = Object.values(users).some(u => u.name.toLowerCase() === name.toLowerCase());
-    if (nameTaken) return res.status(409).json({ error: 'Username already taken — try another' });
-    // Hash password
-    const hash = await bcrypt.hash(password, 12);
-    users[email.toLowerCase()] = {
-      name,
-      email: email.toLowerCase(),
-      hash,
-      joinedAt: new Date().toISOString(),
-      avatar: null
-    };
-    await gcsWrite('users.json', users);
-    const token = jwt.sign({ name, email: email.toLowerCase() }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { name, email: email.toLowerCase() } });
-  } catch(e) {
-    console.error('Register error:', e);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-// POST /api/auth/login
-app.post('/api/auth/login', authLimiter, async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  try {
-    const users = await gcsRead('users.json', {});
-    const user = users[email.toLowerCase()];
-    if (!user) return res.status(401).json({ error: 'No account with that email' });
-    const valid = await bcrypt.compare(password, user.hash);
-    if (!valid) return res.status(401).json({ error: 'Wrong password' });
-    const token = jwt.sign({ name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { name: user.name, email: user.email } });
-  } catch(e) {
-    console.error('Login error:', e);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
 // ================================================================
 //  POSTS ROUTES
 // ================================================================
@@ -1234,6 +1196,66 @@ app.get('/api/version', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// User-saved locations
+app.get('/api/user/locations', requireAuth, async (req, res, next) => {
+  try {
+    const all = await gcsRead('saved_locations.json', {});
+    res.json(all[req.user.email] || []);
+  } catch (e) { next(e); }
+});
+
+app.post('/api/user/locations', requireAuth, async (req, res, next) => {
+  try {
+    const { name, lat, lng } = req.body || {};
+    if (!name || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return res.status(400).json({ error: 'name, lat, lng are required' });
+    const all = await gcsRead('saved_locations.json', {});
+    const row = { id: Date.now().toString(36), name: String(name).slice(0, 80), lat: Number(lat), lng: Number(lng), createdAt: new Date().toISOString() };
+    all[req.user.email] = [row, ...(all[req.user.email] || [])].slice(0, 30);
+    await gcsWrite('saved_locations.json', all);
+    res.status(201).json(row);
+  } catch (e) { next(e); }
+});
+
+// Favorite radar views
+app.get('/api/user/radar-views', requireAuth, async (req, res, next) => {
+  try {
+    const all = await gcsRead('radar_views.json', {});
+    res.json(all[req.user.email] || []);
+  } catch (e) { next(e); }
+});
+
+app.post('/api/user/radar-views', requireAuth, async (req, res, next) => {
+  try {
+    const { name, center, zoom, opacity, fps } = req.body || {};
+    if (!name || !Array.isArray(center) || center.length !== 2) return res.status(400).json({ error: 'name and center [lng,lat] required' });
+    const all = await gcsRead('radar_views.json', {});
+    const entry = {
+      id: Date.now().toString(36),
+      name: String(name).slice(0, 80),
+      center: [Number(center[0]), Number(center[1])],
+      zoom: Number(zoom) || 8,
+      opacity: Number(opacity) || 0.75,
+      fps: Number(fps) || 8,
+      createdAt: new Date().toISOString()
+    };
+    all[req.user.email] = [entry, ...(all[req.user.email] || [])].slice(0, 20);
+    await gcsWrite('radar_views.json', all);
+    res.status(201).json(entry);
+  } catch (e) { next(e); }
+});
+
+// basic usage analytics (server-side counters)
+app.get('/api/admin/usage', requireAuth, requireRole('admin', 'moderator'), async (req, res, next) => {
+  try {
+    res.json({
+      postCacheKeys: cache.keys().filter(k => k.startsWith('all_posts')).length,
+      weatherCacheKeys: cache.keys().filter(k => k.startsWith('weather_')).length,
+      uptimeSec: Math.round(process.uptime())
+    });
+  } catch (e) { next(e); }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -1247,6 +1269,14 @@ app.get('/api/health', (req, res) => {
     uptime: Math.round(process.uptime()) + 's'
   });
 });
+
+// Centralized error handling (kept near route registrations for consistent JSON responses).
+app.use((err, req, res, next) => {
+  logger.error('unhandled_error', { path: req.path, method: req.method, message: err.message });
+  if (res.headersSent) return next(err);
+  return res.status(500).json({ error: 'Server error' });
+});
+
 // ── SERVE FRONTEND ──────────────────────────────────────────────
 const frontendPath = path.join(__dirname, 'public');
 // token.js MUST come before static middleware so env var wins over any file
