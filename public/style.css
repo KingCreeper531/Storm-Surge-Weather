@@ -989,6 +989,33 @@ a { text-decoration: none; }
   .legend { right: 6px; top: auto; bottom: 200px; transform: none; }
 }
 
+@media (max-width: 700px) {
+  .timebar {
+    gap: 6px;
+    padding: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .tslots {
+    order: 2;
+    width: 100%;
+    max-width: 100%;
+  }
+  #tRange {
+    width: 100%;
+    order: 3;
+  }
+  .quick-op input { width: 68px; }
+  .cam-dock {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    bottom: 86px;
+    height: 220px;
+  }
+}
+
 /* WeatherWise-like alert card */
 .aw-topline{font-family:var(--mono);font-size:12px;color:var(--t2);margin-bottom:10px}
 .aw-card{background:linear-gradient(180deg,rgba(20,31,48,.85),rgba(15,24,38,.92));border:1px solid var(--border);border-radius:14px;padding:12px}
@@ -1013,5 +1040,4 @@ a { text-decoration: none; }
 
 #camDockOpen{color:var(--acc2);text-decoration:underline}
 #camDockOpen:hover{opacity:.86}
-
 

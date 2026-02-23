@@ -33,6 +33,7 @@ const S = {
   radarAdvanced: null, precipTypeGeoJSON: null, compositeMeta: null,
   radarRenderMode: 'mapbox', radarLayerIds: [],
   tomorrowRadarEnabled: false, radarFps: 8,
+  showAdvancedMapOverlays: false,
   radarDebug: !!(window.SS_DEBUG || localStorage.getItem('ss_debug_radar')==='1'),
   cfg: {
     tempUnit: 'C', windUnit: 'ms', timeFormat: '12',
@@ -42,7 +43,7 @@ const S = {
     showHumidity: true, showPressure: true, showUV: true,
     showSunTimes: true, showWind: true, showRain: true,
     showCloud: true, showFeels: true,
-    radarColor: '6', radarFps: 8, tomorrowRadarEnabled: false, theme: 'dark'
+    radarColor: '6', radarFps: 8, radarSpeedFactor: 1, tomorrowRadarEnabled: false, theme: 'dark'
   }
 };
 
@@ -305,7 +306,7 @@ function showLoader(show) { $('loader').classList.toggle('show',show); }
 
 function updateRadarDebugOverlay(){
   var el=$('radarDebug');
-  if(!el) return;
+  if(!el || !$('debugRadarBtn')){ if(el) el.style.display='none'; return; }
   if(!S.radarDebug){ el.style.display='none'; return; }
   el.style.display='block';
   var frame=S.frames[S.frame];
@@ -399,9 +400,9 @@ function cycleMapStyle() {
   S.map.setStyle(MAP_STYLES[S.mapStyle]);
   S.map.once('style.load',function(){
     if(S.cfg.alertZones&&S.alerts.length) putAlertsOnMap();
-    renderLightningOnMap();
-    renderRadarAdvancedOnMap();
-    renderPrecipTypeOnMap(S.precipTypeGeoJSON);
+    if(S.showAdvancedMapOverlays) renderLightningOnMap();
+    if(S.showAdvancedMapOverlays) renderRadarAdvancedOnMap();
+    if(S.showAdvancedMapOverlays) renderPrecipTypeOnMap(S.precipTypeGeoJSON);
     clearRadarMapLayers();
     syncRadarRenderMode();
     tileCache.clear(); loadRadar();
@@ -877,7 +878,8 @@ function play(){
     updateRadarDebugOverlay();
     return;
   }
-  var target=Math.round(1000/Math.max(2,Math.min(16,S.cfg.radarFps||8)));
+  var speedFactor=Math.max(0.5,Math.min(1.5,Number(S.cfg.radarSpeedFactor)||1));
+  var target=Math.round((1000/Math.max(2,Math.min(16,S.cfg.radarFps||8)))/speedFactor);
   var last=performance.now(), acc=0;
   function tick(ts){
     if(!S.playing) return;
@@ -1515,7 +1517,7 @@ function initSCAuth(){
       var d=await fetchJsonSafe(API_URL+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,password:pass})});
       saveUser(d.user,d.token); setText('loginErr',''); updateSCView(); loadSCPosts();
       showToast('Welcome back, '+d.user.name+'!');
-    } catch(e){ setText('loginErr','Cannot connect to server'); }
+    } catch(e){ setText('loginErr',e.message||'Cannot connect to server'); }
     finally { btn.disabled=false; btn.textContent='Sign In'; }
   });
   var usernameTimer;
@@ -1538,7 +1540,7 @@ function initSCAuth(){
       var d=await fetchJsonSafe(API_URL+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,email:email,password:pass})});
       saveUser(d.user,d.token); setText('regErr',''); updateSCView(); loadSCPosts();
       showToast('Welcome to Storm Central, '+d.user.name+'!');
-    } catch(e){ setText('regErr','Cannot connect to server'); }
+    } catch(e){ setText('regErr',e.message||'Cannot connect to server'); }
     finally { btn.disabled=false; btn.textContent='Create Account'; }
   });
   $('scSignout').addEventListener('click',function(){ clearUser(); updateSCView(); showToast('Signed out'); });
@@ -1602,6 +1604,7 @@ function searchTrafficCams(query){
         openCameraDock(embedUrl,'Hazcams · '+q,searchUrl);
         showToast('📷 Camera panel opened on map');
       };
+      openCameraDock(embedUrl,'Hazcams · '+q,searchUrl);
     })
     .catch(function(){
       grid.innerHTML='<div class="empty-s"><div class="es-ico">⚠</div><div>Camera search unavailable right now.</div></div>';
@@ -1678,13 +1681,20 @@ function initUI(){
   $('refreshBtn').onclick=function(){ loadWeather(); loadAlerts(); if(S.map) loadRadar(); showToast('↻ Refreshing...'); };
   $('playBtn').onclick =togglePlay;
   $('latestBtn').onclick=function(){ if(!S.frames.length) return; pickFrame(S.frames.length-1); pause(); showToast('⏱ Latest frame'); };
-  $('debugRadarBtn').onclick=function(){ S.radarDebug=!S.radarDebug; localStorage.setItem('ss_debug_radar', S.radarDebug?'1':'0'); this.classList.toggle('active',S.radarDebug); updateRadarDebugOverlay(); };
+  var drbBtn=$('debugRadarBtn');
+  if(drbBtn) drbBtn.onclick=function(){ S.radarDebug=!S.radarDebug; localStorage.setItem('ss_debug_radar', S.radarDebug?'1':'0'); this.classList.toggle('active',S.radarDebug); updateRadarDebugOverlay(); };
   $('radarFps').addEventListener('input',function(e){
     S.cfg.radarFps=Math.max(2,Math.min(16,parseInt(e.target.value,10)||8));
     if(radarAnimator) radarAnimator.setFPS(S.cfg.radarFps);
     if(S.playing){ pause(); play(); }
     saveCfg();
     updateRadarDebugOverlay();
+  });
+  $('radarSpeed').addEventListener('input',function(e){
+    var factor=Math.max(0.5,Math.min(1.5,(parseInt(e.target.value,10)||100)/100));
+    S.cfg.radarSpeedFactor=factor;
+    if(S.playing){ pause(); play(); }
+    saveCfg();
   });
   $('tRange').addEventListener('input',function(e){ pickFrame(+e.target.value); });
   $('quickOpacity').addEventListener('input',function(e){ S.cfg.opacity=+e.target.value/100; $('sOpacity').value=e.target.value; $('sOpacityVal').textContent=e.target.value+'%'; if(radarAnimator) radarAnimator.setOpacity(S.cfg.opacity); scheduleRadarDraw(); saveCfg(); });
@@ -1848,6 +1858,7 @@ function initUI(){
   applySettingsUI();
   var drb=$('debugRadarBtn'); if(drb) drb.classList.toggle('active',S.radarDebug);
   $('radarFps').value=String(S.cfg.radarFps||8);
+  var rs=$('radarSpeed'); if(rs) rs.value=String(Math.round((S.cfg.radarSpeedFactor||1)*100));
   updateLegend();
   updateRadarDebugOverlay();
 }
@@ -1870,9 +1881,9 @@ async function loadAdvancedData(){
     S.radarAdvanced=ra||null;
     S.precipTypeGeoJSON=pt||null;
     if(S.radarAdvanced&&rf){ S.radarAdvanced.rainfallTotals={ oneHourMm:rf.oneHourMm, twentyFourHourMm:rf.twentyFourHourMm, floodRisk:rf.floodRisk }; }
-    renderLightningOnMap();
-    renderRadarAdvancedOnMap();
-    renderPrecipTypeOnMap(S.precipTypeGeoJSON);
+    if(S.showAdvancedMapOverlays) renderLightningOnMap();
+    if(S.showAdvancedMapOverlays) renderRadarAdvancedOnMap();
+    if(S.showAdvancedMapOverlays) renderPrecipTypeOnMap(S.precipTypeGeoJSON);
   }catch(e){ console.warn('Advanced data unavailable',e.message); }
 }
 
