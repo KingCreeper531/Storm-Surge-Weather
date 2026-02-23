@@ -1,7 +1,7 @@
 const express = require('express');
 const { validateRegister, validateLogin, validateEmailOnly, validatePasswordReset } = require('../middleware/validation');
 
-function buildAuthRoutes({ authLimiter, tokenService, userService, logger }) {
+function buildAuthRoutes({ authLimiter, tokenService, userService, logger, metrics }) {
   const router = express.Router();
 
   router.get('/check-username', async (req, res, next) => {
@@ -43,7 +43,10 @@ function buildAuthRoutes({ authLimiter, tokenService, userService, logger }) {
       const user = await userService.findByEmail(email);
 
       // Avoid account enumeration leakage.
-      if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+      if (!user) {
+        if (metrics) metrics.authFailures += 1;
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
 
       if (Number(user.lockUntil || 0) > Date.now()) {
         return res.status(429).json({ error: 'Account temporarily locked due to repeated failures' });
@@ -51,6 +54,7 @@ function buildAuthRoutes({ authLimiter, tokenService, userService, logger }) {
 
       const valid = await userService.verifyPassword(user, password);
       if (!valid) {
+        if (metrics) metrics.authFailures += 1;
         await userService.recordFailedLogin(email);
         return res.status(401).json({ error: 'Invalid email or password' });
       }

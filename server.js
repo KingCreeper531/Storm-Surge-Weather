@@ -48,6 +48,21 @@ const logger = {
   error: (msg, meta = {}) => console.error('[error]', msg, meta)
 };
 
+
+const metrics = {
+  startedAt: Date.now(),
+  requestsTotal: 0,
+  responsesByStatus: {},
+  authFailures: 0,
+  upstreamFailures: 0,
+  weatherFallbacks: 0,
+  radarFallbacks: 0
+};
+
+function nextRequestId() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change-this-in-render-dashboard') {
   logger.warn('env.jwt_secret_default', { message: 'JWT_SECRET is using a default value; set a strong value in Render env' });
 }
@@ -121,9 +136,14 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use((req, res, next) => {
   const start = Date.now();
+  const requestId = nextRequestId();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  metrics.requestsTotal += 1;
   res.on('finish', () => {
     const ms = Date.now() - start;
-    if (ms > 1200) logger.warn('slow_request', { method: req.method, path: req.path, status: res.statusCode, ms });
+    metrics.responsesByStatus[res.statusCode] = (metrics.responsesByStatus[res.statusCode] || 0) + 1;
+    if (ms > 1200) logger.warn('slow_request', { requestId, method: req.method, path: req.path, status: res.statusCode, ms });
   });
   next();
 });
@@ -198,7 +218,7 @@ const tokenService = buildTokenService({
 });
 const userService = buildUserService({ gcsRead, gcsWrite, bcrypt });
 
-app.use('/api/auth', buildAuthRoutes({ authLimiter, tokenService, userService, logger }));
+app.use('/api/auth', buildAuthRoutes({ authLimiter, tokenService, userService, logger, metrics }));
 
 // ================================================================
 //  AUTH ROUTES
@@ -388,14 +408,18 @@ app.get('/api/weather', async (req, res) => {
     res.json(weather);
   } catch (e) {
     console.error('Weather provider failed:', e.message);
+    metrics.upstreamFailures += 1;
     try {
       const weather = await fetchOpenMeteo(lat, lng);
       cache.set(cacheKey, weather, 300);
+      metrics.weatherFallbacks += 1;
       return res.json(weather);
     } catch (fallbackErr) {
       console.error('Open-Meteo fallback failed:', fallbackErr.message);
+      metrics.upstreamFailures += 1;
       const weather = buildSyntheticWeather(lat, lng);
       cache.set(cacheKey, weather, 120);
+      metrics.weatherFallbacks += 1;
       return res.json(weather);
     }
   }
@@ -461,6 +485,22 @@ app.get('/api/reports/weathernext2', async (req, res) => {
   }
 });
 
+
+async function fetchWithTimeoutJson(url, opts = {}) {
+  const timeoutMs = Number(opts.timeoutMs || process.env.UPSTREAM_TIMEOUT_MS || 9000);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const requestOpts = { ...opts, signal: controller.signal };
+  delete requestOpts.timeoutMs;
+  try {
+    const r = await fetch(url, requestOpts);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchWeatherNext2(lat, lng) {
   const fields = [
     'temperature','temperatureApparent','humidity','precipitationProbability',
@@ -478,9 +518,7 @@ async function fetchWeatherNext2(lat, lng) {
         + `&fields=${fields}`
         + `&timesteps=current,1h,1d&units=metric&timezone=auto`
         + `&apikey=${WEATHERNEXT_KEY}`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`${base} ${r.status}`);
-      const raw = await r.json();
+      const raw = await fetchWithTimeoutJson(url, { timeoutMs: 9000 });
       const normalised = normaliseWeatherNext2(raw);
       normalised._source = 'weathernext2';
       return normalised;
@@ -534,9 +572,7 @@ async function fetchOpenMeteo(lat, lng) {
     + '&hourly=temperature_2m,relative_humidity_2m,weather_code,precipitation_probability'
     + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max'
     + '&forecast_days=7&temperature_unit=celsius&wind_speed_unit=ms&timezone=auto';
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`Open-Meteo ${r.status}`);
-  const d = await r.json();
+  const d = await fetchWithTimeoutJson(url, { timeoutMs: 9000 });
   return {
     current: d.current || {},
     hourly: {
@@ -671,9 +707,7 @@ async function fetchTomorrowNowcast(lat, lng) {
     + '&timesteps=5m&units=metric&endTime=' + encodeURIComponent(endTime)
     + '&apikey=' + encodeURIComponent(TOMORROW_KEY);
   try {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`Tomorrow ${r.status}`);
-    const d = await r.json();
+    const d = await fetchWithTimeoutJson(url, { timeoutMs: 9000 });
     const ints = d?.data?.timelines?.[0]?.intervals || [];
     const frames = ints.slice(0, 18).map((it, i) => ({
       minutes: i * 5,
@@ -1172,6 +1206,7 @@ app.get('/api/radar/tile', async (req, res) => {
     const y = Number(parts[parts.length - 3]);
     const color = Number(parts[parts.length - 2]);
     if (Number.isFinite(z) && Number.isFinite(x) && Number.isFinite(y)) {
+      metrics.radarFallbacks += 1;
       const svg = buildSyntheticRadarTileSvg(safePath, z, x, y, Number.isFinite(color) ? color : 6);
       res.set('Content-Type', 'image/svg+xml; charset=utf-8');
       res.set('Cache-Control', 'public, max-age=30');
@@ -1270,6 +1305,22 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/healthz', (req, res) => {
+  res.json({ status: 'ok', uptimeSec: Math.round(process.uptime()), startedAt: new Date(metrics.startedAt).toISOString() });
+});
+
+app.get('/metrics', requireAuth, requireRole('admin'), (req, res) => {
+  res.json({
+    requestsTotal: metrics.requestsTotal,
+    responsesByStatus: metrics.responsesByStatus,
+    authFailures: metrics.authFailures,
+    upstreamFailures: metrics.upstreamFailures,
+    weatherFallbacks: metrics.weatherFallbacks,
+    radarFallbacks: metrics.radarFallbacks,
+    uptimeSec: Math.round(process.uptime())
+  });
+});
+
 // Centralized error handling (kept near route registrations for consistent JSON responses).
 app.use((err, req, res, next) => {
   logger.error('unhandled_error', { path: req.path, method: req.method, message: err.message });
@@ -1294,4 +1345,15 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 // ── START ────────────────────────────────────────────────────────
-app.listen(PORT, () => console.log(`⛈  Storm Surge API running on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`⛈  Storm Surge API running on port ${PORT}`));
+
+function shutdown(signal) {
+  logger.warn('shutdown.signal', { signal });
+  server.close(() => {
+    logger.info('shutdown.complete');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 8000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
