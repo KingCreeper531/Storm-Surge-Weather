@@ -425,6 +425,43 @@ app.get('/api/weather', async (req, res) => {
   }
 });
 
+// Experimental GraphCast-inspired summary endpoint.
+// This does NOT run DeepMind GraphCast locally (too heavyweight for Render runtime),
+// but provides useful probabilistic guidance derived from current forecast inputs.
+app.get('/api/forecast/graphcast-experimental', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'valid lat and lng required' });
+  }
+
+  try {
+    const weather = WEATHERNEXT_KEY ? await fetchWeatherNext2(lat, lng) : await fetchOpenMeteo(lat, lng);
+    const hours = (weather.hourly?.time || []).slice(0, 12).map((t, i) => ({
+      time: t,
+      tempC: Number(weather.hourly?.temperature_2m?.[i] || 0),
+      precipProb: Number(weather.hourly?.precipitation_probability?.[i] || 0),
+      code: Number(weather.hourly?.weather_code?.[i] || 0)
+    }));
+    const severeRisk = Math.min(1, Math.max(0,
+      (hours.reduce((a, h) => a + h.precipProb, 0) / Math.max(1, hours.length)) / 100
+    ));
+
+    return res.json({
+      provider: 'graphcast-inspired-experimental',
+      note: 'Inspired by GraphCast-style probabilistic outputs, computed from available API weather inputs.',
+      location: { lat, lng },
+      confidence: +(0.55 + (1 - severeRisk) * 0.35).toFixed(2),
+      severeRisk: +severeRisk.toFixed(2),
+      horizonHours: 12,
+      timeline: hours
+    });
+  } catch (e) {
+    metrics.upstreamFailures += 1;
+    return res.status(503).json({ error: 'GraphCast experimental forecast unavailable right now' });
+  }
+});
+
 app.get('/api/reports/weathernext2', async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);

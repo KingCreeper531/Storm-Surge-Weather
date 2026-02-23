@@ -930,6 +930,17 @@ async function loadWeather(){
   }
   showLoader(false);
 }
+
+async function loadGraphcastExperimental(){
+  try {
+    var d = await fetchJsonSafe(API_URL+'/api/forecast/graphcast-experimental?lat='+S.lat+'&lng='+S.lng);
+    var risk = Math.round((Number(d.severeRisk)||0) * 100);
+    var conf = Math.round((Number(d.confidence)||0) * 100);
+    showToast('🧪 GraphCast Exp: risk '+risk+'% · confidence '+conf+'%');
+  } catch(e){
+    showToast('⚠ GraphCast experiment unavailable: '+(e.message||'try again'));
+  }
+}
 function renderWeather(d){
   var c=d.current;
   var wu={ms:'m/s',kmh:'km/h',mph:'mph'}[S.cfg.windUnit];
@@ -1703,6 +1714,8 @@ function initUI(){
 
   // Draw mode
   $('drawBtn').onclick  =function(){ S.drawMode?exitDrawMode():enterDrawMode(); };
+  var gcBtn=$('graphcastBtn');
+  if(gcBtn) gcBtn.onclick=loadGraphcastExperimental;
   $('drawExit').onclick =exitDrawMode;
   $('drawUndo').onclick =undoDraw;
   $('drawClear').onclick=clearDraw;
