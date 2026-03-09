@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Storm Surge Weather — Professional weather radar and forecasts">
+  <meta name="description" content="Storm Surge Weather — Professional weather radar, forecasts, and alerts">
   <title>Storm Surge Weather</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛈%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%88%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -26,15 +26,28 @@
     <div class="logo-mark">⛈</div>
     <div class="logo-text">
       <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v11.0</span>
+      <span class="logo-ver">v12.0</span>
     </div>
     <button class="sidebar-x" id="sidebarX" aria-label="Close sidebar">✕</button>
   </div>
 
   <div class="sidebar-loc">
     <div class="sl-label">CURRENT LOCATION</div>
-    <div class="sl-name" id="sideLocName">New York</div>
-    <div class="sl-coords" id="sideLocCoords">40.71°N  74.01°W</div>
+    <div class="sl-name" id="sideLocName">—</div>
+    <div class="sl-coords" id="sideLocCoords">—</div>
+  </div>
+
+  <!-- MINI WEATHER SNAPSHOT -->
+  <div class="sidebar-snap" id="sideSnap">
+    <div class="snap-temp" id="snapTemp">—°</div>
+    <div class="snap-right">
+      <div class="snap-icon" id="snapIcon">🌡</div>
+      <div class="snap-desc" id="snapDesc">—</div>
+      <div class="snap-hl">
+        <span id="snapHi">H:—</span>
+        <span id="snapLo">L:—</span>
+      </div>
+    </div>
   </div>
 
   <nav class="sidenav">
@@ -60,6 +73,7 @@
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
+    <div class="ver-badge">Storm Surge v12.0 — Open-Meteo · RainViewer · NWS</div>
   </div>
 </aside>
 
@@ -77,7 +91,7 @@
       <div class="searchbox">
         <span class="s-ico" aria-hidden="true">⌕</span>
         <input id="searchInput" type="text" placeholder="Search city, zip, or coordinates..." autocomplete="off" spellcheck="false" aria-label="Search location" aria-autocomplete="list">
-        <div class="s-drop" id="searchDrop" role="listbox"></div>
+        <div class="s-drop" id="searchDrop"></div>
       </div>
     </div>
     <div class="tb-right">
@@ -131,7 +145,7 @@
     <!-- WEATHER CARD -->
     <div class="wcard" id="wcard" role="complementary" aria-label="Current conditions">
       <div class="wc-header">
-        <div class="wc-loc" id="wcLoc">New York</div>
+        <div class="wc-loc" id="wcLoc">—</div>
         <div class="wc-time" id="wcTime">—</div>
       </div>
       <div class="wc-hero">
@@ -146,28 +160,44 @@
           <span class="wc-lo" id="wcLo">L: --°</span>
         </div>
       </div>
+
+      <!-- UV BAR -->
+      <div class="wc-uv-row" id="wcUVRow">
+        <span class="wc-uv-label">UV Index</span>
+        <div class="wc-uv-bar"><div class="wc-uv-fill" id="wcUVFill"></div></div>
+        <span class="wc-uv-val" id="wcUV">--</span>
+      </div>
+
       <div class="wc-divider"></div>
       <div class="wc-grid" id="wcGrid">
-        <div class="wcs" id="statHum">  <div class="wcs-l">💧 Humidity</div>  <div class="wcs-v" id="wcHum">--</div></div>
-        <div class="wcs" id="statDew">  <div class="wcs-l">🌫 Dew Point</div> <div class="wcs-v" id="wcDew">--</div></div>
-        <div class="wcs" id="statWind"> <div class="wcs-l">💨 Wind</div>       <div class="wcs-v" id="wcWind">--</div></div>
-        <div class="wcs" id="statGust"> <div class="wcs-l">🌬 Gusts</div>      <div class="wcs-v" id="wcGust">--</div></div>
-        <div class="wcs" id="statRain"> <div class="wcs-l">🌧 Precip</div>     <div class="wcs-v" id="wcRain">--</div></div>
-        <div class="wcs" id="statVis">  <div class="wcs-l">👁 Visibility</div> <div class="wcs-v" id="wcVis">--</div></div>
-        <div class="wcs" id="statPres"> <div class="wcs-l">📊 Pressure</div>   <div class="wcs-v" id="wcPres">--</div></div>
-        <div class="wcs" id="statCloud"><div class="wcs-l">☁ Cloud</div>       <div class="wcs-v" id="wcCloud">--</div></div>
-        <div class="wcs" id="statUV">   <div class="wcs-l">☀ UV Index</div>    <div class="wcs-v" id="wcUV">--</div></div>
-        <div class="wcs" id="statAQI">  <div class="wcs-l">🫁 AQI</div>        <div class="wcs-v" id="wcAQI">--</div></div>
+        <div class="wcs"><div class="wcs-l">💧 Humidity</div>  <div class="wcs-v" id="wcHum">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌫 Dew Point</div> <div class="wcs-v" id="wcDew">--</div></div>
+        <div class="wcs"><div class="wcs-l">💨 Wind</div>       <div class="wcs-v" id="wcWind">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌬 Gusts</div>      <div class="wcs-v" id="wcGust">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌧 Precip</div>     <div class="wcs-v" id="wcRain">--</div></div>
+        <div class="wcs"><div class="wcs-l">👁 Visibility</div> <div class="wcs-v" id="wcVis">--</div></div>
+        <div class="wcs"><div class="wcs-l">📊 Pressure</div>   <div class="wcs-v" id="wcPres">--</div></div>
+        <div class="wcs"><div class="wcs-l">☁ Cloud</div>       <div class="wcs-v" id="wcCloud">--</div></div>
+        <div class="wcs"><div class="wcs-l">🫁 AQI</div>        <div class="wcs-v" id="wcAQI">--</div></div>
+        <div class="wcs"><div class="wcs-l">💦 Humidity</div>   <div class="wcs-v" id="wcHeatIdx">--</div></div>
       </div>
       <div class="wc-divider"></div>
-      <div class="wc-sun" id="statSun">
-        <div class="wc-sun-item"><span>🌅</span><span id="wcSunrise">--:--</span></div>
-        <div class="wc-sun-sep"></div>
-        <div class="wc-sun-item"><span id="wcDaylight">--h</span><span class="wcs-l">daylight</span></div>
-        <div class="wc-sun-sep"></div>
-        <div class="wc-sun-item"><span>🌇</span><span id="wcSunset">--:--</span></div>
+
+      <!-- SUNRISE / SUNSET ARC -->
+      <div class="wc-sun-arc" id="wcSunArc">
+        <svg class="sun-arc-svg" viewBox="0 0 120 60" aria-hidden="true">
+          <path class="sun-arc-track" d="M10,55 A50,50 0 0,1 110,55"/>
+          <path class="sun-arc-prog" id="sunArcProg" d="M10,55 A50,50 0 0,1 110,55" stroke-dasharray="0 157"/>
+          <circle class="sun-dot" id="sunDot" cx="10" cy="55" r="4"/>
+        </svg>
+        <div class="wc-sun-row">
+          <div class="wc-sun-item"><span>🌅</span><span id="wcSunrise">--:--</span></div>
+          <div class="wc-sun-item center"><span id="wcDaylight">--h</span><span class="wcs-l">daylight</span></div>
+          <div class="wc-sun-item"><span>🌇</span><span id="wcSunset">--:--</span></div>
+        </div>
       </div>
-      <div class="wc-moon" id="wcMoon">🌙 Moon phase: —</div>
+
+      <div class="wc-moon" id="wcMoon">🌙 —</div>
     </div>
 
     <!-- LEGEND -->
@@ -195,6 +225,7 @@
         <button class="fct" data-ft="daily" id="tab-daily" aria-controls="fcScroll" aria-selected="false">10-Day</button>
         <button class="fct" data-ft="precip" id="tab-precip" aria-controls="fcScroll" aria-selected="false">🌧 Rain</button>
         <button class="fct" data-ft="wind" id="tab-wind" aria-controls="fcScroll" aria-selected="false">💨 Wind</button>
+        <button class="fct" data-ft="feels" id="tab-feels" aria-controls="fcScroll" aria-selected="false">🌡 Feels</button>
       </div>
       <div class="fc-scroll" id="fcScroll" role="tabpanel" aria-labelledby="tab-hourly"></div>
     </div>
@@ -241,7 +272,7 @@
 <div class="modal" id="aqiModal" role="dialog" aria-modal="true" aria-labelledby="aqiTitle">
   <div class="mbox wide">
     <div class="mbox-head">
-      <div class="mbox-title" id="aqiTitle">💨 Air Quality</div>
+      <div class="mbox-title" id="aqiTitle">💨 Air Quality Index</div>
       <button class="mbox-x" id="aqiClose" aria-label="Close">✕</button>
     </div>
     <div class="mbox-body" id="aqiBody">
@@ -389,7 +420,7 @@
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div><strong>Storm Surge Weather v11.0</strong></div>
+          <div><strong>Storm Surge Weather v12.0</strong></div>
           <div>Radar — RainViewer (free)</div>
           <div>Weather &amp; Forecast — Open-Meteo (free)</div>
           <div>Air Quality — Open-Meteo AQI (free)</div>

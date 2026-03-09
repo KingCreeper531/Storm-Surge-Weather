@@ -1,6 +1,6 @@
 {
   "name": "storm-surge-weather",
-  "version": "11.0.0",
+  "version": "12.0.0",
   "description": "Storm Surge Weather — Professional weather app",
   "main": "server.js",
   "scripts": {
