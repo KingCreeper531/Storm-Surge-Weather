@@ -6,8 +6,9 @@ const https = require('https');
 const CURRENT_VERSION = '13.2.0';
 const GITHUB_REPO     = 'KingCreeper531/Storm-Surge-Weather';
 
-let win;
-let server;
+let win    = null;
+let server = null;
+let isQuitting = false;
 
 function checkForUpdate() {
   return new Promise((resolve) => {
@@ -40,26 +41,55 @@ ipcMain.on('open-release', (_, url) => {
   if (url && url.startsWith('https://github.com')) shell.openExternal(url);
 });
 
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    title: 'Storm Surge Weather',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'electron-preload.js')
+    }
+  });
+
+  win.loadURL('http://localhost:3001');
+
+  win.on('closed', () => {
+    win = null;
+  });
+}
+
 app.whenReady().then(() => {
+  // Spawn the Express server
   server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
     env: { ...process.env, PORT: '3001' },
     stdio: 'inherit'
   });
 
-  setTimeout(() => {
-    win = new BrowserWindow({
-      width: 1400,
-      height: 900,
-      title: 'Storm Surge Weather',
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        preload: path.join(__dirname, 'electron-preload.js')
-      }
-    });
-    win.loadURL('http://localhost:3001');
-    win.on('closed', () => { if (server) server.kill(); win = null; });
-  }, 1500);
+  // Wait for server to boot then open window
+  setTimeout(createWindow, 1500);
 });
 
-app.on('window-all-closed', () => { if (server) server.kill(); app.quit(); });
+// Only re-open on macOS when clicking dock icon with no windows
+app.on('activate', () => {
+  if (win === null && !isQuitting) createWindow();
+});
+
+// Windows/Linux: quit when all windows closed
+app.on('window-all-closed', () => {
+  isQuitting = true;
+  if (server) {
+    server.kill();
+    server = null;
+  }
+  app.quit();
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  if (server) {
+    server.kill();
+    server = null;
+  }
+});
