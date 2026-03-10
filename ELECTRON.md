@@ -1,6 +1,6 @@
 # Storm Surge Weather — Desktop App (Electron)
 
-This guide packages Storm Surge Weather as a native desktop app (.exe / .dmg / .AppImage).
+This guide walks you through packaging Storm Surge Weather as a native desktop app (.exe / .dmg / .AppImage).
 
 ---
 
@@ -8,7 +8,7 @@ This guide packages Storm Surge Weather as a native desktop app (.exe / .dmg / .
 
 - Node.js 18+ installed
 - Your repo cloned locally
-- `MAPBOX_TOKEN` environment variable set (see bottom of this doc)
+- A valid `MAPBOX_TOKEN` environment variable set (see below)
 
 ---
 
@@ -20,98 +20,94 @@ npm install --save-dev electron electron-builder
 
 ---
 
-## Step 2 — Add scripts to package.json
+## Step 2 — Update package.json
 
-Open `package.json` and add/update the `scripts` and `build` sections:
+Add the following to your `package.json`:
 
+### Scripts section
 ```json
-{
-  "scripts": {
-    "start": "node server.js",
-    "electron": "electron electron-main.js",
-    "dist": "electron-builder"
+"scripts": {
+  "start": "node server.js",
+  "electron": "electron electron-main.js",
+  "dist": "electron-builder"
+}
+```
+
+### Build config (add at root level of package.json)
+```json
+"build": {
+  "appId": "com.stormsurge.weather",
+  "productName": "Storm Surge Weather",
+  "files": [
+    "public/**",
+    "server.js",
+    "electron-main.js",
+    "node_modules/**"
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "public/favicon.ico"
   },
-  "build": {
-    "appId": "com.stormsurge.weather",
-    "productName": "Storm Surge Weather",
-    "files": [
-      "public/**",
-      "server.js",
-      "electron-main.js",
-      "node_modules/**"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "public/favicon.ico"
-    },
-    "mac": {
-      "target": "dmg"
-    },
-    "linux": {
-      "target": "AppImage"
-    }
+  "mac": {
+    "target": "dmg"
+  },
+  "linux": {
+    "target": "AppImage"
   }
 }
 ```
 
 ---
 
-## Step 3 — Test it locally first
+## Step 3 — Set your Mapbox token
+
+The app reads `MAPBOX_TOKEN` from the environment. Before running or building, set it:
+
+**Windows (CMD):**
+```cmd
+set MAPBOX_TOKEN=your_token_here
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:MAPBOX_TOKEN="your_token_here"
+```
+
+**Mac/Linux:**
+```bash
+export MAPBOX_TOKEN=your_token_here
+```
+
+> For a permanent packaged build, you can hardcode it in `server.js` as a fallback:
+> `const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || 'your_token_here';`
+
+---
+
+## Step 4 — Test it locally first
 
 ```bash
 npm run electron
 ```
 
-This opens the app in a native window without building an installer. Make sure it loads correctly before packaging.
+This opens the app in a native window without building an installer. Make sure everything works before packaging.
 
 ---
 
-## Step 4 — Build the installer
+## Step 5 — Build the installer
 
 ```bash
 npm run dist
 ```
 
 Output goes to the `dist/` folder:
-- **Windows** → `dist/Storm Surge Weather Setup x.x.x.exe`
-- **macOS** → `dist/Storm Surge Weather-x.x.x.dmg`
-- **Linux** → `dist/Storm Surge Weather-x.x.x.AppImage`
-
----
-
-## Mapbox Token
-
-The app reads `MAPBOX_TOKEN` from the environment. For the packaged desktop app, you have two options:
-
-### Option A — Set environment variable before running
-```bash
-# Windows (PowerShell)
-$env:MAPBOX_TOKEN="pk.your_token_here"
-npm run electron
-
-# macOS/Linux
-MAPBOX_TOKEN=pk.your_token_here npm run electron
-```
-
-### Option B — Hardcode it in a token file (easier for distribution)
-
-Create `public/token.js`:
-```js
-window.MAPBOX_TOKEN = 'pk.your_token_here';
-```
-
-Then in `public/index.html`, add before other scripts:
-```html
-<script src="/token.js"></script>
-```
-
-And update `server.js` to serve it, or just rely on the static file middleware already in place.
+- **Windows:** `dist/Storm Surge Weather Setup x.x.x.exe`
+- **Mac:** `dist/Storm Surge Weather-x.x.x.dmg`
+- **Linux:** `dist/Storm Surge Weather-x.x.x.AppImage`
 
 ---
 
 ## Notes
 
-- The Electron app runs the full Express server internally — no separate server needed
-- All API calls go through `localhost:3001` just like the web version
-- The window is 1400×900 minimum, resizable
-- Menu bar is hidden for a clean app feel
+- The app spawns your Express server internally — no separate terminal needed
+- Port `3001` is used by default (set `PORT` env var to change)
+- To build for a different OS from your machine, see [electron-builder docs on cross-compilation](https://www.electron.build/multi-platform-build)

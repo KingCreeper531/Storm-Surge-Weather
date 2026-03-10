@@ -12,18 +12,13 @@ app.whenReady().then(() => {
     stdio: 'inherit'
   });
 
-  server.on('error', err => console.error('Server error:', err));
-
-  // Wait for server to start before opening window
+  // Wait for server to boot, then open window
   setTimeout(() => {
     win = new BrowserWindow({
       width: 1400,
       height: 900,
-      minWidth: 900,
-      minHeight: 600,
       title: 'Storm Surge Weather',
       icon: path.join(__dirname, 'public', 'favicon.ico'),
-      backgroundColor: '#0a0f1a',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true
@@ -32,18 +27,10 @@ app.whenReady().then(() => {
 
     win.loadURL('http://localhost:3001');
 
-    win.webContents.on('did-fail-load', () => {
-      // Retry once if server isn't ready yet
-      setTimeout(() => win.loadURL('http://localhost:3001'), 1000);
-    });
-
     win.on('closed', () => {
       if (server) server.kill();
       win = null;
     });
-
-    // Remove default menu bar
-    win.setMenuBarVisibility(false);
   }, 1500);
 });
 
@@ -52,6 +39,6 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on('before-quit', () => {
-  if (server) server.kill();
+app.on('activate', () => {
+  if (!win) app.emit('ready');
 });
