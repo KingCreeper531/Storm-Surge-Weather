@@ -10,8 +10,101 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <style>
+    /* ── UPDATE BANNER (Discord-style) ── */
+    .update-banner {
+      display: none;
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      background: linear-gradient(135deg, #5865f2 0%, #3b4fd8 100%);
+      color: #fff;
+      border-radius: 14px;
+      padding: 14px 20px;
+      min-width: 320px;
+      max-width: 480px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      gap: 14px;
+      font-family: 'Outfit', sans-serif;
+      animation: bannerIn 0.35s cubic-bezier(.34,1.56,.64,1) forwards;
+    }
+    .update-banner.visible { display: flex; }
+    @keyframes bannerIn {
+      from { opacity:0; transform: translateX(-50%) translateY(20px); }
+      to   { opacity:1; transform: translateX(-50%) translateY(0); }
+    }
+    .ub-icon { font-size: 1.6rem; flex-shrink: 0; }
+    .ub-text { flex: 1; }
+    .ub-text strong { display: block; font-size: .95rem; font-weight: 700; }
+    .ub-text span   { font-size: .8rem; opacity: .85; }
+    .ub-btn {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .2s;
+    }
+    .ub-btn:hover { background: rgba(255,255,255,0.35); }
+    .ub-dismiss {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.6);
+      cursor: pointer;
+      font-size: 1.1rem;
+      padding: 2px 6px;
+      flex-shrink: 0;
+    }
+    .ub-dismiss:hover { color: #fff; }
+
+    /* ── UPDATE section in Settings ── */
+    .update-check-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .upd-status {
+      font-size: .8rem;
+      opacity: .7;
+      flex: 1;
+    }
+    .upd-status.has-update { color: #5865f2; opacity: 1; font-weight: 600; }
+    .upd-status.up-to-date { color: #22c55e; opacity: 1; }
+    .upd-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #5865f2;
+      margin-right: 5px;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:.5; transform:scale(1.4); }
+    }
+  </style>
 </head>
 <body>
+
+<!-- UPDATE BANNER -->
+<div class="update-banner" id="updateBanner">
+  <div class="ub-icon">🔄</div>
+  <div class="ub-text">
+    <strong id="ubTitle">Update Available</strong>
+    <span id="ubDesc">A new version of Storm Surge is ready</span>
+  </div>
+  <button class="ub-btn" id="ubDownload">Download</button>
+  <button class="ub-dismiss" id="ubDismiss" title="Dismiss">✕</button>
+</div>
 
 <!-- ANIMATED BACKGROUND -->
 <div class="bg-anim" id="bgAnim" aria-hidden="true">
@@ -26,7 +119,7 @@
     <div class="logo-mark">⛈</div>
     <div class="logo-text">
       <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v12.0</span>
+      <span class="logo-ver">v13.1</span>
     </div>
     <button class="sidebar-x" id="sidebarX" aria-label="Close sidebar">✕</button>
   </div>
@@ -37,7 +130,6 @@
     <div class="sl-coords" id="sideLocCoords">—</div>
   </div>
 
-  <!-- MINI WEATHER SNAPSHOT -->
   <div class="sidebar-snap" id="sideSnap">
     <div class="snap-temp" id="snapTemp">—°</div>
     <div class="snap-right">
@@ -51,29 +143,29 @@
   </div>
 
   <nav class="sidenav">
-    <a href="#" class="sni active" data-p="home" aria-label="Dashboard"><span class="sni-ico">⌂</span><span class="sni-lbl">Dashboard</span></a>
-    <a href="#" class="sni" data-p="alerts" aria-label="Alerts"><span class="sni-ico">◈</span><span class="sni-lbl">Alerts<em class="nav-badge" id="navAlertBadge">0</em></span></a>
-    <a href="#" class="sni" data-p="aqi" aria-label="Air Quality"><span class="sni-ico">💨</span><span class="sni-lbl">Air Quality</span></a>
-    <a href="#" class="sni" data-p="marine" aria-label="Marine"><span class="sni-ico">🌊</span><span class="sni-lbl">Marine</span></a>
-    <a href="#" class="sni" data-p="cameras" aria-label="Cameras"><span class="sni-ico">📷</span><span class="sni-lbl">Cameras</span></a>
-    <a href="#" class="sni" data-p="settings" aria-label="Settings"><span class="sni-ico">⚙</span><span class="sni-lbl">Settings</span></a>
+    <a href="#" class="sni active" data-p="home"><span class="sni-ico">⌂</span><span class="sni-lbl">Dashboard</span></a>
+    <a href="#" class="sni" data-p="alerts"><span class="sni-ico">◈</span><span class="sni-lbl">Alerts<em class="nav-badge" id="navAlertBadge">0</em></span></a>
+    <a href="#" class="sni" data-p="aqi"><span class="sni-ico">💨</span><span class="sni-lbl">Air Quality</span></a>
+    <a href="#" class="sni" data-p="marine"><span class="sni-ico">🌊</span><span class="sni-lbl">Marine</span></a>
+    <a href="#" class="sni" data-p="cameras"><span class="sni-ico">📷</span><span class="sni-lbl">Cameras</span></a>
+    <a href="#" class="sni" data-p="settings"><span class="sni-ico">⚙</span><span class="sni-lbl">Settings</span></a>
   </nav>
 
   <div class="fav-section">
     <div class="fav-head">
       <span>SAVED LOCATIONS</span>
-      <button class="fav-add" id="favAddBtn" title="Save current location" aria-label="Save location">＋</button>
+      <button class="fav-add" id="favAddBtn" title="Save current location">＋</button>
     </div>
     <div class="fav-list" id="favList"></div>
   </div>
 
   <div class="sidebar-bottom">
-    <button class="theme-row" id="themeBtn" aria-label="Toggle theme">
+    <button class="theme-row" id="themeBtn">
       <span id="themeIcon">🌙</span>
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">Storm Surge v12.0 — Open-Meteo · RainViewer · NWS</div>
+    <div class="ver-badge">Storm Surge v13.1 — Open-Meteo · RainViewer · NWS</div>
   </div>
 </aside>
 
@@ -81,7 +173,7 @@
 <main class="main">
   <header class="topbar">
     <div class="tb-left">
-      <button class="burger" id="burger" aria-label="Open menu"><span></span><span></span><span></span></button>
+      <button class="burger" id="burger"><span></span><span></span><span></span></button>
       <div class="loc-chip">
         <div class="loc-tag">LOCATION</div>
         <div class="loc-val" id="locName">New York</div>
@@ -89,67 +181,63 @@
     </div>
     <div class="tb-mid">
       <div class="searchbox">
-        <span class="s-ico" aria-hidden="true">⌕</span>
-        <input id="searchInput" type="text" placeholder="Search city, zip, or coordinates..." autocomplete="off" spellcheck="false" aria-label="Search location" aria-autocomplete="list">
+        <span class="s-ico">⌕</span>
+        <input id="searchInput" type="text" placeholder="Search city, zip, or coordinates..." autocomplete="off" spellcheck="false">
         <div class="s-drop" id="searchDrop"></div>
       </div>
     </div>
     <div class="tb-right">
       <div class="live-pill"><span class="live-dot"></span>LIVE</div>
       <div class="date-pill" id="datePill">—</div>
-      <button class="tb-btn" id="geoBtn" title="Use my location" aria-label="Use my location">◎</button>
-      <button class="tb-btn" id="shareBtn" title="Share weather card" aria-label="Share weather">⤴</button>
-      <button class="tb-btn" id="drawBtn" title="Draw on map" aria-label="Draw on map">✏</button>
-      <button class="tb-btn" id="refreshBtn" title="Refresh data" aria-label="Refresh data">↻</button>
+      <button class="tb-btn" id="geoBtn" title="Use my location">◎</button>
+      <button class="tb-btn" id="shareBtn" title="Share weather card">⤴</button>
+      <button class="tb-btn" id="drawBtn" title="Draw on map">✏</button>
+      <button class="tb-btn" id="refreshBtn" title="Refresh data">↻</button>
     </div>
   </header>
 
-  <!-- LAYER BAR -->
-  <div class="layerbar" role="toolbar" aria-label="Map layers">
-    <button class="lb active" data-layer="precipitation" aria-pressed="true">🌧 Radar</button>
-    <button class="lb" data-layer="temperature" aria-pressed="false">🌡 Temp</button>
-    <button class="lb" data-layer="wind" aria-pressed="false">💨 Wind</button>
-    <button class="lb" data-layer="clouds" aria-pressed="false">☁ Clouds</button>
-    <button class="lb" data-layer="pressure" aria-pressed="false">📊 Pressure</button>
-    <div class="lb-sep" aria-hidden="true"></div>
-    <button class="lb lb-sat" data-layer="satellite" aria-pressed="false">🛰 Satellite</button>
-    <button class="style-btn" id="styleBtn" aria-label="Cycle map style">◑ Style</button>
+  <div class="layerbar">
+    <button class="lb active" data-layer="precipitation">🌧 Radar</button>
+    <button class="lb" data-layer="temperature">🌡 Temp</button>
+    <button class="lb" data-layer="wind">💨 Wind</button>
+    <button class="lb" data-layer="clouds">☁ Clouds</button>
+    <button class="lb" data-layer="pressure">📊 Pressure</button>
+    <div class="lb-sep"></div>
+    <button class="lb lb-sat" data-layer="satellite">🛰 Satellite</button>
+    <button class="style-btn" id="styleBtn">◑ Style</button>
   </div>
 
-  <!-- DRAW TOOLBAR -->
-  <div class="draw-toolbar" id="drawToolbar" role="toolbar" aria-label="Drawing tools">
+  <div class="draw-toolbar" id="drawToolbar">
     <span class="dt-label">✏ Draw Mode</span>
-    <div class="dt-colors" role="group" aria-label="Pen colour">
-      <button class="dc active" data-c="#f59e0b" style="background:#f59e0b" aria-label="Amber" title="Amber"></button>
-      <button class="dc" data-c="#ef4444" style="background:#ef4444" aria-label="Red" title="Red"></button>
-      <button class="dc" data-c="#06b6d4" style="background:#06b6d4" aria-label="Cyan" title="Cyan"></button>
-      <button class="dc" data-c="#ffffff" style="background:#ffffff" aria-label="White" title="White"></button>
-      <button class="dc" data-c="#22c55e" style="background:#22c55e" aria-label="Green" title="Green"></button>
+    <div class="dt-colors">
+      <button class="dc active" data-c="#f59e0b" style="background:#f59e0b"></button>
+      <button class="dc" data-c="#ef4444" style="background:#ef4444"></button>
+      <button class="dc" data-c="#06b6d4" style="background:#06b6d4"></button>
+      <button class="dc" data-c="#ffffff" style="background:#ffffff"></button>
+      <button class="dc" data-c="#22c55e" style="background:#22c55e"></button>
     </div>
-    <div class="dt-sizes" role="group" aria-label="Pen size">
+    <div class="dt-sizes">
       <button class="ds active" data-s="3">S</button>
       <button class="ds" data-s="6">M</button>
       <button class="ds" data-s="12">L</button>
     </div>
-    <button class="dt-btn" id="drawUndo" aria-label="Undo">↩ Undo</button>
-    <button class="dt-btn" id="drawClear" aria-label="Clear">🗑 Clear</button>
-    <button class="dt-btn danger" id="drawExit" aria-label="Exit draw mode">✕ Exit</button>
+    <button class="dt-btn" id="drawUndo">↩ Undo</button>
+    <button class="dt-btn" id="drawClear">🗑 Clear</button>
+    <button class="dt-btn danger" id="drawExit">✕ Exit</button>
   </div>
 
-  <!-- MAP ZONE -->
   <div class="mapzone" id="mapzone">
-    <div id="map" aria-label="Weather map"></div>
-    <canvas id="radarCanvas" aria-hidden="true"></canvas>
-    <canvas id="drawCanvas" aria-hidden="true"></canvas>
+    <div id="map"></div>
+    <canvas id="radarCanvas"></canvas>
+    <canvas id="drawCanvas"></canvas>
 
-    <!-- WEATHER CARD -->
-    <div class="wcard" id="wcard" role="complementary" aria-label="Current conditions">
+    <div class="wcard" id="wcard">
       <div class="wc-header">
         <div class="wc-loc" id="wcLoc">—</div>
         <div class="wc-time" id="wcTime">—</div>
       </div>
       <div class="wc-hero">
-        <div class="wc-icon" id="wcIcon" aria-hidden="true">🌡</div>
+        <div class="wc-icon" id="wcIcon">🌡</div>
         <div class="wc-temps">
           <div class="wc-temp" id="wcTemp">--°</div>
           <div class="wc-feels" id="wcFeels">Feels --°</div>
@@ -160,14 +248,11 @@
           <span class="wc-lo" id="wcLo">L: --°</span>
         </div>
       </div>
-
-      <!-- UV BAR -->
       <div class="wc-uv-row" id="wcUVRow">
         <span class="wc-uv-label">UV Index</span>
         <div class="wc-uv-bar"><div class="wc-uv-fill" id="wcUVFill"></div></div>
         <span class="wc-uv-val" id="wcUV">--</span>
       </div>
-
       <div class="wc-divider"></div>
       <div class="wc-grid" id="wcGrid">
         <div class="wcs"><div class="wcs-l">💧 Humidity</div>  <div class="wcs-v" id="wcHum">--</div></div>
@@ -182,10 +267,8 @@
         <div class="wcs"><div class="wcs-l">💦 Humidity</div>   <div class="wcs-v" id="wcHeatIdx">--</div></div>
       </div>
       <div class="wc-divider"></div>
-
-      <!-- SUNRISE / SUNSET ARC -->
       <div class="wc-sun-arc" id="wcSunArc">
-        <svg class="sun-arc-svg" viewBox="0 0 120 60" aria-hidden="true">
+        <svg class="sun-arc-svg" viewBox="0 0 120 60">
           <path class="sun-arc-track" d="M10,55 A50,50 0 0,1 110,55"/>
           <path class="sun-arc-prog" id="sunArcProg" d="M10,55 A50,50 0 0,1 110,55" stroke-dasharray="0 157"/>
           <circle class="sun-dot" id="sunDot" cx="10" cy="55" r="4"/>
@@ -196,49 +279,43 @@
           <div class="wc-sun-item"><span>🌇</span><span id="wcSunset">--:--</span></div>
         </div>
       </div>
-
       <div class="wc-moon" id="wcMoon">🌙 —</div>
     </div>
 
-    <!-- LEGEND -->
-    <div class="legend" id="legend" aria-label="Layer legend">
+    <div class="legend" id="legend">
       <div class="leg-title" id="legTitle">mm/h</div>
       <div class="leg-bar" id="legBar"></div>
-      <div class="leg-nums" aria-hidden="true"><span>60+</span><span>32</span><span>10</span><span>1</span><span>0</span></div>
+      <div class="leg-nums"><span>60+</span><span>32</span><span>10</span><span>1</span><span>0</span></div>
     </div>
 
-    <!-- MAP CONTROLS -->
     <div class="mapbtns">
-      <button id="zoomIn" aria-label="Zoom in">＋</button>
-      <button id="zoomOut" aria-label="Zoom out">－</button>
+      <button id="zoomIn">＋</button>
+      <button id="zoomOut">－</button>
     </div>
 
-    <!-- CROSSHAIR -->
-    <div class="crosshair" id="crosshair" aria-hidden="true">
+    <div class="crosshair" id="crosshair">
       <div class="ch-h"></div><div class="ch-v"></div><div class="ch-ring"></div>
     </div>
 
-    <!-- FORECAST BAR -->
     <div class="fcast" id="fcast">
       <div class="fcast-tabs">
-        <button class="fct active" data-ft="hourly" id="tab-hourly" aria-controls="fcScroll" aria-selected="true">Hourly</button>
-        <button class="fct" data-ft="daily" id="tab-daily" aria-controls="fcScroll" aria-selected="false">10-Day</button>
-        <button class="fct" data-ft="precip" id="tab-precip" aria-controls="fcScroll" aria-selected="false">🌧 Rain</button>
-        <button class="fct" data-ft="wind" id="tab-wind" aria-controls="fcScroll" aria-selected="false">💨 Wind</button>
-        <button class="fct" data-ft="feels" id="tab-feels" aria-controls="fcScroll" aria-selected="false">🌡 Feels</button>
+        <button class="fct active" data-ft="hourly" id="tab-hourly">Hourly</button>
+        <button class="fct" data-ft="daily" id="tab-daily">10-Day</button>
+        <button class="fct" data-ft="precip" id="tab-precip">🌧 Rain</button>
+        <button class="fct" data-ft="wind" id="tab-wind">💨 Wind</button>
+        <button class="fct" data-ft="feels" id="tab-feels">🌡 Feels</button>
       </div>
-      <div class="fc-scroll" id="fcScroll" role="tabpanel" aria-labelledby="tab-hourly"></div>
+      <div class="fc-scroll" id="fcScroll"></div>
     </div>
 
-    <!-- RADAR TIMELINE -->
-    <div class="timebar" role="toolbar" aria-label="Radar timeline">
-      <button class="t-arr" id="tPrev" aria-label="Previous frame">‹</button>
-      <div class="tslots" id="tSlots" role="group" aria-label="Time slots"></div>
-      <input type="range" id="tRange" min="0" max="0" value="0" aria-label="Timeline position">
-      <button class="t-arr" id="tNext" aria-label="Next frame">›</button>
-      <button class="playbtn" id="playBtn" aria-label="Play radar animation">▶</button>
+    <div class="timebar">
+      <button class="t-arr" id="tPrev">‹</button>
+      <div class="tslots" id="tSlots"></div>
+      <input type="range" id="tRange" min="0" max="0" value="0">
+      <button class="t-arr" id="tNext">›</button>
+      <button class="playbtn" id="playBtn">▶</button>
       <div class="nowcast-badge" id="nowcastBadge" style="display:none">NOWCAST</div>
-      <label class="quick-op" aria-label="Radar opacity">Opacity
+      <label class="quick-op">Opacity
         <input type="range" id="quickOpacity" min="10" max="100" value="75">
       </label>
     </div>
@@ -246,11 +323,11 @@
 </main>
 
 <!-- RIGHT PANEL -->
-<aside class="rpanel" id="rpanel" aria-label="Alerts and data">
+<aside class="rpanel" id="rpanel">
   <div class="rp-head">
-    <button class="rpt active" data-rt="alerts" aria-selected="true">Alerts <span class="rpt-badge danger" id="alertBadge">0</span></button>
-    <button class="rpt" data-rt="info" aria-selected="false">Radar</button>
-    <button class="rpt" data-rt="severe" aria-selected="false">Reports</button>
+    <button class="rpt active" data-rt="alerts">Alerts <span class="rpt-badge danger" id="alertBadge">0</span></button>
+    <button class="rpt" data-rt="info">Radar</button>
+    <button class="rpt" data-rt="severe">Reports</button>
   </div>
   <div class="rp-body" id="alertsBody">
     <div class="empty-s"><div class="es-ico">⌛</div><div>Loading alerts…</div></div>
@@ -258,22 +335,22 @@
 </aside>
 
 <!-- ALERT MODAL -->
-<div class="modal" id="alertModal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+<div class="modal" id="alertModal" role="dialog" aria-modal="true">
   <div class="mbox large">
     <div class="mbox-head">
       <div class="mbox-title" id="mTitle">Alert</div>
-      <button class="mbox-x" id="mClose" aria-label="Close">✕</button>
+      <button class="mbox-x" id="mClose">✕</button>
     </div>
     <div class="mbox-body" id="mBody"></div>
   </div>
 </div>
 
 <!-- AIR QUALITY MODAL -->
-<div class="modal" id="aqiModal" role="dialog" aria-modal="true" aria-labelledby="aqiTitle">
+<div class="modal" id="aqiModal" role="dialog" aria-modal="true">
   <div class="mbox wide">
     <div class="mbox-head">
       <div class="mbox-title" id="aqiTitle">💨 Air Quality Index</div>
-      <button class="mbox-x" id="aqiClose" aria-label="Close">✕</button>
+      <button class="mbox-x" id="aqiClose">✕</button>
     </div>
     <div class="mbox-body" id="aqiBody">
       <div class="empty-s"><div class="es-ico">💨</div><div>Loading AQI data…</div></div>
@@ -282,11 +359,11 @@
 </div>
 
 <!-- MARINE MODAL -->
-<div class="modal" id="marineModal" role="dialog" aria-modal="true" aria-labelledby="marineTitle">
+<div class="modal" id="marineModal" role="dialog" aria-modal="true">
   <div class="mbox wide">
     <div class="mbox-head">
       <div class="mbox-title" id="marineTitle">🌊 Marine Conditions</div>
-      <button class="mbox-x" id="marineClose" aria-label="Close">✕</button>
+      <button class="mbox-x" id="marineClose">✕</button>
     </div>
     <div class="mbox-body" id="marineBody">
       <div class="empty-s"><div class="es-ico">🌊</div><div>Loading marine data…</div></div>
@@ -295,11 +372,11 @@
 </div>
 
 <!-- CAMERAS MODAL -->
-<div class="modal" id="trafficModal" role="dialog" aria-modal="true" aria-label="Live cameras">
+<div class="modal" id="trafficModal" role="dialog" aria-modal="true">
   <div class="mbox large">
     <div class="mbox-head">
       <div class="mbox-title">📷 Live Cameras</div>
-      <button class="mbox-x" id="tcClose" aria-label="Close">✕</button>
+      <button class="mbox-x" id="tcClose">✕</button>
     </div>
     <div class="mbox-body">
       <div class="tc-search">
@@ -314,24 +391,24 @@
 </div>
 
 <!-- SETTINGS MODAL -->
-<div class="modal" id="settingsModal" role="dialog" aria-modal="true" aria-label="Settings">
+<div class="modal" id="settingsModal" role="dialog" aria-modal="true">
   <div class="mbox wide">
     <div class="mbox-head">
       <div class="mbox-title">⚙ Settings</div>
-      <button class="mbox-x" id="sClose" aria-label="Close settings">✕</button>
+      <button class="mbox-x" id="sClose">✕</button>
     </div>
     <div class="mbox-body">
 
       <div class="s-sec">
         <div class="s-sec-title">Units</div>
         <div class="s-row"><span>Temperature</span>
-          <div class="seg" id="sTempUnit" role="group">
+          <div class="seg" id="sTempUnit">
             <button class="sb active" data-v="C">°C</button>
             <button class="sb" data-v="F">°F</button>
           </div>
         </div>
         <div class="s-row"><span>Wind Speed</span>
-          <div class="seg" id="sWindUnit" role="group">
+          <div class="seg" id="sWindUnit">
             <button class="sb active" data-v="ms">m/s</button>
             <button class="sb" data-v="kmh">km/h</button>
             <button class="sb" data-v="mph">mph</button>
@@ -339,13 +416,13 @@
           </div>
         </div>
         <div class="s-row"><span>Distance</span>
-          <div class="seg" id="sDistUnit" role="group">
+          <div class="seg" id="sDistUnit">
             <button class="sb active" data-v="km">km</button>
             <button class="sb" data-v="mi">mi</button>
           </div>
         </div>
         <div class="s-row"><span>Time Format</span>
-          <div class="seg" id="sTimeFormat" role="group">
+          <div class="seg" id="sTimeFormat">
             <button class="sb active" data-v="12">12h</button>
             <button class="sb" data-v="24">24h</button>
           </div>
@@ -361,14 +438,14 @@
           </div>
         </div>
         <div class="s-row"><span>Animation Speed</span>
-          <div class="seg" id="sSpeed" role="group">
+          <div class="seg" id="sSpeed">
             <button class="sb" data-v="300">Fast</button>
             <button class="sb active" data-v="600">Normal</button>
             <button class="sb" data-v="1000">Slow</button>
           </div>
         </div>
         <div class="s-row"><span>Color Scheme</span>
-          <div class="seg" id="sRadarColor" role="group">
+          <div class="seg" id="sRadarColor">
             <button class="sb" data-v="1">Classic</button>
             <button class="sb" data-v="2">Universal</button>
             <button class="sb" data-v="4">Rainbow</button>
@@ -402,14 +479,14 @@
           <label class="tog"><input type="checkbox" id="sAnimBg" checked><span class="tog-t"></span></label>
         </div>
         <div class="s-row"><span>Weather Card Position</span>
-          <div class="seg" id="sCardPos" role="group">
+          <div class="seg" id="sCardPos">
             <button class="sb active" data-v="top-left">↖ TL</button>
             <button class="sb" data-v="top-right">↗ TR</button>
             <button class="sb" data-v="bottom-left">↙ BL</button>
           </div>
         </div>
         <div class="s-row"><span>Card Style</span>
-          <div class="seg" id="sCardStyle" role="group">
+          <div class="seg" id="sCardStyle">
             <button class="sb active" data-v="full">Full</button>
             <button class="sb" data-v="compact">Compact</button>
             <button class="sb" data-v="minimal">Minimal</button>
@@ -417,10 +494,49 @@
         </div>
       </div>
 
+      <!-- ── v13 OVERLAYS ── -->
+      <div class="s-sec">
+        <div class="s-sec-title">Live Overlays</div>
+        <div class="s-row"><span>⚡ Lightning Strikes</span>
+          <label class="tog"><input type="checkbox" id="sLightning" checked><span class="tog-t"></span></label>
+        </div>
+        <div class="s-row"><span>🌀 Storm Cell Tracking</span>
+          <label class="tog"><input type="checkbox" id="sStormCells" checked><span class="tog-t"></span></label>
+        </div>
+        <div class="s-row"><span>🌪 Mesoscale Discussions</span>
+          <label class="tog"><input type="checkbox" id="sMCD" checked><span class="tog-t"></span></label>
+        </div>
+        <div class="s-row"><span>🔔 Audio Alerts</span>
+          <label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label>
+        </div>
+      </div>
+
+      <!-- ── UPDATE SECTION ── -->
+      <div class="s-sec">
+        <div class="s-sec-title">Updates</div>
+        <div class="s-row">
+          <span>App Version</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7">v13.1.0</span>
+        </div>
+        <div class="s-row">
+          <span>Auto-check for updates</span>
+          <label class="tog"><input type="checkbox" id="sAutoUpdate" checked><span class="tog-t"></span></label>
+        </div>
+        <div class="s-row update-check-row">
+          <span>Check Now</span>
+          <button class="modal-btn" id="checkUpdateBtn" style="padding:6px 14px;font-size:.8rem">🔄 Check</button>
+          <span class="upd-status" id="updStatus">—</span>
+        </div>
+        <div class="s-row" id="updDownloadRow" style="display:none">
+          <span id="updLatestLabel">Latest version</span>
+          <button class="modal-btn" id="updDownloadBtn" style="padding:6px 14px;font-size:.8rem;background:#5865f2">⬇ Download Update</button>
+        </div>
+      </div>
+
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div><strong>Storm Surge Weather v12.0</strong></div>
+          <div><strong>Storm Surge Weather v13.1</strong></div>
           <div>Radar — RainViewer (free)</div>
           <div>Weather &amp; Forecast — Open-Meteo (free)</div>
           <div>Air Quality — Open-Meteo AQI (free)</div>
@@ -429,6 +545,7 @@
           <div>Storm Reports — NOAA SPC (free)</div>
           <div>Maps — Mapbox GL JS</div>
           <div>Cameras — Hazcams</div>
+          <div>Desktop app — see ELECTRON.md</div>
         </div>
       </div>
     </div>
@@ -436,11 +553,11 @@
 </div>
 
 <!-- SHARE MODAL -->
-<div class="modal" id="shareModal" role="dialog" aria-modal="true" aria-label="Share weather">
+<div class="modal" id="shareModal" role="dialog" aria-modal="true">
   <div class="mbox">
     <div class="mbox-head">
       <div class="mbox-title">⤴ Share Weather</div>
-      <button class="mbox-x" id="shareClose" aria-label="Close">✕</button>
+      <button class="mbox-x" id="shareClose">✕</button>
     </div>
     <div class="mbox-body">
       <canvas id="shareCanvas" style="width:100%;border-radius:12px;display:block"></canvas>
@@ -452,12 +569,105 @@
   </div>
 </div>
 
-<!-- TOAST -->
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<div class="loader" id="loader" role="status" aria-label="Loading"><div class="spin"></div><div class="load-txt">Loading…</div></div>
+<div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading…</div></div>
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
 <script src="app.js"></script>
+<script>
+// ================================================================
+//  UPDATE SYSTEM — Discord-style banner + Settings integration
+// ================================================================
+(function() {
+  const CURRENT = '13.1.0';
+  let _releaseUrl = '';
+
+  async function checkUpdate(silent = true) {
+    const statusEl  = document.getElementById('updStatus');
+    const dlRow     = document.getElementById('updDownloadRow');
+    const dlBtn     = document.getElementById('updDownloadBtn');
+    const lblEl     = document.getElementById('updLatestLabel');
+    const banner    = document.getElementById('updateBanner');
+    const ubTitle   = document.getElementById('ubTitle');
+    const ubDesc    = document.getElementById('ubDesc');
+    const ubDl      = document.getElementById('ubDownload');
+
+    if (statusEl) statusEl.textContent = 'Checking…';
+
+    try {
+      // If running inside Electron, use IPC; otherwise hit our own API
+      let result;
+      if (window.electronUpdater) {
+        result = await window.electronUpdater.checkUpdate();
+      } else {
+        const r = await fetch('/api/app-version');
+        result = await r.json();
+      }
+
+      _releaseUrl = result.releaseUrl || `https://github.com/KingCreeper531/Storm-Surge-Weather/releases`;
+
+      if (result.hasUpdate) {
+        // Settings panel
+        if (statusEl) {
+          statusEl.innerHTML = `<span class="upd-dot"></span> v${result.latest} available`;
+          statusEl.className = 'upd-status has-update';
+        }
+        if (lblEl)  lblEl.textContent = `Latest: v${result.latest}`;
+        if (dlRow)  dlRow.style.display = '';
+        if (dlBtn)  dlBtn.onclick = () => openRelease(_releaseUrl);
+
+        // Discord-style banner (only show once per session)
+        if (!sessionStorage.getItem('upd_dismissed')) {
+          if (banner) {
+            ubTitle.textContent = `Update Available — v${result.latest}`;
+            ubDesc.textContent  = result.releaseName || 'A new version of Storm Surge is ready';
+            banner.classList.add('visible');
+            ubDl.onclick = () => openRelease(_releaseUrl);
+          }
+        }
+      } else {
+        if (statusEl) {
+          statusEl.textContent = '✓ Up to date';
+          statusEl.className = 'upd-status up-to-date';
+        }
+        if (dlRow) dlRow.style.display = 'none';
+        if (!silent) showToast('Storm Surge is up to date ✓', 'success');
+      }
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = 'Check failed'; statusEl.className = 'upd-status'; }
+    }
+  }
+
+  function openRelease(url) {
+    if (window.electronUpdater) window.electronUpdater.openRelease(url);
+    else window.open(url, '_blank', 'noopener');
+  }
+
+  function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = 'toast show' + (type ? ' ' + type : '');
+    setTimeout(() => t.className = 'toast', 3200);
+  }
+
+  // Dismiss banner
+  document.getElementById('ubDismiss').addEventListener('click', () => {
+    const banner = document.getElementById('updateBanner');
+    if (banner) banner.classList.remove('visible');
+    sessionStorage.setItem('upd_dismissed', '1');
+  });
+
+  // Settings "Check Now" button
+  document.getElementById('checkUpdateBtn').addEventListener('click', () => checkUpdate(false));
+
+  // Auto-check on load (after 4s so the app loads first)
+  setTimeout(() => checkUpdate(true), 4000);
+
+  // Re-check every 30 minutes
+  setInterval(() => checkUpdate(true), 30 * 60 * 1000);
+})();
+</script>
 </body>
 </html>

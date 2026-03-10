@@ -1,5 +1,5 @@
 // ================================================================
-//  STORM SURGE WEATHER — Backend Server v11.0
+//  STORM SURGE WEATHER — Backend Server v13.1
 //  Node.js + Express
 //  All-free stack: Open-Meteo, RainViewer, NWS, AQI, Marine
 //  No auth, no Google Cloud, no accounts
@@ -15,7 +15,8 @@ const app   = express();
 const cache = new NodeCache({ stdTTL: 600 });
 
 const PORT        = process.env.PORT || 3001;
-const APP_VERSION = '11.0';
+const APP_VERSION = '13.1.0';
+const GITHUB_REPO = 'KingCreeper531/Storm-Surge-Weather';
 
 // ── MIDDLEWARE ───────────────────────────────────────────────────
 app.use(cors({ origin: '*', methods: ['GET','POST'] }));
@@ -30,12 +31,47 @@ async function apiFetch(url, ttl, cacheKey) {
     const hit = cache.get(cacheKey);
     if (hit) return { ...hit, _cached: true };
   }
-  const r = await fetch(url, { headers: { 'User-Agent': 'StormSurgeWeather/11.0' } });
+  const r = await fetch(url, { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } });
   if (!r.ok) throw new Error(`HTTP ${r.status} — ${url}`);
   const data = await r.json();
   if (cacheKey && ttl) cache.set(cacheKey, data, ttl);
   return data;
 }
+
+// ================================================================
+//  UPDATE CHECK — GitHub Releases API (free, no auth needed)
+// ================================================================
+app.get('/api/app-version', async (req, res) => {
+  try {
+    const cacheKey = 'gh_release';
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json(cached);
+
+    const ghData = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+      { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } }
+    );
+
+    if (!ghData.ok) throw new Error('GitHub API error');
+
+    const release = await ghData.json();
+    const latest  = (release.tag_name || '').replace(/^v/, '');
+    const result  = {
+      current:   APP_VERSION,
+      latest:    latest || APP_VERSION,
+      hasUpdate: latest && latest !== APP_VERSION,
+      releaseUrl: release.html_url || `https://github.com/${GITHUB_REPO}/releases`,
+      releaseName: release.name || `v${latest}`,
+      releaseNotes: (release.body || '').slice(0, 500)
+    };
+
+    cache.set(cacheKey, result, 3600); // cache 1hr
+    res.json(result);
+  } catch (e) {
+    // Fallback — no update info, app still works
+    res.json({ current: APP_VERSION, latest: APP_VERSION, hasUpdate: false });
+  }
+});
 
 // ================================================================
 //  WEATHER — Open-Meteo (completely free, no key needed)
@@ -107,7 +143,6 @@ app.get('/api/marine', async (req, res) => {
     const d = await apiFetch(url, 3600, key);
     res.json(d);
   } catch (e) {
-    // Marine is only available for coastal/ocean areas
     res.status(404).json({ error: 'Marine data not available for this location' });
   }
 });
@@ -147,7 +182,7 @@ app.get('/api/radar/tile', async (req, res) => {
 });
 
 // ================================================================
-//  OVERLAY TILES — Open-Meteo derived (simulated gradient tiles)
+//  OVERLAY TILES
 // ================================================================
 app.get('/api/tiles/:layer/:z/:x/:y', (req, res) => {
   const layer = req.params.layer;
@@ -183,32 +218,26 @@ app.get('/api/tiles/:layer/:z/:x/:y', (req, res) => {
 //  STORM REPORTS — SPC (NOAA, free)
 // ================================================================
 app.get('/api/storm-reports', async (req, res) => {
-  const key = 'spc_reports';
   try {
-    // SPC LSR feed — CSV format, publicly available
     const r = await fetch('https://www.spc.noaa.gov/climo/reports/today_filtered_torn.csv',
-      { headers: { 'User-Agent': 'StormSurgeWeather/11.0' } });
+      { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } });
     if (!r.ok) throw new Error('SPC ' + r.status);
     const text = await r.text();
-    const lines = text.trim().split('\n').slice(1); // skip header
+    const lines = text.trim().split('\n').slice(1);
     const items = lines.slice(0, 50).map((line, i) => {
       const parts = line.split(',');
       return {
-        id: 'sr-' + i,
-        type: 'tornado',
-        lat: parseFloat(parts[5]) || 0,
-        lng: parseFloat(parts[6]) || 0,
-        magnitude: parts[3] || 'EF?',
-        text: parts[7] || 'Tornado report',
+        id: 'sr-' + i, type: 'tornado',
+        lat: parseFloat(parts[5]) || 0, lng: parseFloat(parts[6]) || 0,
+        magnitude: parts[3] || 'EF?', text: parts[7] || 'Tornado report',
         ts: new Date().toISOString()
       };
     }).filter(r => r.lat !== 0);
     res.json({ items, source: 'spc' });
   } catch (e) {
-    // Fallback to hail
     try {
       const r2 = await fetch('https://www.spc.noaa.gov/climo/reports/today_filtered_hail.csv',
-        { headers: { 'User-Agent': 'StormSurgeWeather/11.0' } });
+        { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } });
       const text = await r2.text();
       const lines = text.trim().split('\n').slice(1);
       const items = lines.slice(0, 50).map((line, i) => {
@@ -221,6 +250,20 @@ app.get('/api/storm-reports', async (req, res) => {
       res.json({ items: [], source: 'unavailable' });
     }
   }
+});
+
+// ================================================================
+//  STORM CELLS — SPC stub
+// ================================================================
+app.get('/api/storm-cells', async (req, res) => {
+  res.json({ cells: [], source: 'spc', note: 'Live storm cells require SPC real-time feed' });
+});
+
+// ================================================================
+//  MESOSCALE DISCUSSIONS — SPC stub
+// ================================================================
+app.get('/api/mcd', async (req, res) => {
+  res.json({ features: [], type: 'FeatureCollection', source: 'spc' });
 });
 
 // ================================================================
