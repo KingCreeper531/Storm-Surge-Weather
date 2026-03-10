@@ -1,34 +1,41 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
-const { spawn } = require('child_process');
 const path = require('path');
 const https = require('https');
 
 const CURRENT_VERSION = '13.2.0';
 const GITHUB_REPO     = 'KingCreeper531/Storm-Surge-Weather';
 
-let win    = null;
-let server = null;
+let win       = null;
 let isQuitting = false;
 
+// ── Run the Express server directly inside this process ──────────
+// This avoids spawning a child process (which caused the infinite
+// loop in packaged builds where process.execPath = Electron binary)
+process.env.PORT = process.env.PORT || '3001';
+require('./server.js');
+
+// ── Update check ─────────────────────────────────────────────────
 function checkForUpdate() {
   return new Promise((resolve) => {
-    const options = {
+    const req = https.get({
       hostname: 'api.github.com',
       path: `/repos/${GITHUB_REPO}/releases/latest`,
       headers: { 'User-Agent': 'StormSurgeWeather-Electron' }
-    };
-    const req = https.get(options, (res) => {
+    }, (res) => {
       let data = '';
-      res.on('data', (chunk) => data += chunk);
+      res.on('data', c => data += c);
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
           const latest = (json.tag_name || '').replace(/^v/, '');
-          const hasUpdate = latest && latest !== CURRENT_VERSION;
-          resolve({ hasUpdate, latest, current: CURRENT_VERSION, releaseUrl: json.html_url || '', releaseName: json.name || '' });
-        } catch {
-          resolve({ hasUpdate: false });
-        }
+          resolve({
+            hasUpdate:   latest && latest !== CURRENT_VERSION,
+            latest,
+            current:     CURRENT_VERSION,
+            releaseUrl:  json.html_url || '',
+            releaseName: json.name || ''
+          });
+        } catch { resolve({ hasUpdate: false }); }
       });
     });
     req.on('error', () => resolve({ hasUpdate: false }));
@@ -41,6 +48,7 @@ ipcMain.on('open-release', (_, url) => {
   if (url && url.startsWith('https://github.com')) shell.openExternal(url);
 });
 
+// ── Window ───────────────────────────────────────────────────────
 function createWindow() {
   win = new BrowserWindow({
     width: 1400,
@@ -54,42 +62,21 @@ function createWindow() {
   });
 
   win.loadURL('http://localhost:3001');
-
-  win.on('closed', () => {
-    win = null;
-  });
+  win.on('closed', () => { win = null; });
 }
 
 app.whenReady().then(() => {
-  // Spawn the Express server
-  server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
-    env: { ...process.env, PORT: '3001' },
-    stdio: 'inherit'
-  });
-
-  // Wait for server to boot then open window
-  setTimeout(createWindow, 1500);
+  // Give the inline server 1s to bind to port, then open window
+  setTimeout(createWindow, 1000);
 });
 
-// Only re-open on macOS when clicking dock icon with no windows
+// macOS: reopen window when clicking dock icon
 app.on('activate', () => {
   if (win === null && !isQuitting) createWindow();
 });
 
-// Windows/Linux: quit when all windows closed
+// Windows/Linux: quit app when window is closed
 app.on('window-all-closed', () => {
   isQuitting = true;
-  if (server) {
-    server.kill();
-    server = null;
-  }
   app.quit();
-});
-
-app.on('before-quit', () => {
-  isQuitting = true;
-  if (server) {
-    server.kill();
-    server = null;
-  }
 });
