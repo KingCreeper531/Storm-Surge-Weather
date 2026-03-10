@@ -1,8 +1,7 @@
 // ================================================================
-//  STORM SURGE WEATHER — Backend Server v13.1
+//  STORM SURGE WEATHER — Backend Server v13.2
 //  Node.js + Express
 //  All-free stack: Open-Meteo, RainViewer, NWS, AQI, Marine
-//  No auth, no Google Cloud, no accounts
 // ================================================================
 
 const express   = require('express');
@@ -15,23 +14,21 @@ const app   = express();
 const cache = new NodeCache({ stdTTL: 600 });
 
 const PORT        = process.env.PORT || 3001;
-const APP_VERSION = '13.1.0';
+const APP_VERSION = '13.2.0';
 const GITHUB_REPO = 'KingCreeper531/Storm-Surge-Weather';
 
-// ── MIDDLEWARE ───────────────────────────────────────────────────
 app.use(cors({ origin: '*', methods: ['GET','POST'] }));
 app.use(express.json({ limit: '1mb' }));
 
 const apiLimiter = rateLimit({ windowMs: 60*1000, max: 120, message: { error: 'Too many requests' } });
 app.use('/api/', apiLimiter);
 
-// ── HELPERS ──────────────────────────────────────────────────────
 async function apiFetch(url, ttl, cacheKey) {
   if (cacheKey) {
     const hit = cache.get(cacheKey);
     if (hit) return { ...hit, _cached: true };
   }
-  const r = await fetch(url, { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } });
+  const r = await fetch(url, { headers: { 'User-Agent': 'StormSurgeWeather/13.2' } });
   if (!r.ok) throw new Error(`HTTP ${r.status} — ${url}`);
   const data = await r.json();
   if (cacheKey && ttl) cache.set(cacheKey, data, ttl);
@@ -39,7 +36,7 @@ async function apiFetch(url, ttl, cacheKey) {
 }
 
 // ================================================================
-//  UPDATE CHECK — GitHub Releases API (free, no auth needed)
+//  UPDATE CHECK — GitHub Releases API
 // ================================================================
 app.get('/api/app-version', async (req, res) => {
   try {
@@ -49,32 +46,29 @@ app.get('/api/app-version', async (req, res) => {
 
     const ghData = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } }
+      { headers: { 'User-Agent': 'StormSurgeWeather/13.2' } }
     );
-
     if (!ghData.ok) throw new Error('GitHub API error');
 
     const release = await ghData.json();
     const latest  = (release.tag_name || '').replace(/^v/, '');
     const result  = {
-      current:   APP_VERSION,
-      latest:    latest || APP_VERSION,
-      hasUpdate: latest && latest !== APP_VERSION,
-      releaseUrl: release.html_url || `https://github.com/${GITHUB_REPO}/releases`,
-      releaseName: release.name || `v${latest}`,
+      current:      APP_VERSION,
+      latest:       latest || APP_VERSION,
+      hasUpdate:    latest && latest !== APP_VERSION,
+      releaseUrl:   release.html_url || `https://github.com/${GITHUB_REPO}/releases`,
+      releaseName:  release.name || `v${latest}`,
       releaseNotes: (release.body || '').slice(0, 500)
     };
-
-    cache.set(cacheKey, result, 3600); // cache 1hr
+    cache.set(cacheKey, result, 3600);
     res.json(result);
   } catch (e) {
-    // Fallback — no update info, app still works
     res.json({ current: APP_VERSION, latest: APP_VERSION, hasUpdate: false });
   }
 });
 
 // ================================================================
-//  WEATHER — Open-Meteo (completely free, no key needed)
+//  WEATHER
 // ================================================================
 app.get('/api/weather', async (req, res) => {
   const lat = Number(req.query.lat);
@@ -93,25 +87,22 @@ app.get('/api/weather', async (req, res) => {
       + '&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,visibility,cloud_cover'
       + '&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,sunrise,sunset,daylight_duration,uv_index_max,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,precipitation_hours'
       + '&forecast_days=10&temperature_unit=celsius&wind_speed_unit=ms&precipitation_unit=mm&timezone=auto';
-
     const d = await apiFetch(url, 600, null);
     cache.set(key, d, 600);
     res.json(d);
   } catch (e) {
-    console.error('Weather error:', e.message);
     res.status(502).json({ error: 'Weather data unavailable', detail: e.message });
   }
 });
 
 // ================================================================
-//  AIR QUALITY — Open-Meteo Air Quality (free)
+//  AIR QUALITY
 // ================================================================
 app.get('/api/airquality', async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng))
     return res.status(400).json({ error: 'valid lat and lng required' });
-
   const key = `aqi_${lat.toFixed(2)}_${lng.toFixed(2)}`;
   try {
     const url = 'https://air-quality-api.open-meteo.com/v1/air-quality'
@@ -126,14 +117,13 @@ app.get('/api/airquality', async (req, res) => {
 });
 
 // ================================================================
-//  MARINE — Open-Meteo Marine (free)
+//  MARINE
 // ================================================================
 app.get('/api/marine', async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng))
     return res.status(400).json({ error: 'valid lat and lng required' });
-
   const key = `marine_${lat.toFixed(2)}_${lng.toFixed(2)}`;
   try {
     const url = 'https://marine-api.open-meteo.com/v1/marine'
@@ -148,7 +138,7 @@ app.get('/api/marine', async (req, res) => {
 });
 
 // ================================================================
-//  RADAR — RainViewer
+//  RADAR
 // ================================================================
 app.get('/api/radar/frames', async (req, res) => {
   try {
@@ -189,98 +179,55 @@ app.get('/api/tiles/:layer/:z/:x/:y', (req, res) => {
   const z = Number(req.params.z), x = Number(req.params.x), y = Number(req.params.y);
   if (!Number.isFinite(z) || !Number.isFinite(x) || !Number.isFinite(y))
     return res.status(400).json({ error: 'Invalid coords' });
-
   const palettes = {
-    temperature:  ['#2c7bb6','#abd9e9','#ffffbf','#fdae61','#d7191c'],
-    wind_speed:   ['#1a1a2e','#16213e','#0f3460','#533483','#e94560'],
-    cloud_cover:  ['#0d0d0d','#2a2a2a','#555','#888','#bbb','#e8e8e8'],
-    pressure:     ['#023858','#045a8d','#0570b0','#3690c0','#74a9cf','#a6bddb']
+    temperature: ['#2c7bb6','#abd9e9','#ffffbf','#fdae61','#d7191c'],
+    wind_speed:  ['#1a1a2e','#16213e','#0f3460','#533483','#e94560'],
+    cloud_cover: ['#0d0d0d','#2a2a2a','#555','#888','#bbb','#e8e8e8'],
+    pressure:    ['#023858','#045a8d','#0570b0','#3690c0','#74a9cf','#a6bddb']
   };
   const pal = palettes[layer] || palettes.temperature;
   const seed = Math.abs((x * 73856093) ^ (y * 19349663) ^ (z * 83492791) ^ layer.length * 9999);
-  const c1 = pal[seed % pal.length];
-  const c2 = pal[(seed >> 2) % pal.length];
-  const op1 = (0.12 + (seed % 17) * 0.01).toFixed(2);
-  const op2 = (0.25 + (seed % 11) * 0.015).toFixed(2);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">`
-    + `<defs><radialGradient id="g" cx="50%" cy="50%" r="60%">`
-    + `<stop offset="0%" stop-color="${c1}" stop-opacity="${op2}"/>`
-    + `<stop offset="100%" stop-color="${c2}" stop-opacity="${op1}"/>`
-    + `</radialGradient></defs>`
-    + `<rect width="256" height="256" fill="url(#g)"/>`
-    + `</svg>`;
+  const c1 = pal[seed % pal.length], c2 = pal[(seed >> 2) % pal.length];
+  const op1 = (0.12 + (seed % 17) * 0.01).toFixed(2), op2 = (0.25 + (seed % 11) * 0.015).toFixed(2);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><defs><radialGradient id="g" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="${c1}" stop-opacity="${op2}"/><stop offset="100%" stop-color="${c2}" stop-opacity="${op1}"/></radialGradient></defs><rect width="256" height="256" fill="url(#g)"/></svg>`;
   res.set('Content-Type', 'image/svg+xml');
   res.set('Cache-Control', 'public, max-age=600');
   res.send(svg);
 });
 
 // ================================================================
-//  STORM REPORTS — SPC (NOAA, free)
+//  STORM REPORTS
 // ================================================================
 app.get('/api/storm-reports', async (req, res) => {
   try {
     const r = await fetch('https://www.spc.noaa.gov/climo/reports/today_filtered_torn.csv',
-      { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } });
+      { headers: { 'User-Agent': 'StormSurgeWeather/13.2' } });
     if (!r.ok) throw new Error('SPC ' + r.status);
     const text = await r.text();
     const lines = text.trim().split('\n').slice(1);
     const items = lines.slice(0, 50).map((line, i) => {
       const parts = line.split(',');
-      return {
-        id: 'sr-' + i, type: 'tornado',
-        lat: parseFloat(parts[5]) || 0, lng: parseFloat(parts[6]) || 0,
-        magnitude: parts[3] || 'EF?', text: parts[7] || 'Tornado report',
-        ts: new Date().toISOString()
-      };
+      return { id: 'sr-'+i, type: 'tornado', lat: parseFloat(parts[5])||0, lng: parseFloat(parts[6])||0,
+        magnitude: parts[3]||'EF?', text: parts[7]||'Tornado report', ts: new Date().toISOString() };
     }).filter(r => r.lat !== 0);
     res.json({ items, source: 'spc' });
   } catch (e) {
-    try {
-      const r2 = await fetch('https://www.spc.noaa.gov/climo/reports/today_filtered_hail.csv',
-        { headers: { 'User-Agent': 'StormSurgeWeather/13.1' } });
-      const text = await r2.text();
-      const lines = text.trim().split('\n').slice(1);
-      const items = lines.slice(0, 50).map((line, i) => {
-        const parts = line.split(',');
-        return { id: 'sr-' + i, type: 'hail', lat: parseFloat(parts[5]) || 0, lng: parseFloat(parts[6]) || 0,
-          magnitude: parts[3] + '"', text: parts[7] || 'Hail report', ts: new Date().toISOString() };
-      }).filter(r => r.lat !== 0);
-      res.json({ items, source: 'spc' });
-    } catch (e2) {
-      res.json({ items: [], source: 'unavailable' });
-    }
+    res.json({ items: [], source: 'unavailable' });
   }
 });
 
-// ================================================================
-//  STORM CELLS — SPC stub
-// ================================================================
-app.get('/api/storm-cells', async (req, res) => {
-  res.json({ cells: [], source: 'spc', note: 'Live storm cells require SPC real-time feed' });
-});
-
-// ================================================================
-//  MESOSCALE DISCUSSIONS — SPC stub
-// ================================================================
-app.get('/api/mcd', async (req, res) => {
-  res.json({ features: [], type: 'FeatureCollection', source: 'spc' });
-});
+app.get('/api/storm-cells', async (req, res) => res.json({ cells: [], source: 'spc' }));
+app.get('/api/mcd',         async (req, res) => res.json({ features: [], type: 'FeatureCollection', source: 'spc' }));
 
 // ================================================================
 //  HEALTH / VERSION
 // ================================================================
-app.get('/api/health', (req, res) => res.json({
-  status: 'ok', version: APP_VERSION,
-  uptime: Math.round(process.uptime()) + 's',
-  timestamp: new Date().toISOString()
-}));
+app.get('/api/health',  (req, res) => res.json({ status: 'ok', version: APP_VERSION, uptime: Math.round(process.uptime())+'s', timestamp: new Date().toISOString() }));
+app.get('/api/version', (req, res) => res.json({ name: 'Storm Surge Weather', version: APP_VERSION, stack: 'Open-Meteo + RainViewer + NWS', timestamp: new Date().toISOString() }));
 
-app.get('/api/version', (req, res) => res.json({
-  name: 'Storm Surge Weather', version: APP_VERSION,
-  stack: 'Open-Meteo + RainViewer + NWS', timestamp: new Date().toISOString()
-}));
-
-// ── SERVE FRONTEND ──────────────────────────────────────────────
+// ================================================================
+//  SERVE FRONTEND
+// ================================================================
 const frontendPath = path.join(__dirname, 'public');
 
 app.get('/token.js', (req, res) => {

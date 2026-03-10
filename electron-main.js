@@ -3,13 +3,12 @@ const { spawn } = require('child_process');
 const path = require('path');
 const https = require('https');
 
-const CURRENT_VERSION = '13.1.0';
+const CURRENT_VERSION = '13.2.0';
 const GITHUB_REPO     = 'KingCreeper531/Storm-Surge-Weather';
 
 let win;
 let server;
 
-// ── Check GitHub for latest release tag ─────────────────────────
 function checkForUpdate() {
   return new Promise((resolve) => {
     const options = {
@@ -25,7 +24,7 @@ function checkForUpdate() {
           const json = JSON.parse(data);
           const latest = (json.tag_name || '').replace(/^v/, '');
           const hasUpdate = latest && latest !== CURRENT_VERSION;
-          resolve({ hasUpdate, latest, current: CURRENT_VERSION, url: json.html_url || '' });
+          resolve({ hasUpdate, latest, current: CURRENT_VERSION, releaseUrl: json.html_url || '', releaseName: json.name || '' });
         } catch {
           resolve({ hasUpdate: false });
         }
@@ -36,19 +35,12 @@ function checkForUpdate() {
   });
 }
 
-// ── IPC: renderer can request update check ──────────────────────
-ipcMain.handle('check-update', async () => {
-  return await checkForUpdate();
-});
-
-// ── IPC: open release page in browser ───────────────────────────
+ipcMain.handle('check-update', async () => await checkForUpdate());
 ipcMain.on('open-release', (_, url) => {
   if (url && url.startsWith('https://github.com')) shell.openExternal(url);
 });
 
-// ── Boot ─────────────────────────────────────────────────────────
-app.whenReady().then(async () => {
-  // Spawn the Express server
+app.whenReady().then(() => {
   server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
     env: { ...process.env, PORT: '3001' },
     stdio: 'inherit'
@@ -65,7 +57,6 @@ app.whenReady().then(async () => {
         preload: path.join(__dirname, 'electron-preload.js')
       }
     });
-
     win.loadURL('http://localhost:3001');
     win.on('closed', () => { if (server) server.kill(); win = null; });
   }, 1500);
