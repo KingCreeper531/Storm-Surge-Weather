@@ -45,10 +45,15 @@
     .upd-status { font-size:.8rem; opacity:.7; flex:1; }
     .upd-status.has-update { color:#5865f2; opacity:1; font-weight:600; }
     .upd-status.up-to-date { color:#22c55e; opacity:1; }
-    .upd-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#5865f2; margin-right:5px; animation:pulse 1.5s infinite; }
+    .upd-status.upd-warn   { color:#f59e0b; opacity:1; }
     .upd-progress-bar { width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; margin-top:4px; display:none; }
     .upd-progress-fill { height:100%; background:#5865f2; border-radius:3px; transition:width .2s; }
     @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
+    .upd-no-asset {
+      font-size:.78rem; color:var(--t3,#9ca3af); margin-top:6px; line-height:1.5;
+      padding:8px 10px; background:rgba(255,255,255,0.05); border-radius:6px;
+      border-left:3px solid #f59e0b;
+    }
   </style>
 </head>
 <body>
@@ -379,6 +384,14 @@
             <div class="upd-progress-fill" id="updProgressFill" style="width:0%"></div>
           </div>
           <div style="font-size:.75rem;opacity:.5;margin-top:4px" id="updProgressLabel"></div>
+          <!-- shown when release exists but no .exe asset is attached -->
+          <div class="upd-no-asset" id="updNoAsset" style="display:none">
+            ⚠ No installer found on this release.<br>
+            To enable in-app updates: build the <code>.exe</code> with
+            <code>npx electron-builder</code>, create a GitHub Release tagged
+            <strong id="updNoAssetVer"></strong>, and attach the
+            <code>dist/Storm Surge Weather Setup *.exe</code> file as a release asset.
+          </div>
         </div>
       </div>
 
@@ -419,127 +432,207 @@
 <script>
 // ================================================================
 //  IN-APP UPDATER v13.6
+//
+//  Three possible states when an update is found:
+//    1. assetUrl present   → download .exe and install silently
+//    2. assetUrl missing   → show instructions to attach .exe to release
+//    3. No release at all  → "up to date" or show current version
 // ================================================================
 (function () {
+  'use strict';
   const $ = id => document.getElementById(id);
-  const banner       = $('updateBanner');
-  const ubIcon       = $('ubIcon');
-  const ubTitle      = $('ubTitle');
-  const ubDesc       = $('ubDesc');
-  const ubProgress   = $('ubProgress');
-  const ubProgFill   = $('ubProgressFill');
-  const ubAction     = $('ubAction');
-  const ubDismiss    = $('ubDismiss');
-  const statusEl     = $('updStatus');
-  const dlRow        = $('updDownloadRow');
-  const dlBtn        = $('updDownloadBtn');
-  const lblEl        = $('updLatestLabel');
-  const progBar      = $('updProgressBar');
-  const progFill     = $('updProgressFill');
-  const progLabel    = $('updProgressLabel');
 
-  let _asset = null;
+  const banner     = $('updateBanner');
+  const ubIcon     = $('ubIcon');
+  const ubTitle    = $('ubTitle');
+  const ubDesc     = $('ubDesc');
+  const ubProgress = $('ubProgress');
+  const ubProgFill = $('ubProgressFill');
+  const ubAction   = $('ubAction');
+  const ubDismiss  = $('ubDismiss');
+  const statusEl   = $('updStatus');
+  const dlRow      = $('updDownloadRow');
+  const dlBtn      = $('updDownloadBtn');
+  const lblEl      = $('updLatestLabel');
+  const progBar    = $('updProgressBar');
+  const progFill   = $('updProgressFill');
+  const progLabel  = $('updProgressLabel');
+  const noAssetEl  = $('updNoAsset');
+  const noAssetVer = $('updNoAssetVer');
+
+  let _asset         = null;   // { assetUrl, assetName, assetSize }
   let _installerPath = null;
+  let _latestVersion = null;
 
+  // ── helpers ──────────────────────────────────────────────────
   function setStatus(text, cls) {
     if (!statusEl) return;
     statusEl.textContent = text;
     statusEl.className = 'upd-status' + (cls ? ' ' + cls : '');
   }
-  function showBanner(title, desc) {
+
+  function showBanner(title, desc, actionLabel, actionFn) {
     if (sessionStorage.getItem('upd_dismissed')) return;
     ubTitle.textContent = title;
     ubDesc.textContent  = desc;
+    if (actionLabel && actionFn) {
+      ubAction.textContent = actionLabel;
+      ubAction.disabled    = false;
+      ubAction.onclick     = actionFn;
+      ubAction.style.display = '';
+    } else {
+      ubAction.style.display = 'none';
+    }
     banner.classList.add('visible');
   }
-  function onAvailable(data) {
+
+  // ── state handlers ────────────────────────────────────────────
+
+  // Update found AND installer .exe is attached to the release
+  function onAvailableWithAsset(data) {
     _asset = { assetUrl: data.assetUrl, assetName: data.assetName, assetSize: data.assetSize };
+    _latestVersion = data.version;
+
     setStatus('v' + data.version + ' available', 'has-update');
     if (lblEl) lblEl.textContent = 'v' + data.version + (data.releaseName ? ' — ' + data.releaseName : '');
+    if (noAssetEl) noAssetEl.style.display = 'none';
     if (dlRow) dlRow.style.display = '';
-    if (dlBtn) { dlBtn.textContent = '⬇ Download & Install'; dlBtn.disabled = false; dlBtn.onclick = startDownload; }
+    if (dlBtn) { dlBtn.textContent = '⬇ Download & Install'; dlBtn.disabled = false; dlBtn.onclick = startDownload; dlBtn.style.display = ''; }
+
     ubIcon.textContent = '🔄';
-    ubAction.textContent = 'Download & Install';
-    ubAction.disabled = false;
-    ubAction.onclick = startDownload;
-    showBanner('Update Available — v' + data.version, data.releaseName || 'Click to download and install in-app');
+    showBanner(
+      'Update Available — v' + data.version,
+      data.releaseName || 'A new version is ready to install',
+      'Download & Install',
+      startDownload
+    );
   }
+
+  // Update found BUT no .exe attached to the release yet
+  function onAvailableNoAsset(data) {
+    _latestVersion = data.version;
+
+    setStatus('v' + data.version + ' available — no installer attached', 'upd-warn');
+    if (lblEl) lblEl.textContent = 'v' + data.version + (data.releaseName ? ' — ' + data.releaseName : '');
+    if (dlRow) dlRow.style.display = '';
+    if (dlBtn) dlBtn.style.display = 'none';   // hide download button — nothing to download
+    if (noAssetEl) {
+      noAssetEl.style.display = '';
+      if (noAssetVer) noAssetVer.textContent = 'v' + data.version;
+    }
+    // Don't pop the banner for a no-asset state — it's a developer issue, not user-facing
+  }
+
   function onProgress(data) {
     const pct = Math.round(data.percent || 0);
     const mb  = data.speed ? (data.speed / 1024 / 1024).toFixed(1) + ' MB/s' : '';
     setStatus('Downloading ' + pct + '%…');
-    ubAction.textContent = pct + '%'; ubAction.disabled = true;
-    ubProgress.style.display = 'block'; ubProgFill.style.width = pct + '%';
+    ubAction.textContent = pct + '%';
+    ubAction.disabled = true;
+    ubProgress.style.display = 'block';
+    ubProgFill.style.width = pct + '%';
     if (progBar)   progBar.style.display = 'block';
     if (progFill)  progFill.style.width  = pct + '%';
     if (progLabel) progLabel.textContent = pct + '%' + (mb ? '  ·  ' + mb : '');
     if (dlBtn)     dlBtn.disabled = true;
   }
+
   function onDownloaded(data) {
     _installerPath = data.path;
-    setStatus('✓ Ready — click to restart', 'up-to-date');
-    ubIcon.textContent = '✅'; ubTitle.textContent = 'Ready to Install';
+    setStatus('✓ Ready — click to install', 'up-to-date');
+    ubIcon.textContent  = '✅';
+    ubTitle.textContent = 'Ready to Install';
     ubDesc.textContent  = 'The app will restart and update automatically';
     ubProgress.style.display = 'none';
-    ubAction.textContent = '🔁 Restart & Install'; ubAction.disabled = false; ubAction.onclick = installNow;
     banner.classList.add('visible');
-    if (dlBtn)    { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.onclick = installNow; }
-    if (progBar)   progBar.style.display = 'none';
-    if (progLabel) progLabel.textContent = 'Download complete';
+    ubAction.textContent = '🔁 Restart & Install';
+    ubAction.disabled    = false;
+    ubAction.onclick     = installNow;
+    ubAction.style.display = '';
+    if (dlBtn)     { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.onclick = installNow; dlBtn.style.display = ''; }
+    if (progBar)    progBar.style.display = 'none';
+    if (progLabel)  progLabel.textContent = 'Download complete — ready to install';
   }
+
   function onUpToDate(data) {
     setStatus('✓ Up to date (v' + (data.version || '') + ')', 'up-to-date');
     if (dlRow) dlRow.style.display = 'none';
   }
+
   function onError(data) {
-    setStatus('Check failed', '');
-    console.warn('Updater error:', data.message);
+    setStatus('⚠ Check failed', '');
+    console.warn('[Updater]', data.message);
   }
+
+  // ── actions ───────────────────────────────────────────────────
   function startDownload() {
-    if (!_asset?.assetUrl) return;
+    if (!_asset || !_asset.assetUrl) {
+      setStatus('⚠ No installer asset found on release', 'upd-warn');
+      return;
+    }
     setStatus('Starting download…');
     if (dlBtn) dlBtn.disabled = true;
     window.electronUpdater.downloadUpdate(_asset);
   }
+
   function installNow() {
     if (_installerPath && window.electronUpdater?.installUpdate)
       window.electronUpdater.installUpdate({ installerPath: _installerPath });
   }
 
+  // ── dispatch incoming event ───────────────────────────────────
+  function dispatch(data) {
+    switch (data.event) {
+      case 'checking':
+        setStatus('Checking…');
+        break;
+      case 'available':
+        // Electron main sends assetUrl — may be null if no .exe on release
+        if (data.assetUrl) {
+          onAvailableWithAsset(data);
+        } else {
+          onAvailableNoAsset(data);
+        }
+        break;
+      case 'progress':   onProgress(data);   break;
+      case 'downloaded': onDownloaded(data);  break;
+      case 'up-to-date': onUpToDate(data);    break;
+      case 'error':      onError(data);       break;
+    }
+  }
+
+  // ── wire up ───────────────────────────────────────────────────
   if (window.electronUpdater?.onUpdaterEvent) {
-    window.electronUpdater.onUpdaterEvent((data) => {
-      switch (data.event) {
-        case 'checking':   setStatus('Checking…'); break;
-        case 'available':  onAvailable(data); break;
-        case 'progress':   onProgress(data); break;
-        case 'downloaded': onDownloaded(data); break;
-        case 'up-to-date': onUpToDate(data); break;
-        case 'error':      onError(data); break;
-      }
-    });
+    // Running inside Electron build
+    window.electronUpdater.onUpdaterEvent(dispatch);
     $('checkUpdateBtn')?.addEventListener('click', () => {
       setStatus('Checking…');
       window.electronUpdater.checkUpdate();
     });
   } else {
+    // Running in browser (dev mode) — poll /api/app-version
     async function browserCheck(silent) {
       setStatus('Checking…');
       try {
         const r = await fetch('/api/app-version');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
         const d = await r.json();
         if (d.hasUpdate) {
-          setStatus('v' + d.latest + ' available', 'has-update');
-          if (lblEl) lblEl.textContent = 'v' + d.latest;
-          if (dlRow) dlRow.style.display = '';
-          const go = () => window.open(d.releaseUrl, '_blank', 'noopener');
-          if (dlBtn) { dlBtn.textContent = '⬇ Open GitHub Release'; dlBtn.disabled = false; dlBtn.onclick = go; }
-          ubAction.textContent = 'View Release'; ubAction.onclick = go;
-          showBanner('Update Available — v' + d.latest, d.releaseName || '');
+          dispatch({
+            event:       'available',
+            version:     d.latest,
+            releaseName: d.releaseName || '',
+            assetUrl:    d.assetUrl    || null,
+            assetName:   d.assetName   || null,
+            assetSize:   d.assetSize   || 0
+          });
         } else {
           onUpToDate({ version: d.current });
-          if (!silent) alert('Storm Surge is up to date ✓');
+          if (!silent) alert('Storm Surge is up to date ✓ (v' + d.current + ')');
         }
-      } catch { onError({ message: 'Network error' }); }
+      } catch (e) {
+        onError({ message: e.message });
+      }
     }
     $('checkUpdateBtn')?.addEventListener('click', () => browserCheck(false));
     setTimeout(() => browserCheck(true), 4000);
