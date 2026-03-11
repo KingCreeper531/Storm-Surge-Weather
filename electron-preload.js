@@ -1,14 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronUpdater', {
-  checkUpdate:     ()      => ipcRenderer.invoke('check-update'),
-  downloadUpdate:  (opts)  => ipcRenderer.invoke('download-update', opts),
-  installUpdate:   (opts)  => ipcRenderer.invoke('install-update', opts),
-  openRelease:     (url)   => ipcRenderer.send('open-release', url),
-  onUpdaterEvent:  (cb)    => ipcRenderer.on('updater-event', (_, data) => cb(data))
+  // Renderer → Main
+  checkUpdate:  ()      => ipcRenderer.invoke('check-update'),
+  installNow:   ()      => ipcRenderer.invoke('install-now'),
+
+  // Main → Renderer  (push events)
+  onUpdaterEvent: (cb) => {
+    ipcRenderer.on('updater-event', (_event, data) => cb(data));
+  }
 });
 
 contextBridge.exposeInMainWorld('electronSettings', {
-  getSettings:  ()     => ipcRenderer.invoke('get-settings'),
-  saveSettings: (data) => ipcRenderer.invoke('save-settings', data)
+  get:  ()      => ipcRenderer.invoke('get-settings'),
+  save: (data)  => ipcRenderer.invoke('save-settings', data)
 });
