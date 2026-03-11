@@ -4,6 +4,9 @@
 //  All-free stack: Open-Meteo, RainViewer, NWS, AQI, Marine
 // ================================================================
 
+// Load .env file if present (for local/desktop use)
+try { require('dotenv').config(); } catch(e) {}
+
 const express   = require('express');
 const cors      = require('cors');
 const NodeCache = require('node-cache');
@@ -232,7 +235,7 @@ const frontendPath = path.join(__dirname, 'public');
 
 app.get('/token.js', (req, res) => {
   const token = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || '';
-  if (!token) console.warn('⚠ MAPBOX_TOKEN not set');
+  if (!token) console.warn('⚠ MAPBOX_TOKEN not set — map will not load');
   res.set('Content-Type', 'application/javascript');
   res.set('Cache-Control', 'no-store');
   res.send(`const MAPBOX_TOKEN = "${token}";`);

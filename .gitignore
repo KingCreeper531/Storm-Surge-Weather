@@ -1,12 +1,10 @@
-# Dependencies
+# Never commit your token
+.env
+
+# Build output
+dist/
 node_modules/
 
-# Secrets — NEVER commit these
-.env
-*.key
-*.pem
-service-account.json
-
-# OS
-.DS_Store
-Thumbs.db
+# Logs
+*.log
+npm-debug.log*
