@@ -1,8 +1,6 @@
 // ================================================================
-//  STORM SURGE WEATHER v13.6
-//  Radar engine extracted to radar.js (RadarAnimator)
-//  Fixes: zoom-out tile math, antimeridian wrap, crossfade anim,
-//         improved Mapbox style (streets-v12 detail), tile zoom LUT
+//  STORM SURGE WEATHER v13.7
+//  + NEXRAD single-site radar (NexradRadar + NexradPanel)
 // ================================================================
 
 // ── STATE ─────────────────────────────────────────────────────────
@@ -30,7 +28,7 @@ const S = {
 
 const API = (window.SS_API_URL || window.location.origin || '').replace(/\/$/, '');
 
-// ── Map styles — upgraded to more detailed versions ───────────────
+// ── Map styles ───────────────────────────────────────────────────
 const MAP_STYLES = {
   dark:      'mapbox://styles/mapbox/navigation-night-v1',
   satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
@@ -191,7 +189,6 @@ function initMap() {
       logoPosition:                  'bottom-left',
       failIfMajorPerformanceCaveat:  false,
       renderWorldCopies:             false,
-      // Better map quality settings
       antialias:  true
     });
 
@@ -222,6 +219,15 @@ function initMap() {
           $('playBtn').textContent = playing ? '⏸' : '▶';
           $('playBtn').classList.toggle('playing', playing);
         };
+      }
+
+      // ── Init NEXRAD ─────────────────────────────────────────────
+      if (window.NexradRadar) {
+        NexradRadar.init(S.map, API);
+      }
+      if (window.NexradPanel) {
+        NexradPanel.init(API);
+        NexradPanel.preloadNearby(S.lat, S.lng);
       }
 
       loadRadar();
@@ -260,6 +266,11 @@ function cycleMapStyle() {
   S.map.once('style.load', () => {
     if (S.cfg.alertZones && S.alerts.length) putAlertsOnMap();
     if (window.RadarAnimator) RadarAnimator.refresh();
+    // Re-attach NEXRAD layers after style swap
+    if (window.NexradRadar && NexradRadar.isVisible()) {
+      const st = NexradRadar._station, pr = NexradRadar._product;
+      if (st) { NexradRadar.hide(); NexradRadar.show(st.id, pr, st); }
+    }
     showToast('🗺 ' + S.mapStyle[0].toUpperCase() + S.mapStyle.slice(1));
   });
 }
@@ -334,14 +345,14 @@ function handleMapClick(e) {
 async function fetchNWSReport(lat, lng) {
   try {
     const ptRes = await fetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lng.toFixed(4)}`,
-      { headers: { 'User-Agent': '(StormSurgeWeather/13.6)', 'Accept': 'application/geo+json' } });
+      { headers: { 'User-Agent': '(StormSurgeWeather/13.7)', 'Accept': 'application/geo+json' } });
     if (!ptRes.ok) throw new Error('NWS points: ' + ptRes.status);
     const pt = await ptRes.json();
     if (!pt.properties?.forecast) throw new Error('Location outside NWS coverage');
     const props = pt.properties;
     const [fcastRes, hourlyRes] = await Promise.allSettled([
-      fetch(props.forecast,       { headers: { 'User-Agent': '(StormSurgeWeather/13.6)' } }),
-      fetch(props.forecastHourly, { headers: { 'User-Agent': '(StormSurgeWeather/13.6)' } })
+      fetch(props.forecast,       { headers: { 'User-Agent': '(StormSurgeWeather/13.7)' } }),
+      fetch(props.forecastHourly, { headers: { 'User-Agent': '(StormSurgeWeather/13.7)' } })
     ]);
     const fcast  = fcastRes.status  === 'fulfilled' && fcastRes.value.ok  ? await fcastRes.value.json()  : null;
     const hourly = hourlyRes.status === 'fulfilled' && hourlyRes.value.ok ? await hourlyRes.value.json() : null;
@@ -469,6 +480,8 @@ async function loadWeather() {
     renderForecast(d);
     updateBgAnim(d.current?.weather_code, d.current?.is_day);
     loadAQI();
+    // Notify NEXRAD panel of location change
+    if (window.NexradPanel) NexradPanel.updateLocation(S.lat, S.lng);
   } catch (e) {
     console.warn('Weather failed:', e.message);
     showToast('⚠ Weather unavailable');
@@ -778,7 +791,7 @@ function marineStat(label, val) {
 async function loadAlerts() {
   try {
     const r = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert',
-      { headers: { 'User-Agent': '(StormSurgeWeather/13.6)', 'Accept': 'application/geo+json' } });
+      { headers: { 'User-Agent': '(StormSurgeWeather/13.7)', 'Accept': 'application/geo+json' } });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     S.alerts = (d.features || []).filter(f => f.properties?.event && new Date(f.properties.expires) > new Date());
@@ -986,9 +999,13 @@ function renderRadarInfo() {
     riStat('Oldest',  oldest ? fmtTime(oldest, true) : 'N/A') +
     riStat('Color',   {'1':'Classic','2':'Universal','4':'Rainbow','6':'NOAA','7':'Dark Sky'}[S.cfg.radarColor]||'NOAA') +
     riStat('Opacity', Math.round(S.cfg.opacity*100)+'%') +
+    '<div class="ri-title" style="margin-top:16px">NEXRAD Status</div>' +
+    riStat('Station', window.NexradRadar?.isVisible() ? (NexradRadar._station?.id || '—') : 'Off') +
+    riStat('Product', window.NexradRadar?.isVisible() ? (NexradRadar._product || '—') : '—') +
     '<div class="ri-actions">' +
       '<button class="ri-btn" onclick="if(window.RadarAnimator)RadarAnimator.refresh();showToast(\'↻ Radar refreshed\')">↻ Refresh</button>' +
       '<button class="ri-btn" onclick="toggleNowcast()">🟢 Nowcast</button>' +
+      '<button class="ri-btn" onclick="if(window.NexradPanel)NexradPanel.toggle()">📡 NEXRAD</button>' +
     '</div></div>';
 }
 const riStat = (l, v) => `<div class="ri-stat"><span>${escHtml(String(l))}</span><span>${escHtml(String(v))}</span></div>`;
@@ -1298,7 +1315,10 @@ function initUI() {
   });
 
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') ['alertModal','settingsModal','aqiModal','marineModal','trafficModal','shareModal'].forEach(closeModal);
+    if (e.key === 'Escape') {
+      ['alertModal','settingsModal','aqiModal','marineModal','trafficModal','shareModal'].forEach(closeModal);
+      if (window.NexradPanel) NexradPanel.close();
+    }
     if (e.key === ' ' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); togglePlay(); }
     if (e.key === 'ArrowLeft')  { if (S.frame > 0) pickFrame(S.frame - 1); }
     if (e.key === 'ArrowRight') { if (S.frame < allFrames().length - 1) pickFrame(S.frame + 1); }
@@ -1356,4 +1376,4 @@ function applySettingsUI() {
 function saveCfg() { try { localStorage.setItem('ss12_cfg', JSON.stringify(S.cfg)); } catch (e) {} }
 function loadCfg() { try { const s = localStorage.getItem('ss12_cfg'); if (s) Object.assign(S.cfg, JSON.parse(s)); } catch (e) {} }
 
-console.log('%c⛈ Storm Surge Weather v13.6%c RadarAnimator · better tiles · zoom-fix', 'color:#f0a500;font-weight:900;font-size:14px', 'color:#7a8ea8;font-size:11px');
+console.log('%c⛈ Storm Surge Weather v13.7%c NEXRAD single-site · IEM tile engine · range rings', 'color:#06b6d4;font-weight:900;font-size:14px', 'color:#7a8ea8;font-size:11px');

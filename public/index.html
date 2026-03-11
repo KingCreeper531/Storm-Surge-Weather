@@ -191,6 +191,7 @@
     <button class="lb" data-layer="pressure">📊 Pressure</button>
     <div class="lb-sep"></div>
     <button class="lb lb-sat" data-layer="satellite">🛰 Satellite</button>
+    <button class="lb lb-nexrad" id="nexradBtn" onclick="if(window.NexradPanel)NexradPanel.toggle()">📡 NEXRAD</button>
     <button class="style-btn" id="styleBtn">◑ Style</button>
   </div>
 
@@ -434,11 +435,12 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading…</div></div>
 
-<!-- SCRIPTS: token → radar → nexrad → app -->
+<!-- SCRIPTS: token → radar → nexrad → nexrad-panel → app -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
 <script src="radar.js"></script>
 <script src="nexrad.js"></script>
+<script src="nexrad-panel.js"></script>
 <script src="app.js"></script>
 <script>
 // ================================================================
@@ -477,15 +479,12 @@
     switch (data.event) {
       case 'checking': setStatus('Checking…'); break;
 
-      // Update found — main process already started silent download
       case 'available':
         if (data.assetUrl !== undefined) {
-          // Has asset URL: show "downloading" status, wait for 'ready'
           setStatus('v' + data.version + ' — downloading…', 'has-update');
           if (lblEl) lblEl.textContent = 'v' + data.version + (data.releaseName ? ' — ' + data.releaseName : '');
           if (noAssetEl) noAssetEl.style.display = 'none';
         } else {
-          // No asset: show no-asset warning
           setStatus('v' + data.version + ' — no installer attached', 'upd-warn');
           if (dlRow) dlRow.style.display = '';
           if (dlBtn) dlBtn.style.display = 'none';
@@ -493,12 +492,10 @@
         }
         break;
 
-      // Silent background download progress (optional tiny indicator)
       case 'downloading':
         setStatus('Downloading ' + (data.percent || 0) + '%…', 'has-update');
         break;
 
-      // Download complete — THIS is when we show the green button
       case 'ready':
         setStatus('✓ Update ready', 'up-to-date');
         if (dlRow) { dlRow.style.display = ''; }
@@ -533,7 +530,6 @@
     window.electronUpdater.onUpdaterEvent(dispatch);
     $('checkUpdateBtn')?.addEventListener('click', () => { setStatus('Checking…'); window.electronUpdater.checkUpdate(); });
   } else {
-    // Browser / dev mode: hit /api/app-version
     async function browserCheck(silent) {
       setStatus('Checking…');
       try {
