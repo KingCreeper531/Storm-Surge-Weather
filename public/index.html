@@ -10,23 +10,14 @@
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <style>
-    /* ── UPDATE BANNER ── */
     .update-banner {
-      display: none;
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 9999;
+      display: none; position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%); z-index: 9999;
       background: linear-gradient(135deg, #5865f2 0%, #3b4fd8 100%);
-      color: #fff;
-      border-radius: 14px;
-      padding: 14px 20px;
-      min-width: 340px;
-      max-width: 500px;
+      color: #fff; border-radius: 14px; padding: 14px 20px;
+      min-width: 340px; max-width: 520px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      align-items: center;
-      gap: 14px;
+      align-items: center; gap: 14px;
       font-family: 'Outfit', sans-serif;
       animation: bannerIn 0.35s cubic-bezier(.34,1.56,.64,1) forwards;
     }
@@ -35,50 +26,29 @@
       from { opacity:0; transform: translateX(-50%) translateY(20px); }
       to   { opacity:1; transform: translateX(-50%) translateY(0); }
     }
-    .ub-icon { font-size: 1.6rem; flex-shrink: 0; }
-    .ub-text { flex: 1; min-width: 0; }
-    .ub-text strong { display: block; font-size: .95rem; font-weight: 700; }
-    .ub-text span   { font-size: .8rem; opacity: .85; }
-    .ub-progress {
-      width: 100%; height: 4px; background: rgba(255,255,255,0.2);
-      border-radius: 2px; margin-top: 6px; display: none;
-    }
-    .ub-progress-fill { height: 100%; background: #fff; border-radius: 2px; transition: width .3s; }
+    .ub-icon { font-size:1.6rem; flex-shrink:0; }
+    .ub-text { flex:1; min-width:0; }
+    .ub-text strong { display:block; font-size:.95rem; font-weight:700; }
+    .ub-text span   { font-size:.8rem; opacity:.85; }
+    .ub-progress { width:100%; height:4px; background:rgba(255,255,255,0.2); border-radius:2px; margin-top:6px; display:none; }
+    .ub-progress-fill { height:100%; background:#fff; border-radius:2px; transition:width .2s; }
     .ub-btn {
-      background: rgba(255,255,255,0.2);
-      border: 1px solid rgba(255,255,255,0.3);
-      color: #fff; border-radius: 8px;
-      padding: 7px 14px; font-size: .82rem; font-weight: 600;
-      cursor: pointer; white-space: nowrap; transition: background .2s; flex-shrink: 0;
+      background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.3);
+      color:#fff; border-radius:8px; padding:7px 14px; font-size:.82rem; font-weight:600;
+      cursor:pointer; white-space:nowrap; transition:background .2s; flex-shrink:0;
     }
-    .ub-btn:hover  { background: rgba(255,255,255,0.35); }
-    .ub-btn:disabled { opacity: .5; cursor: default; }
-    .ub-dismiss {
-      background: none; border: none;
-      color: rgba(255,255,255,0.6); cursor: pointer;
-      font-size: 1.1rem; padding: 2px 6px; flex-shrink: 0;
-    }
-    .ub-dismiss:hover { color: #fff; }
-
-    /* ── Settings update section ── */
-    .update-check-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .upd-status { font-size: .8rem; opacity: .7; flex: 1; }
-    .upd-status.has-update { color: #5865f2; opacity: 1; font-weight: 600; }
-    .upd-status.up-to-date { color: #22c55e; opacity: 1; }
-    .upd-dot {
-      display: inline-block; width: 8px; height: 8px;
-      border-radius: 50%; background: #5865f2; margin-right: 5px;
-      animation: pulse 1.5s infinite;
-    }
-    .upd-progress-bar {
-      width: 100%; height: 6px; background: rgba(255,255,255,0.1);
-      border-radius: 3px; margin-top: 4px; display: none;
-    }
-    .upd-progress-fill { height: 100%; background: #5865f2; border-radius: 3px; transition: width .3s; }
-    @keyframes pulse {
-      0%,100% { opacity:1; transform:scale(1); }
-      50%      { opacity:.5; transform:scale(1.4); }
-    }
+    .ub-btn:hover     { background:rgba(255,255,255,0.35); }
+    .ub-btn:disabled  { opacity:.5; cursor:default; }
+    .ub-dismiss { background:none; border:none; color:rgba(255,255,255,0.6); cursor:pointer; font-size:1.1rem; padding:2px 6px; flex-shrink:0; }
+    .ub-dismiss:hover { color:#fff; }
+    .update-check-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .upd-status { font-size:.8rem; opacity:.7; flex:1; }
+    .upd-status.has-update { color:#5865f2; opacity:1; font-weight:600; }
+    .upd-status.up-to-date { color:#22c55e; opacity:1; }
+    .upd-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#5865f2; margin-right:5px; animation:pulse 1.5s infinite; }
+    .upd-progress-bar { width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; margin-top:4px; display:none; }
+    .upd-progress-fill { height:100%; background:#5865f2; border-radius:3px; transition:width .2s; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
   </style>
 </head>
 <body>
@@ -88,7 +58,7 @@
   <div class="ub-icon" id="ubIcon">🔄</div>
   <div class="ub-text">
     <strong id="ubTitle">Update Available</strong>
-    <span id="ubDesc">A new version of Storm Surge is ready</span>
+    <span id="ubDesc">A new version is ready</span>
     <div class="ub-progress" id="ubProgress"><div class="ub-progress-fill" id="ubProgressFill" style="width:0%"></div></div>
   </div>
   <button class="ub-btn" id="ubAction">Download</button>
@@ -108,7 +78,7 @@
     <div class="logo-mark">⛈</div>
     <div class="logo-text">
       <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v13.4</span>
+      <span class="logo-ver">v13.5</span>
     </div>
     <button class="sidebar-x" id="sidebarX">✕</button>
   </div>
@@ -149,7 +119,7 @@
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">Storm Surge v13.4 — Open-Meteo · RainViewer · NWS</div>
+    <div class="ver-badge">Storm Surge v13.5 — Open-Meteo · RainViewer · NWS</div>
   </div>
 </aside>
 
@@ -248,7 +218,7 @@
         <div class="wcs"><div class="wcs-l">📊 Pressure</div>   <div class="wcs-v" id="wcPres">--</div></div>
         <div class="wcs"><div class="wcs-l">☁ Cloud</div>       <div class="wcs-v" id="wcCloud">--</div></div>
         <div class="wcs"><div class="wcs-l">🫁 AQI</div>        <div class="wcs-v" id="wcAQI">--</div></div>
-        <div class="wcs"><div class="wcs-l">💦 Humidity</div>   <div class="wcs-v" id="wcHeatIdx">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌡 Feels Like</div> <div class="wcs-v" id="wcHeatIdx">--</div></div>
       </div>
       <div class="wc-divider"></div>
       <div class="wc-sun-arc" id="wcSunArc">
@@ -318,58 +288,34 @@
   </div>
 </aside>
 
-<!-- ALERT MODAL -->
+<!-- MODALS (unchanged structure) -->
 <div class="modal" id="alertModal" role="dialog" aria-modal="true">
   <div class="mbox large">
-    <div class="mbox-head">
-      <div class="mbox-title" id="mTitle">Alert</div>
-      <button class="mbox-x" id="mClose">✕</button>
-    </div>
+    <div class="mbox-head"><div class="mbox-title" id="mTitle">Alert</div><button class="mbox-x" id="mClose">✕</button></div>
     <div class="mbox-body" id="mBody"></div>
   </div>
 </div>
-
-<!-- AIR QUALITY MODAL -->
 <div class="modal" id="aqiModal" role="dialog" aria-modal="true">
   <div class="mbox wide">
-    <div class="mbox-head">
-      <div class="mbox-title" id="aqiTitle">💨 Air Quality Index</div>
-      <button class="mbox-x" id="aqiClose">✕</button>
-    </div>
-    <div class="mbox-body" id="aqiBody">
-      <div class="empty-s"><div class="es-ico">💨</div><div>Loading AQI data…</div></div>
-    </div>
+    <div class="mbox-head"><div class="mbox-title" id="aqiTitle">💨 Air Quality Index</div><button class="mbox-x" id="aqiClose">✕</button></div>
+    <div class="mbox-body" id="aqiBody"><div class="empty-s"><div class="es-ico">💨</div><div>Loading AQI data…</div></div></div>
   </div>
 </div>
-
-<!-- MARINE MODAL -->
 <div class="modal" id="marineModal" role="dialog" aria-modal="true">
   <div class="mbox wide">
-    <div class="mbox-head">
-      <div class="mbox-title" id="marineTitle">🌊 Marine Conditions</div>
-      <button class="mbox-x" id="marineClose">✕</button>
-    </div>
-    <div class="mbox-body" id="marineBody">
-      <div class="empty-s"><div class="es-ico">🌊</div><div>Loading marine data…</div></div>
-    </div>
+    <div class="mbox-head"><div class="mbox-title" id="marineTitle">🌊 Marine Conditions</div><button class="mbox-x" id="marineClose">✕</button></div>
+    <div class="mbox-body" id="marineBody"><div class="empty-s"><div class="es-ico">🌊</div><div>Loading marine data…</div></div></div>
   </div>
 </div>
-
-<!-- CAMERAS MODAL -->
 <div class="modal" id="trafficModal" role="dialog" aria-modal="true">
   <div class="mbox large">
-    <div class="mbox-head">
-      <div class="mbox-title">📷 Live Cameras</div>
-      <button class="mbox-x" id="tcClose">✕</button>
-    </div>
+    <div class="mbox-head"><div class="mbox-title">📷 Live Cameras</div><button class="mbox-x" id="tcClose">✕</button></div>
     <div class="mbox-body">
       <div class="tc-search">
         <input class="modal-input" id="tcSearch" type="text" placeholder="Search city, state, highway…" autocomplete="off">
         <button class="modal-btn" id="tcSearchBtn">Search</button>
       </div>
-      <div id="tcGrid" class="tc-grid">
-        <div class="empty-s"><div class="es-ico">📷</div><div>Enter a location to find cameras</div></div>
-      </div>
+      <div id="tcGrid" class="tc-grid"><div class="empty-s"><div class="es-ico">📷</div><div>Enter a location to find cameras</div></div></div>
     </div>
   </div>
 </div>
@@ -377,121 +323,39 @@
 <!-- SETTINGS MODAL -->
 <div class="modal" id="settingsModal" role="dialog" aria-modal="true">
   <div class="mbox wide">
-    <div class="mbox-head">
-      <div class="mbox-title">⚙ Settings</div>
-      <button class="mbox-x" id="sClose">✕</button>
-    </div>
+    <div class="mbox-head"><div class="mbox-title">⚙ Settings</div><button class="mbox-x" id="sClose">✕</button></div>
     <div class="mbox-body">
-
       <div class="s-sec">
         <div class="s-sec-title">Units</div>
-        <div class="s-row"><span>Temperature</span>
-          <div class="seg" id="sTempUnit">
-            <button class="sb active" data-v="C">°C</button>
-            <button class="sb" data-v="F">°F</button>
-          </div>
-        </div>
-        <div class="s-row"><span>Wind Speed</span>
-          <div class="seg" id="sWindUnit">
-            <button class="sb active" data-v="ms">m/s</button>
-            <button class="sb" data-v="kmh">km/h</button>
-            <button class="sb" data-v="mph">mph</button>
-            <button class="sb" data-v="kts">kts</button>
-          </div>
-        </div>
-        <div class="s-row"><span>Distance</span>
-          <div class="seg" id="sDistUnit">
-            <button class="sb active" data-v="km">km</button>
-            <button class="sb" data-v="mi">mi</button>
-          </div>
-        </div>
-        <div class="s-row"><span>Time Format</span>
-          <div class="seg" id="sTimeFormat">
-            <button class="sb active" data-v="12">12h</button>
-            <button class="sb" data-v="24">24h</button>
-          </div>
-        </div>
+        <div class="s-row"><span>Temperature</span><div class="seg" id="sTempUnit"><button class="sb active" data-v="C">°C</button><button class="sb" data-v="F">°F</button></div></div>
+        <div class="s-row"><span>Wind Speed</span><div class="seg" id="sWindUnit"><button class="sb active" data-v="ms">m/s</button><button class="sb" data-v="kmh">km/h</button><button class="sb" data-v="mph">mph</button><button class="sb" data-v="kts">kts</button></div></div>
+        <div class="s-row"><span>Distance</span><div class="seg" id="sDistUnit"><button class="sb active" data-v="km">km</button><button class="sb" data-v="mi">mi</button></div></div>
+        <div class="s-row"><span>Time Format</span><div class="seg" id="sTimeFormat"><button class="sb active" data-v="12">12h</button><button class="sb" data-v="24">24h</button></div></div>
       </div>
-
       <div class="s-sec">
         <div class="s-sec-title">Radar</div>
-        <div class="s-row"><span>Opacity</span>
-          <div class="slider-row">
-            <input type="range" id="sOpacity" min="10" max="100" value="75">
-            <span id="sOpacityVal">75%</span>
-          </div>
-        </div>
-        <div class="s-row"><span>Animation Speed</span>
-          <div class="seg" id="sSpeed">
-            <button class="sb" data-v="300">Fast</button>
-            <button class="sb active" data-v="600">Normal</button>
-            <button class="sb" data-v="1000">Slow</button>
-          </div>
-        </div>
-        <div class="s-row"><span>Color Scheme</span>
-          <div class="seg" id="sRadarColor">
-            <button class="sb" data-v="1">Classic</button>
-            <button class="sb" data-v="2">Universal</button>
-            <button class="sb" data-v="4">Rainbow</button>
-            <button class="sb active" data-v="6">NOAA</button>
-            <button class="sb" data-v="7">Dark Sky</button>
-          </div>
-        </div>
-        <div class="s-row"><span>Show Nowcast</span>
-          <label class="tog"><input type="checkbox" id="sNowcast" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>Auto-play on Load</span>
-          <label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>Smooth Animation</span>
-          <label class="tog"><input type="checkbox" id="sSmooth" checked><span class="tog-t"></span></label>
-        </div>
+        <div class="s-row"><span>Opacity</span><div class="slider-row"><input type="range" id="sOpacity" min="10" max="100" value="75"><span id="sOpacityVal">75%</span></div></div>
+        <div class="s-row"><span>Animation Speed</span><div class="seg" id="sSpeed"><button class="sb" data-v="300">Fast</button><button class="sb active" data-v="600">Normal</button><button class="sb" data-v="1000">Slow</button></div></div>
+        <div class="s-row"><span>Color Scheme</span><div class="seg" id="sRadarColor"><button class="sb" data-v="1">Classic</button><button class="sb" data-v="2">Universal</button><button class="sb" data-v="4">Rainbow</button><button class="sb active" data-v="6">NOAA</button><button class="sb" data-v="7">Dark Sky</button></div></div>
+        <div class="s-row"><span>Show Nowcast</span><label class="tog"><input type="checkbox" id="sNowcast" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Auto-play on Load</span><label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Smooth Animation</span><label class="tog"><input type="checkbox" id="sSmooth" checked><span class="tog-t"></span></label></div>
       </div>
-
       <div class="s-sec">
         <div class="s-sec-title">Map &amp; Display</div>
-        <div class="s-row"><span>Show Alert Zones</span>
-          <label class="tog"><input type="checkbox" id="sAlertZones" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>Show Crosshair</span>
-          <label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>Map Click → NWS Forecast</span>
-          <label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>Animated Background</span>
-          <label class="tog"><input type="checkbox" id="sAnimBg" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>Weather Card Position</span>
-          <div class="seg" id="sCardPos">
-            <button class="sb active" data-v="top-left">↖ TL</button>
-            <button class="sb" data-v="top-right">↗ TR</button>
-            <button class="sb" data-v="bottom-left">↙ BL</button>
-          </div>
-        </div>
-        <div class="s-row"><span>Card Style</span>
-          <div class="seg" id="sCardStyle">
-            <button class="sb active" data-v="full">Full</button>
-            <button class="sb" data-v="compact">Compact</button>
-            <button class="sb" data-v="minimal">Minimal</button>
-          </div>
-        </div>
+        <div class="s-row"><span>Show Alert Zones</span><label class="tog"><input type="checkbox" id="sAlertZones" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Show Crosshair</span><label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Map Click → NWS Forecast</span><label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Animated Background</span><label class="tog"><input type="checkbox" id="sAnimBg" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Weather Card Position</span><div class="seg" id="sCardPos"><button class="sb active" data-v="top-left">↖ TL</button><button class="sb" data-v="top-right">↗ TR</button><button class="sb" data-v="bottom-left">↙ BL</button></div></div>
+        <div class="s-row"><span>Card Style</span><div class="seg" id="sCardStyle"><button class="sb active" data-v="full">Full</button><button class="sb" data-v="compact">Compact</button><button class="sb" data-v="minimal">Minimal</button></div></div>
       </div>
-
       <div class="s-sec">
         <div class="s-sec-title">Live Overlays</div>
-        <div class="s-row"><span>⚡ Lightning Strikes</span>
-          <label class="tog"><input type="checkbox" id="sLightning" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>🌀 Storm Cell Tracking</span>
-          <label class="tog"><input type="checkbox" id="sStormCells" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>🌪 Mesoscale Discussions</span>
-          <label class="tog"><input type="checkbox" id="sMCD" checked><span class="tog-t"></span></label>
-        </div>
-        <div class="s-row"><span>🔔 Audio Alerts</span>
-          <label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label>
-        </div>
+        <div class="s-row"><span>⚡ Lightning Strikes</span><label class="tog"><input type="checkbox" id="sLightning" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>🌀 Storm Cell Tracking</span><label class="tog"><input type="checkbox" id="sStormCells" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>🌪 Mesoscale Discussions</span><label class="tog"><input type="checkbox" id="sMCD" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>🔔 Audio Alerts</span><label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label></div>
       </div>
 
       <!-- ── UPDATES ── -->
@@ -499,7 +363,7 @@
         <div class="s-sec-title">Updates</div>
         <div class="s-row">
           <span>App Version</span>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.4.0</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.5.0</span>
         </div>
         <div class="s-row update-check-row">
           <span>Check for updates</span>
@@ -521,28 +385,19 @@
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div><strong>Storm Surge Weather v13.4</strong></div>
-          <div>Radar — RainViewer (free)</div>
-          <div>Weather &amp; Forecast — Open-Meteo (free)</div>
-          <div>Air Quality — Open-Meteo AQI (free)</div>
-          <div>Marine — Open-Meteo Marine (free)</div>
-          <div>Alerts — weather.gov / NWS (free)</div>
-          <div>Storm Reports — NOAA SPC (free)</div>
-          <div>Maps — Mapbox GL JS</div>
-          <div>Cameras — Hazcams</div>
+          <div><strong>Storm Surge Weather v13.5</strong></div>
+          <div>Radar — RainViewer · Weather — Open-Meteo · Alerts — NWS</div>
+          <div>AQI — Open-Meteo · Marine — Open-Meteo · Maps — Mapbox</div>
+          <div>Storm Reports — NOAA SPC · Cameras — Hazcams</div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- SHARE MODAL -->
 <div class="modal" id="shareModal" role="dialog" aria-modal="true">
   <div class="mbox">
-    <div class="mbox-head">
-      <div class="mbox-title">⤴ Share Weather</div>
-      <button class="mbox-x" id="shareClose">✕</button>
-    </div>
+    <div class="mbox-head"><div class="mbox-title">⤴ Share Weather</div><button class="mbox-x" id="shareClose">✕</button></div>
     <div class="mbox-body">
       <canvas id="shareCanvas" style="width:100%;border-radius:12px;display:block"></canvas>
       <div style="margin-top:14px;display:flex;gap:10px;justify-content:center">
@@ -561,28 +416,32 @@
 <script src="app.js"></script>
 <script>
 // ================================================================
-//  IN-APP UPDATER — electron-updater powered
-//  Falls back to /api/app-version check for browser use
+//  IN-APP UPDATER v13.5
+//  Electron: downloads installer to temp, runs it, quits → auto-replaces app
+//  Browser:  shows GitHub release link
 // ================================================================
 (function () {
-  // UI refs
-  const banner        = document.getElementById('updateBanner');
-  const ubIcon        = document.getElementById('ubIcon');
-  const ubTitle       = document.getElementById('ubTitle');
-  const ubDesc        = document.getElementById('ubDesc');
-  const ubProgress    = document.getElementById('ubProgress');
-  const ubProgressFill= document.getElementById('ubProgressFill');
-  const ubAction      = document.getElementById('ubAction');
-  const ubDismiss     = document.getElementById('ubDismiss');
-  const statusEl      = document.getElementById('updStatus');
-  const dlRow         = document.getElementById('updDownloadRow');
-  const dlBtn         = document.getElementById('updDownloadBtn');
-  const lblEl         = document.getElementById('updLatestLabel');
-  const progBar       = document.getElementById('updProgressBar');
-  const progFill      = document.getElementById('updProgressFill');
-  const progLabel     = document.getElementById('updProgressLabel');
+  const $ = id => document.getElementById(id);
+  const banner       = $('updateBanner');
+  const ubIcon       = $('ubIcon');
+  const ubTitle      = $('ubTitle');
+  const ubDesc       = $('ubDesc');
+  const ubProgress   = $('ubProgress');
+  const ubProgFill   = $('ubProgressFill');
+  const ubAction     = $('ubAction');
+  const ubDismiss    = $('ubDismiss');
+  const statusEl     = $('updStatus');
+  const dlRow        = $('updDownloadRow');
+  const dlBtn        = $('updDownloadBtn');
+  const lblEl        = $('updLatestLabel');
+  const progBar      = $('updProgressBar');
+  const progFill     = $('updProgressFill');
+  const progLabel    = $('updProgressLabel');
 
-  let _state = 'idle'; // idle | available | downloading | downloaded
+  // Asset info passed through from main process
+  let _asset = null;        // { assetUrl, assetName, assetSize }
+  let _installerPath = null;
+  let _state = 'idle';
 
   function setStatus(text, cls) {
     if (!statusEl) return;
@@ -597,128 +456,131 @@
     banner.classList.add('visible');
   }
 
-  function hideBanner() { banner.classList.remove('visible'); }
-
-  // ── State machine ──────────────────────────────────────────────
-  function onAvailable(version, releaseName) {
+  // ── State handlers ────────────────────────────────────────────
+  function onAvailable(data) {
     _state = 'available';
-    setStatus('v' + version + ' available', 'has-update');
-    if (lblEl) lblEl.textContent = 'v' + version + ' — ' + (releaseName || 'ready to download');
+    _asset = { assetUrl: data.assetUrl, assetName: data.assetName, assetSize: data.assetSize };
+    setStatus('v' + data.version + ' available', 'has-update');
+    if (lblEl) lblEl.textContent = 'v' + data.version + (data.releaseName ? ' — ' + data.releaseName : '');
     if (dlRow) dlRow.style.display = '';
-    if (dlBtn) { dlBtn.textContent = '⬇ Download & Install'; dlBtn.disabled = false; }
-    showBanner('Update Available — v' + version, releaseName || 'Download and install without leaving the app');
+    if (dlBtn) { dlBtn.textContent = '⬇ Download & Install'; dlBtn.disabled = false; dlBtn.onclick = startDownload; }
     ubIcon.textContent = '🔄';
-    ubAction.textContent = 'Download';
+    ubAction.textContent = 'Download & Install';
     ubAction.disabled = false;
     ubAction.onclick = startDownload;
+    showBanner('Update Available — v' + data.version, data.releaseName || 'Click to download and install in-app');
   }
 
-  function onProgress(percent, speed) {
+  function onProgress(data) {
     _state = 'downloading';
-    const pct = Math.round(percent);
-    const mb  = speed ? (speed / 1024 / 1024).toFixed(1) + ' MB/s' : '';
+    const pct = Math.round(data.percent || 0);
+    const mb  = data.speed ? (data.speed / 1024 / 1024).toFixed(1) + ' MB/s' : '';
     setStatus('Downloading ' + pct + '%…');
-
-    // Banner progress
+    // Banner
     ubAction.textContent = pct + '%';
     ubAction.disabled = true;
     ubProgress.style.display = 'block';
-    ubProgressFill.style.width = pct + '%';
-
-    // Settings progress
+    ubProgFill.style.width = pct + '%';
+    // Settings panel
     if (progBar)   progBar.style.display = 'block';
     if (progFill)  progFill.style.width  = pct + '%';
     if (progLabel) progLabel.textContent = pct + '%' + (mb ? '  ·  ' + mb : '');
     if (dlBtn)     dlBtn.disabled = true;
   }
 
-  function onDownloaded(version) {
+  function onDownloaded(data) {
     _state = 'downloaded';
-    setStatus('✓ Ready to install', 'up-to-date');
-
-    // Banner → becomes "Restart & Install"
+    _installerPath = data.path;
+    setStatus('✓ Ready — click to restart', 'up-to-date');
+    // Banner becomes "Restart & Install"
     ubIcon.textContent = '✅';
-    ubTitle.textContent = 'Ready to Install — v' + version;
-    ubDesc.textContent  = 'Restart the app to apply the update';
+    ubTitle.textContent = 'Ready to Install';
+    ubDesc.textContent  = 'The app will restart and update automatically';
     ubProgress.style.display = 'none';
     ubAction.textContent = '🔁 Restart & Install';
     ubAction.disabled = false;
     ubAction.onclick = installNow;
     banner.classList.add('visible');
-
     // Settings button
-    if (dlBtn)   { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.onclick = installNow; }
-    if (progBar)  progBar.style.display = 'none';
-    if (progLabel) progLabel.textContent = 'Download complete — restart to apply';
+    if (dlBtn)     { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.onclick = installNow; }
+    if (progBar)    progBar.style.display = 'none';
+    if (progLabel)  progLabel.textContent = 'Download complete';
   }
 
-  function onUpToDate(version) {
-    setStatus('✓ Up to date' + (version ? ' (v' + version + ')' : ''), 'up-to-date');
+  function onUpToDate(data) {
+    setStatus('✓ Up to date (v' + (data.version || '') + ')', 'up-to-date');
     if (dlRow) dlRow.style.display = 'none';
   }
 
-  function onError(msg) {
-    setStatus('Update check failed', '');
-    console.warn('Updater error:', msg);
+  function onError(data) {
+    setStatus('Check failed', '');
+    console.warn('Updater error:', data.message);
   }
 
+  // ── Actions ───────────────────────────────────────────────────
   function startDownload() {
-    if (window.electronUpdater?.downloadUpdate) {
-      window.electronUpdater.downloadUpdate();
-    }
+    if (!_asset?.assetUrl) return;
+    setStatus('Starting download…');
+    if (dlBtn) dlBtn.disabled = true;
+    window.electronUpdater.downloadUpdate(_asset);
   }
 
   function installNow() {
-    if (window.electronUpdater?.installUpdate) {
-      window.electronUpdater.installUpdate();
+    if (_installerPath && window.electronUpdater?.installUpdate) {
+      window.electronUpdater.installUpdate({ installerPath: _installerPath });
     }
   }
 
-  // ── Electron path (real auto-updater) ─────────────────────────
+  // ── Wire up ───────────────────────────────────────────────────
   if (window.electronUpdater?.onUpdaterEvent) {
+    // Real Electron — receive push events from main process
     window.electronUpdater.onUpdaterEvent((data) => {
       switch (data.event) {
         case 'checking':   setStatus('Checking…'); break;
-        case 'available':  onAvailable(data.version, data.releaseName); break;
-        case 'progress':   onProgress(data.percent, data.speed); break;
-        case 'downloaded': onDownloaded(data.version); break;
-        case 'up-to-date': onUpToDate(data.version); break;
-        case 'error':      onError(data.message); break;
+        case 'available':  onAvailable(data); break;
+        case 'progress':   onProgress(data); break;
+        case 'downloaded': onDownloaded(data); break;
+        case 'up-to-date': onUpToDate(data); break;
+        case 'error':      onError(data); break;
       }
     });
 
-    // Manual check button
-    document.getElementById('checkUpdateBtn')?.addEventListener('click', () => {
+    $('checkUpdateBtn')?.addEventListener('click', () => {
       setStatus('Checking…');
       window.electronUpdater.checkUpdate();
     });
 
+    // Auto-check fires from main process 10s after launch
   } else {
-    // ── Browser fallback (no Electron) ────────────────────────
+    // Browser fallback — just links to GitHub releases
     async function browserCheck(silent) {
       setStatus('Checking…');
       try {
         const r = await fetch('/api/app-version');
         const d = await r.json();
         if (d.hasUpdate) {
-          onAvailable(d.latest, d.releaseName);
-          // In browser mode download = open GitHub release page
-          ubAction.onclick = () => window.open(d.releaseUrl, '_blank');
-          if (dlBtn) dlBtn.onclick = () => window.open(d.releaseUrl, '_blank');
+          _state = 'available';
+          setStatus('v' + d.latest + ' available', 'has-update');
+          if (lblEl) lblEl.textContent = 'v' + d.latest;
+          if (dlRow) dlRow.style.display = '';
+          const go = () => window.open(d.releaseUrl, '_blank', 'noopener');
+          if (dlBtn) { dlBtn.textContent = '⬇ Open GitHub Release'; dlBtn.disabled = false; dlBtn.onclick = go; }
+          ubAction.textContent = 'View Release';
+          ubAction.onclick = go;
+          showBanner('Update Available — v' + d.latest, d.releaseName || '');
         } else {
-          onUpToDate(d.current);
+          onUpToDate({ version: d.current });
           if (!silent) alert('Storm Surge is up to date ✓');
         }
-      } catch { onError('Network error'); }
+      } catch { onError({ message: 'Network error' }); }
     }
-    document.getElementById('checkUpdateBtn')?.addEventListener('click', () => browserCheck(false));
+    $('checkUpdateBtn')?.addEventListener('click', () => browserCheck(false));
     setTimeout(() => browserCheck(true), 4000);
     setInterval(() => browserCheck(true), 30 * 60 * 1000);
   }
 
-  // Dismiss banner
   ubDismiss.addEventListener('click', () => {
-    hideBanner();
+    banner.classList.remove('visible');
     sessionStorage.setItem('upd_dismissed', '1');
   });
 })();
