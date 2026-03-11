@@ -1,47 +1,44 @@
 {
   "name": "storm-surge-weather",
-  "version": "13.6.0",
-  "description": "Storm Surge Weather — Professional weather app",
+  "version": "13.7.0",
+  "description": "Storm Surge Weather — Electron desktop app with NEXRAD radar",
   "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "electron": "electron electron-main.js",
-    "dist": "electron-builder"
+    "electron": "electron .",
+    "build": "electron-builder"
   },
-  "engines": { "node": ">=18" },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "node-cache": "^5.1.2"
   },
   "devDependencies": {
     "electron": "^28.0.0",
-    "electron-builder": "^24.0.0"
+    "electron-builder": "^24.9.1"
   },
   "build": {
     "appId": "com.stormsurge.weather",
     "productName": "Storm Surge Weather",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
     "files": [
-      "public/**",
-      "server.js",
       "electron-main.js",
       "electron-preload.js",
-      "node_modules/**"
-    ],
-    "win": {
-      "target": "nsis"
-    },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Storm Surge Weather"
-    }
+      "server.js",
+      "public/**",
+      "assets/**",
+      "node_modules/**",
+      "package.json"
+    ]
   }
 }
