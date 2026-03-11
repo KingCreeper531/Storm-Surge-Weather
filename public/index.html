@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Storm Surge Weather — Professional weather radar, forecasts, and alerts">
   <title>Storm Surge Weather</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%88%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,7 +10,7 @@
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <style>
-    /* ── UPDATE BANNER (Discord-style) ── */
+    /* ── UPDATE BANNER ── */
     .update-banner {
       display: none;
       position: fixed;
@@ -23,10 +22,9 @@
       color: #fff;
       border-radius: 14px;
       padding: 14px 20px;
-      min-width: 320px;
-      max-width: 480px;
+      min-width: 340px;
+      max-width: 500px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      display: none;
       align-items: center;
       gap: 14px;
       font-family: 'Outfit', sans-serif;
@@ -38,55 +36,45 @@
       to   { opacity:1; transform: translateX(-50%) translateY(0); }
     }
     .ub-icon { font-size: 1.6rem; flex-shrink: 0; }
-    .ub-text { flex: 1; }
+    .ub-text { flex: 1; min-width: 0; }
     .ub-text strong { display: block; font-size: .95rem; font-weight: 700; }
     .ub-text span   { font-size: .8rem; opacity: .85; }
+    .ub-progress {
+      width: 100%; height: 4px; background: rgba(255,255,255,0.2);
+      border-radius: 2px; margin-top: 6px; display: none;
+    }
+    .ub-progress-fill { height: 100%; background: #fff; border-radius: 2px; transition: width .3s; }
     .ub-btn {
       background: rgba(255,255,255,0.2);
       border: 1px solid rgba(255,255,255,0.3);
-      color: #fff;
-      border-radius: 8px;
-      padding: 7px 14px;
-      font-size: .82rem;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: background .2s;
+      color: #fff; border-radius: 8px;
+      padding: 7px 14px; font-size: .82rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: background .2s; flex-shrink: 0;
     }
-    .ub-btn:hover { background: rgba(255,255,255,0.35); }
+    .ub-btn:hover  { background: rgba(255,255,255,0.35); }
+    .ub-btn:disabled { opacity: .5; cursor: default; }
     .ub-dismiss {
-      background: none;
-      border: none;
-      color: rgba(255,255,255,0.6);
-      cursor: pointer;
-      font-size: 1.1rem;
-      padding: 2px 6px;
-      flex-shrink: 0;
+      background: none; border: none;
+      color: rgba(255,255,255,0.6); cursor: pointer;
+      font-size: 1.1rem; padding: 2px 6px; flex-shrink: 0;
     }
     .ub-dismiss:hover { color: #fff; }
 
-    /* ── UPDATE section in Settings ── */
-    .update-check-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .upd-status {
-      font-size: .8rem;
-      opacity: .7;
-      flex: 1;
-    }
+    /* ── Settings update section ── */
+    .update-check-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .upd-status { font-size: .8rem; opacity: .7; flex: 1; }
     .upd-status.has-update { color: #5865f2; opacity: 1; font-weight: 600; }
     .upd-status.up-to-date { color: #22c55e; opacity: 1; }
     .upd-dot {
-      display: inline-block;
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #5865f2;
-      margin-right: 5px;
+      display: inline-block; width: 8px; height: 8px;
+      border-radius: 50%; background: #5865f2; margin-right: 5px;
       animation: pulse 1.5s infinite;
     }
+    .upd-progress-bar {
+      width: 100%; height: 6px; background: rgba(255,255,255,0.1);
+      border-radius: 3px; margin-top: 4px; display: none;
+    }
+    .upd-progress-fill { height: 100%; background: #5865f2; border-radius: 3px; transition: width .3s; }
     @keyframes pulse {
       0%,100% { opacity:1; transform:scale(1); }
       50%      { opacity:.5; transform:scale(1.4); }
@@ -97,13 +85,14 @@
 
 <!-- UPDATE BANNER -->
 <div class="update-banner" id="updateBanner">
-  <div class="ub-icon">🔄</div>
+  <div class="ub-icon" id="ubIcon">🔄</div>
   <div class="ub-text">
     <strong id="ubTitle">Update Available</strong>
     <span id="ubDesc">A new version of Storm Surge is ready</span>
+    <div class="ub-progress" id="ubProgress"><div class="ub-progress-fill" id="ubProgressFill" style="width:0%"></div></div>
   </div>
-  <button class="ub-btn" id="ubDownload">Download</button>
-  <button class="ub-dismiss" id="ubDismiss" title="Dismiss">✕</button>
+  <button class="ub-btn" id="ubAction">Download</button>
+  <button class="ub-dismiss" id="ubDismiss">✕</button>
 </div>
 
 <!-- ANIMATED BACKGROUND -->
@@ -119,17 +108,15 @@
     <div class="logo-mark">⛈</div>
     <div class="logo-text">
       <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v13.1</span>
+      <span class="logo-ver">v13.4</span>
     </div>
-    <button class="sidebar-x" id="sidebarX" aria-label="Close sidebar">✕</button>
+    <button class="sidebar-x" id="sidebarX">✕</button>
   </div>
-
   <div class="sidebar-loc">
     <div class="sl-label">CURRENT LOCATION</div>
     <div class="sl-name" id="sideLocName">—</div>
     <div class="sl-coords" id="sideLocCoords">—</div>
   </div>
-
   <div class="sidebar-snap" id="sideSnap">
     <div class="snap-temp" id="snapTemp">—°</div>
     <div class="snap-right">
@@ -141,7 +128,6 @@
       </div>
     </div>
   </div>
-
   <nav class="sidenav">
     <a href="#" class="sni active" data-p="home"><span class="sni-ico">⌂</span><span class="sni-lbl">Dashboard</span></a>
     <a href="#" class="sni" data-p="alerts"><span class="sni-ico">◈</span><span class="sni-lbl">Alerts<em class="nav-badge" id="navAlertBadge">0</em></span></a>
@@ -150,22 +136,20 @@
     <a href="#" class="sni" data-p="cameras"><span class="sni-ico">📷</span><span class="sni-lbl">Cameras</span></a>
     <a href="#" class="sni" data-p="settings"><span class="sni-ico">⚙</span><span class="sni-lbl">Settings</span></a>
   </nav>
-
   <div class="fav-section">
     <div class="fav-head">
       <span>SAVED LOCATIONS</span>
-      <button class="fav-add" id="favAddBtn" title="Save current location">＋</button>
+      <button class="fav-add" id="favAddBtn">＋</button>
     </div>
     <div class="fav-list" id="favList"></div>
   </div>
-
   <div class="sidebar-bottom">
     <button class="theme-row" id="themeBtn">
       <span id="themeIcon">🌙</span>
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">Storm Surge v13.1 — Open-Meteo · RainViewer · NWS</div>
+    <div class="ver-badge">Storm Surge v13.4 — Open-Meteo · RainViewer · NWS</div>
   </div>
 </aside>
 
@@ -189,10 +173,10 @@
     <div class="tb-right">
       <div class="live-pill"><span class="live-dot"></span>LIVE</div>
       <div class="date-pill" id="datePill">—</div>
-      <button class="tb-btn" id="geoBtn" title="Use my location">◎</button>
-      <button class="tb-btn" id="shareBtn" title="Share weather card">⤴</button>
-      <button class="tb-btn" id="drawBtn" title="Draw on map">✏</button>
-      <button class="tb-btn" id="refreshBtn" title="Refresh data">↻</button>
+      <button class="tb-btn" id="geoBtn">◎</button>
+      <button class="tb-btn" id="shareBtn">⤴</button>
+      <button class="tb-btn" id="drawBtn">✏</button>
+      <button class="tb-btn" id="refreshBtn">↻</button>
     </div>
   </header>
 
@@ -494,7 +478,6 @@
         </div>
       </div>
 
-      <!-- ── v13 OVERLAYS ── -->
       <div class="s-sec">
         <div class="s-sec-title">Live Overlays</div>
         <div class="s-row"><span>⚡ Lightning Strikes</span>
@@ -511,32 +494,34 @@
         </div>
       </div>
 
-      <!-- ── UPDATE SECTION ── -->
+      <!-- ── UPDATES ── -->
       <div class="s-sec">
         <div class="s-sec-title">Updates</div>
         <div class="s-row">
           <span>App Version</span>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7">v13.1.0</span>
-        </div>
-        <div class="s-row">
-          <span>Auto-check for updates</span>
-          <label class="tog"><input type="checkbox" id="sAutoUpdate" checked><span class="tog-t"></span></label>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.4.0</span>
         </div>
         <div class="s-row update-check-row">
-          <span>Check Now</span>
+          <span>Check for updates</span>
           <button class="modal-btn" id="checkUpdateBtn" style="padding:6px 14px;font-size:.8rem">🔄 Check</button>
           <span class="upd-status" id="updStatus">—</span>
         </div>
-        <div class="s-row" id="updDownloadRow" style="display:none">
-          <span id="updLatestLabel">Latest version</span>
-          <button class="modal-btn" id="updDownloadBtn" style="padding:6px 14px;font-size:.8rem;background:#5865f2">⬇ Download Update</button>
+        <div id="updDownloadRow" style="display:none">
+          <div class="s-row">
+            <span id="updLatestLabel">Latest version available</span>
+            <button class="modal-btn" id="updDownloadBtn" style="padding:6px 14px;font-size:.8rem;background:#5865f2">⬇ Download &amp; Install</button>
+          </div>
+          <div class="upd-progress-bar" id="updProgressBar">
+            <div class="upd-progress-fill" id="updProgressFill" style="width:0%"></div>
+          </div>
+          <div style="font-size:.75rem;opacity:.5;margin-top:4px" id="updProgressLabel"></div>
         </div>
       </div>
 
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div><strong>Storm Surge Weather v13.1</strong></div>
+          <div><strong>Storm Surge Weather v13.4</strong></div>
           <div>Radar — RainViewer (free)</div>
           <div>Weather &amp; Forecast — Open-Meteo (free)</div>
           <div>Air Quality — Open-Meteo AQI (free)</div>
@@ -545,7 +530,6 @@
           <div>Storm Reports — NOAA SPC (free)</div>
           <div>Maps — Mapbox GL JS</div>
           <div>Cameras — Hazcams</div>
-          <div>Desktop app — see ELECTRON.md</div>
         </div>
       </div>
     </div>
@@ -577,96 +561,166 @@
 <script src="app.js"></script>
 <script>
 // ================================================================
-//  UPDATE SYSTEM — Discord-style banner + Settings integration
+//  IN-APP UPDATER — electron-updater powered
+//  Falls back to /api/app-version check for browser use
 // ================================================================
-(function() {
-  const CURRENT = '13.1.0';
-  let _releaseUrl = '';
+(function () {
+  // UI refs
+  const banner        = document.getElementById('updateBanner');
+  const ubIcon        = document.getElementById('ubIcon');
+  const ubTitle       = document.getElementById('ubTitle');
+  const ubDesc        = document.getElementById('ubDesc');
+  const ubProgress    = document.getElementById('ubProgress');
+  const ubProgressFill= document.getElementById('ubProgressFill');
+  const ubAction      = document.getElementById('ubAction');
+  const ubDismiss     = document.getElementById('ubDismiss');
+  const statusEl      = document.getElementById('updStatus');
+  const dlRow         = document.getElementById('updDownloadRow');
+  const dlBtn         = document.getElementById('updDownloadBtn');
+  const lblEl         = document.getElementById('updLatestLabel');
+  const progBar       = document.getElementById('updProgressBar');
+  const progFill      = document.getElementById('updProgressFill');
+  const progLabel     = document.getElementById('updProgressLabel');
 
-  async function checkUpdate(silent = true) {
-    const statusEl  = document.getElementById('updStatus');
-    const dlRow     = document.getElementById('updDownloadRow');
-    const dlBtn     = document.getElementById('updDownloadBtn');
-    const lblEl     = document.getElementById('updLatestLabel');
-    const banner    = document.getElementById('updateBanner');
-    const ubTitle   = document.getElementById('ubTitle');
-    const ubDesc    = document.getElementById('ubDesc');
-    const ubDl      = document.getElementById('ubDownload');
+  let _state = 'idle'; // idle | available | downloading | downloaded
 
-    if (statusEl) statusEl.textContent = 'Checking…';
+  function setStatus(text, cls) {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.className = 'upd-status' + (cls ? ' ' + cls : '');
+  }
 
-    try {
-      // If running inside Electron, use IPC; otherwise hit our own API
-      let result;
-      if (window.electronUpdater) {
-        result = await window.electronUpdater.checkUpdate();
-      } else {
-        const r = await fetch('/api/app-version');
-        result = await r.json();
-      }
+  function showBanner(title, desc) {
+    if (sessionStorage.getItem('upd_dismissed')) return;
+    ubTitle.textContent = title;
+    ubDesc.textContent  = desc;
+    banner.classList.add('visible');
+  }
 
-      _releaseUrl = result.releaseUrl || `https://github.com/KingCreeper531/Storm-Surge-Weather/releases`;
+  function hideBanner() { banner.classList.remove('visible'); }
 
-      if (result.hasUpdate) {
-        // Settings panel
-        if (statusEl) {
-          statusEl.innerHTML = `<span class="upd-dot"></span> v${result.latest} available`;
-          statusEl.className = 'upd-status has-update';
-        }
-        if (lblEl)  lblEl.textContent = `Latest: v${result.latest}`;
-        if (dlRow)  dlRow.style.display = '';
-        if (dlBtn)  dlBtn.onclick = () => openRelease(_releaseUrl);
+  // ── State machine ──────────────────────────────────────────────
+  function onAvailable(version, releaseName) {
+    _state = 'available';
+    setStatus('v' + version + ' available', 'has-update');
+    if (lblEl) lblEl.textContent = 'v' + version + ' — ' + (releaseName || 'ready to download');
+    if (dlRow) dlRow.style.display = '';
+    if (dlBtn) { dlBtn.textContent = '⬇ Download & Install'; dlBtn.disabled = false; }
+    showBanner('Update Available — v' + version, releaseName || 'Download and install without leaving the app');
+    ubIcon.textContent = '🔄';
+    ubAction.textContent = 'Download';
+    ubAction.disabled = false;
+    ubAction.onclick = startDownload;
+  }
 
-        // Discord-style banner (only show once per session)
-        if (!sessionStorage.getItem('upd_dismissed')) {
-          if (banner) {
-            ubTitle.textContent = `Update Available — v${result.latest}`;
-            ubDesc.textContent  = result.releaseName || 'A new version of Storm Surge is ready';
-            banner.classList.add('visible');
-            ubDl.onclick = () => openRelease(_releaseUrl);
-          }
-        }
-      } else {
-        if (statusEl) {
-          statusEl.textContent = '✓ Up to date';
-          statusEl.className = 'upd-status up-to-date';
-        }
-        if (dlRow) dlRow.style.display = 'none';
-        if (!silent) showToast('Storm Surge is up to date ✓', 'success');
-      }
-    } catch (e) {
-      if (statusEl) { statusEl.textContent = 'Check failed'; statusEl.className = 'upd-status'; }
+  function onProgress(percent, speed) {
+    _state = 'downloading';
+    const pct = Math.round(percent);
+    const mb  = speed ? (speed / 1024 / 1024).toFixed(1) + ' MB/s' : '';
+    setStatus('Downloading ' + pct + '%…');
+
+    // Banner progress
+    ubAction.textContent = pct + '%';
+    ubAction.disabled = true;
+    ubProgress.style.display = 'block';
+    ubProgressFill.style.width = pct + '%';
+
+    // Settings progress
+    if (progBar)   progBar.style.display = 'block';
+    if (progFill)  progFill.style.width  = pct + '%';
+    if (progLabel) progLabel.textContent = pct + '%' + (mb ? '  ·  ' + mb : '');
+    if (dlBtn)     dlBtn.disabled = true;
+  }
+
+  function onDownloaded(version) {
+    _state = 'downloaded';
+    setStatus('✓ Ready to install', 'up-to-date');
+
+    // Banner → becomes "Restart & Install"
+    ubIcon.textContent = '✅';
+    ubTitle.textContent = 'Ready to Install — v' + version;
+    ubDesc.textContent  = 'Restart the app to apply the update';
+    ubProgress.style.display = 'none';
+    ubAction.textContent = '🔁 Restart & Install';
+    ubAction.disabled = false;
+    ubAction.onclick = installNow;
+    banner.classList.add('visible');
+
+    // Settings button
+    if (dlBtn)   { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.onclick = installNow; }
+    if (progBar)  progBar.style.display = 'none';
+    if (progLabel) progLabel.textContent = 'Download complete — restart to apply';
+  }
+
+  function onUpToDate(version) {
+    setStatus('✓ Up to date' + (version ? ' (v' + version + ')' : ''), 'up-to-date');
+    if (dlRow) dlRow.style.display = 'none';
+  }
+
+  function onError(msg) {
+    setStatus('Update check failed', '');
+    console.warn('Updater error:', msg);
+  }
+
+  function startDownload() {
+    if (window.electronUpdater?.downloadUpdate) {
+      window.electronUpdater.downloadUpdate();
     }
   }
 
-  function openRelease(url) {
-    if (window.electronUpdater) window.electronUpdater.openRelease(url);
-    else window.open(url, '_blank', 'noopener');
+  function installNow() {
+    if (window.electronUpdater?.installUpdate) {
+      window.electronUpdater.installUpdate();
+    }
   }
 
-  function showToast(msg, type) {
-    const t = document.getElementById('toast');
-    if (!t) return;
-    t.textContent = msg;
-    t.className = 'toast show' + (type ? ' ' + type : '');
-    setTimeout(() => t.className = 'toast', 3200);
+  // ── Electron path (real auto-updater) ─────────────────────────
+  if (window.electronUpdater?.onUpdaterEvent) {
+    window.electronUpdater.onUpdaterEvent((data) => {
+      switch (data.event) {
+        case 'checking':   setStatus('Checking…'); break;
+        case 'available':  onAvailable(data.version, data.releaseName); break;
+        case 'progress':   onProgress(data.percent, data.speed); break;
+        case 'downloaded': onDownloaded(data.version); break;
+        case 'up-to-date': onUpToDate(data.version); break;
+        case 'error':      onError(data.message); break;
+      }
+    });
+
+    // Manual check button
+    document.getElementById('checkUpdateBtn')?.addEventListener('click', () => {
+      setStatus('Checking…');
+      window.electronUpdater.checkUpdate();
+    });
+
+  } else {
+    // ── Browser fallback (no Electron) ────────────────────────
+    async function browserCheck(silent) {
+      setStatus('Checking…');
+      try {
+        const r = await fetch('/api/app-version');
+        const d = await r.json();
+        if (d.hasUpdate) {
+          onAvailable(d.latest, d.releaseName);
+          // In browser mode download = open GitHub release page
+          ubAction.onclick = () => window.open(d.releaseUrl, '_blank');
+          if (dlBtn) dlBtn.onclick = () => window.open(d.releaseUrl, '_blank');
+        } else {
+          onUpToDate(d.current);
+          if (!silent) alert('Storm Surge is up to date ✓');
+        }
+      } catch { onError('Network error'); }
+    }
+    document.getElementById('checkUpdateBtn')?.addEventListener('click', () => browserCheck(false));
+    setTimeout(() => browserCheck(true), 4000);
+    setInterval(() => browserCheck(true), 30 * 60 * 1000);
   }
 
   // Dismiss banner
-  document.getElementById('ubDismiss').addEventListener('click', () => {
-    const banner = document.getElementById('updateBanner');
-    if (banner) banner.classList.remove('visible');
+  ubDismiss.addEventListener('click', () => {
+    hideBanner();
     sessionStorage.setItem('upd_dismissed', '1');
   });
-
-  // Settings "Check Now" button
-  document.getElementById('checkUpdateBtn').addEventListener('click', () => checkUpdate(false));
-
-  // Auto-check on load (after 4s so the app loads first)
-  setTimeout(() => checkUpdate(true), 4000);
-
-  // Re-check every 30 minutes
-  setInterval(() => checkUpdate(true), 30 * 60 * 1000);
 })();
 </script>
 </body>
