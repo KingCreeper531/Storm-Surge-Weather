@@ -78,7 +78,7 @@
     <div class="logo-mark">⛈</div>
     <div class="logo-text">
       <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v13.5</span>
+      <span class="logo-ver">v13.6</span>
     </div>
     <button class="sidebar-x" id="sidebarX">✕</button>
   </div>
@@ -119,7 +119,7 @@
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">Storm Surge v13.5 — Open-Meteo · RainViewer · NWS</div>
+    <div class="ver-badge">Storm Surge v13.6 — Open-Meteo · RainViewer · NWS</div>
   </div>
 </aside>
 
@@ -288,7 +288,7 @@
   </div>
 </aside>
 
-<!-- MODALS (unchanged structure) -->
+<!-- MODALS -->
 <div class="modal" id="alertModal" role="dialog" aria-modal="true">
   <div class="mbox large">
     <div class="mbox-head"><div class="mbox-title" id="mTitle">Alert</div><button class="mbox-x" id="mClose">✕</button></div>
@@ -358,12 +358,12 @@
         <div class="s-row"><span>🔔 Audio Alerts</span><label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label></div>
       </div>
 
-      <!-- ── UPDATES ── -->
+      <!-- UPDATES -->
       <div class="s-sec">
         <div class="s-sec-title">Updates</div>
         <div class="s-row">
           <span>App Version</span>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.5.0</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.6.0</span>
         </div>
         <div class="s-row update-check-row">
           <span>Check for updates</span>
@@ -385,7 +385,7 @@
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div><strong>Storm Surge Weather v13.5</strong></div>
+          <div><strong>Storm Surge Weather v13.6</strong></div>
           <div>Radar — RainViewer · Weather — Open-Meteo · Alerts — NWS</div>
           <div>AQI — Open-Meteo · Marine — Open-Meteo · Maps — Mapbox</div>
           <div>Storm Reports — NOAA SPC · Cameras — Hazcams</div>
@@ -411,14 +411,14 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading…</div></div>
 
+<!-- SCRIPTS: token → radar animator → app -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
+<script src="radar.js"></script>
 <script src="app.js"></script>
 <script>
 // ================================================================
-//  IN-APP UPDATER v13.5
-//  Electron: downloads installer to temp, runs it, quits → auto-replaces app
-//  Browser:  shows GitHub release link
+//  IN-APP UPDATER v13.6
 // ================================================================
 (function () {
   const $ = id => document.getElementById(id);
@@ -438,27 +438,21 @@
   const progFill     = $('updProgressFill');
   const progLabel    = $('updProgressLabel');
 
-  // Asset info passed through from main process
-  let _asset = null;        // { assetUrl, assetName, assetSize }
+  let _asset = null;
   let _installerPath = null;
-  let _state = 'idle';
 
   function setStatus(text, cls) {
     if (!statusEl) return;
     statusEl.textContent = text;
     statusEl.className = 'upd-status' + (cls ? ' ' + cls : '');
   }
-
   function showBanner(title, desc) {
     if (sessionStorage.getItem('upd_dismissed')) return;
     ubTitle.textContent = title;
     ubDesc.textContent  = desc;
     banner.classList.add('visible');
   }
-
-  // ── State handlers ────────────────────────────────────────────
   function onAvailable(data) {
-    _state = 'available';
     _asset = { assetUrl: data.assetUrl, assetName: data.assetName, assetSize: data.assetSize };
     setStatus('v' + data.version + ' available', 'has-update');
     if (lblEl) lblEl.textContent = 'v' + data.version + (data.releaseName ? ' — ' + data.releaseName : '');
@@ -470,70 +464,49 @@
     ubAction.onclick = startDownload;
     showBanner('Update Available — v' + data.version, data.releaseName || 'Click to download and install in-app');
   }
-
   function onProgress(data) {
-    _state = 'downloading';
     const pct = Math.round(data.percent || 0);
     const mb  = data.speed ? (data.speed / 1024 / 1024).toFixed(1) + ' MB/s' : '';
     setStatus('Downloading ' + pct + '%…');
-    // Banner
-    ubAction.textContent = pct + '%';
-    ubAction.disabled = true;
-    ubProgress.style.display = 'block';
-    ubProgFill.style.width = pct + '%';
-    // Settings panel
+    ubAction.textContent = pct + '%'; ubAction.disabled = true;
+    ubProgress.style.display = 'block'; ubProgFill.style.width = pct + '%';
     if (progBar)   progBar.style.display = 'block';
     if (progFill)  progFill.style.width  = pct + '%';
     if (progLabel) progLabel.textContent = pct + '%' + (mb ? '  ·  ' + mb : '');
     if (dlBtn)     dlBtn.disabled = true;
   }
-
   function onDownloaded(data) {
-    _state = 'downloaded';
     _installerPath = data.path;
     setStatus('✓ Ready — click to restart', 'up-to-date');
-    // Banner becomes "Restart & Install"
-    ubIcon.textContent = '✅';
-    ubTitle.textContent = 'Ready to Install';
+    ubIcon.textContent = '✅'; ubTitle.textContent = 'Ready to Install';
     ubDesc.textContent  = 'The app will restart and update automatically';
     ubProgress.style.display = 'none';
-    ubAction.textContent = '🔁 Restart & Install';
-    ubAction.disabled = false;
-    ubAction.onclick = installNow;
+    ubAction.textContent = '🔁 Restart & Install'; ubAction.disabled = false; ubAction.onclick = installNow;
     banner.classList.add('visible');
-    // Settings button
-    if (dlBtn)     { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.onclick = installNow; }
-    if (progBar)    progBar.style.display = 'none';
-    if (progLabel)  progLabel.textContent = 'Download complete';
+    if (dlBtn)    { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.onclick = installNow; }
+    if (progBar)   progBar.style.display = 'none';
+    if (progLabel) progLabel.textContent = 'Download complete';
   }
-
   function onUpToDate(data) {
     setStatus('✓ Up to date (v' + (data.version || '') + ')', 'up-to-date');
     if (dlRow) dlRow.style.display = 'none';
   }
-
   function onError(data) {
     setStatus('Check failed', '');
     console.warn('Updater error:', data.message);
   }
-
-  // ── Actions ───────────────────────────────────────────────────
   function startDownload() {
     if (!_asset?.assetUrl) return;
     setStatus('Starting download…');
     if (dlBtn) dlBtn.disabled = true;
     window.electronUpdater.downloadUpdate(_asset);
   }
-
   function installNow() {
-    if (_installerPath && window.electronUpdater?.installUpdate) {
+    if (_installerPath && window.electronUpdater?.installUpdate)
       window.electronUpdater.installUpdate({ installerPath: _installerPath });
-    }
   }
 
-  // ── Wire up ───────────────────────────────────────────────────
   if (window.electronUpdater?.onUpdaterEvent) {
-    // Real Electron — receive push events from main process
     window.electronUpdater.onUpdaterEvent((data) => {
       switch (data.event) {
         case 'checking':   setStatus('Checking…'); break;
@@ -544,29 +517,23 @@
         case 'error':      onError(data); break;
       }
     });
-
     $('checkUpdateBtn')?.addEventListener('click', () => {
       setStatus('Checking…');
       window.electronUpdater.checkUpdate();
     });
-
-    // Auto-check fires from main process 10s after launch
   } else {
-    // Browser fallback — just links to GitHub releases
     async function browserCheck(silent) {
       setStatus('Checking…');
       try {
         const r = await fetch('/api/app-version');
         const d = await r.json();
         if (d.hasUpdate) {
-          _state = 'available';
           setStatus('v' + d.latest + ' available', 'has-update');
           if (lblEl) lblEl.textContent = 'v' + d.latest;
           if (dlRow) dlRow.style.display = '';
           const go = () => window.open(d.releaseUrl, '_blank', 'noopener');
           if (dlBtn) { dlBtn.textContent = '⬇ Open GitHub Release'; dlBtn.disabled = false; dlBtn.onclick = go; }
-          ubAction.textContent = 'View Release';
-          ubAction.onclick = go;
+          ubAction.textContent = 'View Release'; ubAction.onclick = go;
           showBanner('Update Available — v' + d.latest, d.releaseName || '');
         } else {
           onUpToDate({ version: d.current });
