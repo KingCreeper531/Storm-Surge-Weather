@@ -1,6 +1,6 @@
 {
   "name": "storm-surge-weather",
-  "version": "13.2.0",
+  "version": "13.3.0",
   "description": "Storm Surge Weather — Professional weather app",
   "main": "electron-main.js",
   "scripts": {
@@ -31,8 +31,18 @@
       "electron-preload.js",
       "node_modules/**"
     ],
-    "win": { "target": "nsis", "icon": "public/favicon.ico" },
+    "win": {
+      "target": "nsis",
+      "icon": "public/favicon.ico"
+    },
     "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "linux": { "target": "AppImage" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Storm Surge Weather"
+    }
   }
 }
