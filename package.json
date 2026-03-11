@@ -1,6 +1,6 @@
 {
   "name": "storm-surge-weather",
-  "version": "13.5.0",
+  "version": "13.6.0",
   "description": "Storm Surge Weather — Professional weather app",
   "main": "electron-main.js",
   "scripts": {
