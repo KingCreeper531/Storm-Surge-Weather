@@ -82,6 +82,10 @@
     .ri-actions{display:flex;gap:8px;padding:8px 12px}
     .ri-btn{flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t2,#94a3b8);border-radius:8px;font-size:.78rem;cursor:pointer;transition:background .18s}
     .ri-btn:hover{background:rgba(255,255,255,.12)}
+
+    /* ── Spotter popup ── */
+    .spotter-popup .mapboxgl-popup-content{background:var(--bg2,#1a1f2e);border:1px solid var(--bdr,rgba(255,255,255,.12));border-radius:10px;padding:12px 14px;color:var(--t1,#f1f5f9);font-family:'Outfit',sans-serif;font-size:.82rem;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+    .spotter-popup .mapboxgl-popup-tip{border-top-color:var(--bg2,#1a1f2e)}
   </style>
 </head>
 <body>
@@ -111,7 +115,7 @@
     <div class="logo-mark">⛈</div>
     <div class="logo-text">
       <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v13.7</span>
+      <span class="logo-ver">v13.8</span>
     </div>
     <button class="sidebar-x" id="sidebarX">✕</button>
   </div>
@@ -152,7 +156,7 @@
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">Storm Surge v13.7 — Open-Meteo · RainViewer · NWS · NEXRAD</div>
+    <div class="ver-badge">Storm Surge v13.8 — Open-Meteo · RainViewer · NWS · NEXRAD · mPing · Claude AI</div>
   </div>
 </aside>
 
@@ -192,6 +196,8 @@
     <div class="lb-sep"></div>
     <button class="lb lb-sat" data-layer="satellite">🛰 Satellite</button>
     <button class="lb lb-nexrad" id="nexradBtn" onclick="if(window.NexradPanel)NexradPanel.toggle()">📡 NEXRAD</button>
+    <button class="lb lb-spotter" id="spotterBtn">🌐 Spotter</button>
+    <button class="lb lb-severe" id="severeBtn">⚡ Severe</button>
     <button class="style-btn" id="styleBtn">◑ Style</button>
   </div>
 
@@ -392,8 +398,13 @@
         <div class="s-row"><span>🔔 Audio Alerts</span><label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label></div>
       </div>
       <div class="s-sec">
+        <div class="s-sec-title">AI Assistant</div>
+        <div class="s-row"><span>⚡ Storm Surge AI Panel</span><label class="tog"><input type="checkbox" id="sAIPanel" checked><span class="tog-t"></span></label></div>
+        <div style="font-size:.75rem;color:var(--t3);padding:4px 0 8px">Requires <code>ANTHROPIC_API_KEY</code> in your <code>.env</code> file.</div>
+      </div>
+      <div class="s-sec">
         <div class="s-sec-title">Updates</div>
-        <div class="s-row"><span>App Version</span><span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.7.0</span></div>
+        <div class="s-row"><span>App Version</span><span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.8.0</span></div>
         <div class="s-row update-check-row">
           <span>Check for updates</span>
           <button class="modal-btn" id="checkUpdateBtn" style="padding:6px 14px;font-size:.8rem">🔄 Check</button>
@@ -409,10 +420,11 @@
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div><strong>Storm Surge Weather v13.7</strong></div>
+          <div><strong>Storm Surge Weather v13.8</strong></div>
           <div>Radar — RainViewer + NEXRAD/IEM · Weather — Open-Meteo</div>
           <div>Alerts — NWS · AQI — Open-Meteo · Marine — Open-Meteo</div>
           <div>Maps — Mapbox · Storm Reports — NOAA SPC · Cams — Hazcams</div>
+          <div>Spotter Network — mPing (NSSL) + SPC LSR · AI — Anthropic Claude</div>
         </div>
       </div>
     </div>
@@ -435,30 +447,34 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading…</div></div>
 
-<!-- SCRIPTS: token → radar → nexrad → nexrad-panel → app -->
+<!--
+  SCRIPT LOAD ORDER — token MUST come before mapboxgl is used.
+  mapboxgl.js sets window.mapboxgl, then token.js sets MAPBOX_TOKEN,
+  then app.js calls mapboxgl.accessToken = MAPBOX_TOKEN inside initMap().
+  All new modules (spotter, severe-panel, ai-panel) load before app.js.
+-->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
 <script src="radar.js"></script>
 <script src="nexrad.js"></script>
 <script src="nexrad-panel.js"></script>
+<script src="spotter.js"></script>
+<script src="severe-panel.js"></script>
+<script src="ai-panel.js"></script>
 <script src="app.js"></script>
 <script>
 // ================================================================
-//  IN-APP UPDATER v13.7  (Discord-style: silent DL → green button)
+//  IN-APP UPDATER v13.8  (Discord-style: silent DL → green button)
 // ================================================================
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
   const banner     = $('updateBanner');
-  const ubIcon     = $('ubIcon'),  ubTitle  = $('ubTitle'),   ubDesc    = $('ubDesc');
-  const ubProgress = $('ubProgress'), ubProgFill = $('ubProgressFill');
-  const ubAction   = $('ubAction'),ubDismiss = $('ubDismiss');
-  const statusEl   = $('updStatus'),dlRow    = $('updDownloadRow'), dlBtn = $('updDownloadBtn');
-  const lblEl      = $('updLatestLabel'),progBar = $('updProgressBar');
-  const progFill   = $('updProgressFill'),progLabel = $('updProgressLabel');
-  const noAssetEl  = $('updNoAsset'),noAssetVer = $('updNoAssetVer');
-
-  let _installerPath = null;
+  const ubTitle    = $('ubTitle'), ubDesc  = $('ubDesc');
+  const ubAction   = $('ubAction'), ubDismiss = $('ubDismiss');
+  const statusEl   = $('updStatus'), dlRow = $('updDownloadRow'), dlBtn = $('updDownloadBtn');
+  const lblEl      = $('updLatestLabel');
+  const noAssetEl  = $('updNoAsset'), noAssetVer = $('updNoAssetVer');
 
   function setStatus(text, cls) {
     if (!statusEl) return;
@@ -478,7 +494,6 @@
   function dispatch(data) {
     switch (data.event) {
       case 'checking': setStatus('Checking…'); break;
-
       case 'available':
         if (data.assetUrl !== undefined) {
           setStatus('v' + data.version + ' — downloading…', 'has-update');
@@ -491,28 +506,21 @@
           if (noAssetEl) { noAssetEl.style.display = ''; if (noAssetVer) noAssetVer.textContent = 'v' + data.version; }
         }
         break;
-
       case 'downloading':
-        setStatus('Downloading ' + (data.percent || 0) + '%…', 'has-update');
-        break;
-
+        setStatus('Downloading ' + (data.percent || 0) + '%…', 'has-update'); break;
       case 'ready':
         setStatus('✓ Update ready', 'up-to-date');
-        if (dlRow) { dlRow.style.display = ''; }
+        if (dlRow) dlRow.style.display = '';
         if (dlBtn) { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.style.display = ''; dlBtn.onclick = installNow; }
         showBanner('🟢 Update Ready', 'Click to restart and install in seconds', '🔁 Restart & Install', installNow);
         break;
-
       case 'up-to-date':
         setStatus('✓ Up to date (v' + (data.version || '') + ')', 'up-to-date');
         if (dlRow) dlRow.style.display = 'none';
         break;
-
       case 'error':
         setStatus('⚠ Check failed', '');
-        console.warn('[Updater]', data.message);
-        break;
-
+        console.warn('[Updater]', data.message); break;
       case 'no-asset':
         setStatus('v' + data.version + ' — no installer attached', 'upd-warn');
         if (dlRow) dlRow.style.display = '';
