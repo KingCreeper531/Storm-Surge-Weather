@@ -31,11 +31,35 @@ function applyAutoLaunch(on) {
 }
 
 // ── Inline Express server ─────────────────────────────────────────
-process.env.PORT = process.env.PORT || '3001';
+const SERVER_PORT = process.env.PORT || '3001';
+process.env.PORT  = SERVER_PORT;
 require('./server.js');
 
+// Poll until the Express server is actually accepting connections,
+// then resolve — prevents loadURL racing the server startup.
+function waitForServer(port, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const start    = Date.now();
+    const interval = 150;
+    function attempt() {
+      const req = http.get(`http://localhost:${port}/api/health`, (res) => {
+        res.resume();
+        if (res.statusCode === 200) return resolve();
+        retry();
+      });
+      req.on('error', retry);
+      req.setTimeout(500, () => { req.destroy(); retry(); });
+      function retry() {
+        if (Date.now() - start > timeout) return reject(new Error('Server did not start in time'));
+        setTimeout(attempt, interval);
+      }
+    }
+    attempt();
+  });
+}
+
 // ── Updater state ─────────────────────────────────────────────────
-let _readyInstallerPath = null;  // set when download is complete
+let _readyInstallerPath = null;
 let _downloading        = false;
 
 function sendToRenderer(event, data) {
@@ -43,7 +67,6 @@ function sendToRenderer(event, data) {
     win.webContents.send('updater-event', { event, ...(data || {}) });
 }
 
-// Follow redirects
 function fetchFollow(url, cb) {
   const mod = url.startsWith('https') ? https : http;
   mod.get(url, { headers: { 'User-Agent': 'StormSurge-Updater' } }, (res) => {
@@ -87,18 +110,16 @@ async function checkForUpdate() {
   });
 }
 
-// Silent background download — no UI feedback until complete
 function downloadSilently(assetUrl, assetName, assetSize) {
   if (_downloading) return;
   _downloading = true;
 
   const outPath = path.join(app.getPath('temp'), assetName || 'StormSurgeSetup.exe');
 
-  // If already downloaded (e.g. app restarted before install), reuse it
   if (fs.existsSync(outPath)) {
     _readyInstallerPath = outPath;
     _downloading = false;
-    sendToRenderer('ready');   // show green button immediately
+    sendToRenderer('ready');
     updateTrayMenu();
     return;
   }
@@ -113,27 +134,21 @@ function downloadSilently(assetUrl, assetName, assetSize) {
       try { fs.unlinkSync(outPath); } catch {}
       return;
     }
-
     const total = assetSize || parseInt(res.headers['content-length'] || '0', 10);
-
     res.on('data', chunk => {
       downloaded += chunk.length;
       file.write(chunk);
-      // Send silent progress (renderer can show a tiny indicator if wanted)
       if (total > 0)
         sendToRenderer('downloading', { percent: Math.round(downloaded / total * 100) });
     });
-
     res.on('end', () => {
       file.end(() => {
         _readyInstallerPath = outPath;
         _downloading = false;
-        // THE moment — tell renderer to show the green button
         sendToRenderer('ready');
         updateTrayMenu();
       });
     });
-
     res.on('error', () => {
       _downloading = false;
       file.close();
@@ -187,7 +202,6 @@ ipcMain.handle('check-update', async () => {
   return info;
 });
 
-// Renderer hits this when user clicks the green button
 ipcMain.handle('install-now', () => launchAndQuit());
 
 ipcMain.handle('get-settings',  ()     => settings);
@@ -213,10 +227,9 @@ function createWindow() {
       preload: path.join(__dirname, 'electron-preload.js')
     }
   });
-  win.loadURL('http://localhost:3001');
+  win.loadURL(`http://localhost:${SERVER_PORT}`);
   win.once('ready-to-show', () => {
     if (!settings.startMinimized) win.show();
-    // If update was already downloaded before window opened, tell it immediately
     if (_readyInstallerPath) sendToRenderer('ready');
   });
   win.on('close', (e) => { if (settings.minimizeToTray) { e.preventDefault(); win.hide(); } });
@@ -238,33 +251,42 @@ function createTray() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   applyAutoLaunch(settings.autoLaunch);
-  setTimeout(() => {
-    createTray();
-    if (!process.argv.includes('--hidden') && !settings.startMinimized) createWindow();
 
-    // Auto-check 8s after launch, silently download if available
-    setTimeout(async () => {
-      const info = await checkForUpdate();
-      if (info.hasUpdate && info.assetUrl) {
-        sendToRenderer('available', { version: info.latest, releaseName: info.releaseName });
-        downloadSilently(info.assetUrl, info.assetName, info.assetSize);
-      } else if (!info.hasUpdate) {
-        sendToRenderer('up-to-date', { version: info.current });
-      }
-    }, 8000);
+  createTray();
 
-    // Re-check every 2 hours
-    setInterval(async () => {
-      if (_readyInstallerPath) return;  // already have one ready
-      const info = await checkForUpdate();
-      if (info.hasUpdate && info.assetUrl) {
-        sendToRenderer('available', { version: info.latest });
-        downloadSilently(info.assetUrl, info.assetName, info.assetSize);
-      }
-    }, 2 * 60 * 60 * 1000);
-  }, 1000);
+  // Wait for Express to be ready before opening the window
+  try {
+    await waitForServer(SERVER_PORT);
+  } catch (e) {
+    console.error('Server failed to start:', e.message);
+  }
+
+  if (!process.argv.includes('--hidden') && !settings.startMinimized) {
+    createWindow();
+  }
+
+  // Auto-check for updates 8s after launch
+  setTimeout(async () => {
+    const info = await checkForUpdate();
+    if (info.hasUpdate && info.assetUrl) {
+      sendToRenderer('available', { version: info.latest, releaseName: info.releaseName });
+      downloadSilently(info.assetUrl, info.assetName, info.assetSize);
+    } else if (!info.hasUpdate) {
+      sendToRenderer('up-to-date', { version: info.current });
+    }
+  }, 8000);
+
+  // Re-check every 2 hours
+  setInterval(async () => {
+    if (_readyInstallerPath) return;
+    const info = await checkForUpdate();
+    if (info.hasUpdate && info.assetUrl) {
+      sendToRenderer('available', { version: info.latest });
+      downloadSilently(info.assetUrl, info.assetName, info.assetSize);
+    }
+  }, 2 * 60 * 60 * 1000);
 });
 
 app.on('second-instance', () => {
