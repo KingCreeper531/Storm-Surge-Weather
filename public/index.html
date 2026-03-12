@@ -62,11 +62,6 @@
     .nx-prod-btn{padding:5px 10px;border-radius:7px;border:1px solid var(--bdr,rgba(255,255,255,.1));background:transparent;color:var(--t2,#94a3b8);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .18s;font-family:'Outfit',sans-serif}
     .nx-prod-btn:hover{border-color:rgba(6,182,212,.4);color:#06b6d4}
     .nx-prod-btn.active{background:rgba(6,182,212,.18);border-color:#06b6d4;color:#06b6d4}
-    .nx-prod-btn[data-vel].active {background:rgba(168,85,247,.18);border-color:#a855f7;color:#a855f7}
-    .nx-prod-btn[data-cc].active  {background:rgba(245,158,11,.18);border-color:#f59e0b;color:#f59e0b}
-    .nx-prod-btn[data-zdr].active {background:rgba(34,197,94,.18);border-color:#22c55e;color:#22c55e}
-    .nx-prod-btn[data-eet].active {background:rgba(249,115,22,.18);border-color:#f97316;color:#f97316}
-    .nx-prod-btn[data-accum].active{background:rgba(59,130,246,.18);border-color:#3b82f6;color:#3b82f6}
     .nx-vis-row{display:flex;align-items:center;justify-content:space-between;padding:0 14px 8px}
     .nx-vis-label{font-size:.78rem;color:var(--t3,#9ca3af)}
     .nx-tog{display:flex;align-items:center;gap:6px}
@@ -83,9 +78,9 @@
     .ri-btn{flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t2,#94a3b8);border-radius:8px;font-size:.78rem;cursor:pointer;transition:background .18s}
     .ri-btn:hover{background:rgba(255,255,255,.12)}
 
-    /* ── Spotter popup ── */
-    .spotter-popup .mapboxgl-popup-content{background:var(--bg2,#1a1f2e);border:1px solid var(--bdr,rgba(255,255,255,.12));border-radius:10px;padding:12px 14px;color:var(--t1,#f1f5f9);font-family:'Outfit',sans-serif;font-size:.82rem;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
-    .spotter-popup .mapboxgl-popup-tip{border-top-color:var(--bg2,#1a1f2e)}
+    /* ── Spotter popup dark theme override ── */
+    .mapboxgl-popup-content.spotter-popup{background:var(--bg2,#1a1f2e);color:var(--t1,#f1f5f9);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 14px;font-family:'Outfit',sans-serif;font-size:.82rem;min-width:180px;max-width:260px}
+    .mapboxgl-popup-tip{border-top-color:var(--bg2,#1a1f2e)!important}
   </style>
 </head>
 <body>
@@ -156,7 +151,7 @@
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">Storm Surge v13.8 — Open-Meteo · RainViewer · NWS · NEXRAD · mPing · Claude AI</div>
+    <div class="ver-badge">Storm Surge v13.8 — Open-Meteo · RainViewer · NWS · NEXRAD · AI</div>
   </div>
 </aside>
 
@@ -391,16 +386,16 @@
         <div class="s-row"><span>Card Style</span><div class="seg" id="sCardStyle"><button class="sb active" data-v="full">Full</button><button class="sb" data-v="compact">Compact</button><button class="sb" data-v="minimal">Minimal</button></div></div>
       </div>
       <div class="s-sec">
+        <div class="s-sec-title">AI Assistant</div>
+        <div class="s-row"><span>⚡ Storm Surge AI Panel</span><label class="tog"><input type="checkbox" id="sAIPanel" checked><span class="tog-t"></span></label></div>
+        <div style="font-size:.75rem;color:var(--t3);padding:4px 0 0">Requires <code>ANTHROPIC_API_KEY</code> in your <code>.env</code> file.</div>
+      </div>
+      <div class="s-sec">
         <div class="s-sec-title">Live Overlays</div>
         <div class="s-row"><span>⚡ Lightning Strikes</span><label class="tog"><input type="checkbox" id="sLightning" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>🌀 Storm Cell Tracking</span><label class="tog"><input type="checkbox" id="sStormCells" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>🌪 Mesoscale Discussions</span><label class="tog"><input type="checkbox" id="sMCD" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>🔔 Audio Alerts</span><label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label></div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">AI Assistant</div>
-        <div class="s-row"><span>⚡ Storm Surge AI Panel</span><label class="tog"><input type="checkbox" id="sAIPanel" checked><span class="tog-t"></span></label></div>
-        <div style="font-size:.75rem;color:var(--t3);padding:4px 0 8px">Requires <code>ANTHROPIC_API_KEY</code> in your <code>.env</code> file.</div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">Updates</div>
@@ -423,8 +418,8 @@
           <div><strong>Storm Surge Weather v13.8</strong></div>
           <div>Radar — RainViewer + NEXRAD/IEM · Weather — Open-Meteo</div>
           <div>Alerts — NWS · AQI — Open-Meteo · Marine — Open-Meteo</div>
+          <div>Spotter — mPing (NSSL) + SPC LSR · AI — Anthropic Claude</div>
           <div>Maps — Mapbox · Storm Reports — NOAA SPC · Cams — Hazcams</div>
-          <div>Spotter Network — mPing (NSSL) + SPC LSR · AI — Anthropic Claude</div>
         </div>
       </div>
     </div>
@@ -447,12 +442,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading…</div></div>
 
-<!--
-  SCRIPT LOAD ORDER — token MUST come before mapboxgl is used.
-  mapboxgl.js sets window.mapboxgl, then token.js sets MAPBOX_TOKEN,
-  then app.js calls mapboxgl.accessToken = MAPBOX_TOKEN inside initMap().
-  All new modules (spotter, severe-panel, ai-panel) load before app.js.
--->
+<!-- SCRIPTS: token → radar → nexrad → nexrad-panel → spotter → severe-panel → ai-panel → app -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
 <script src="radar.js"></script>
@@ -470,11 +460,13 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const banner     = $('updateBanner');
-  const ubTitle    = $('ubTitle'), ubDesc  = $('ubDesc');
-  const ubAction   = $('ubAction'), ubDismiss = $('ubDismiss');
-  const statusEl   = $('updStatus'), dlRow = $('updDownloadRow'), dlBtn = $('updDownloadBtn');
-  const lblEl      = $('updLatestLabel');
-  const noAssetEl  = $('updNoAsset'), noAssetVer = $('updNoAssetVer');
+  const ubIcon     = $('ubIcon'),  ubTitle  = $('ubTitle'),   ubDesc    = $('ubDesc');
+  const ubProgress = $('ubProgress'), ubProgFill = $('ubProgressFill');
+  const ubAction   = $('ubAction'),ubDismiss = $('ubDismiss');
+  const statusEl   = $('updStatus'),dlRow    = $('updDownloadRow'), dlBtn = $('updDownloadBtn');
+  const lblEl      = $('updLatestLabel'),progBar = $('updProgressBar');
+  const progFill   = $('updProgressFill'),progLabel = $('updProgressLabel');
+  const noAssetEl  = $('updNoAsset'),noAssetVer = $('updNoAssetVer');
 
   function setStatus(text, cls) {
     if (!statusEl) return;
@@ -507,10 +499,11 @@
         }
         break;
       case 'downloading':
-        setStatus('Downloading ' + (data.percent || 0) + '%…', 'has-update'); break;
+        setStatus('Downloading ' + (data.percent || 0) + '%…', 'has-update');
+        break;
       case 'ready':
         setStatus('✓ Update ready', 'up-to-date');
-        if (dlRow) dlRow.style.display = '';
+        if (dlRow) { dlRow.style.display = ''; }
         if (dlBtn) { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.style.display = ''; dlBtn.onclick = installNow; }
         showBanner('🟢 Update Ready', 'Click to restart and install in seconds', '🔁 Restart & Install', installNow);
         break;
@@ -520,7 +513,8 @@
         break;
       case 'error':
         setStatus('⚠ Check failed', '');
-        console.warn('[Updater]', data.message); break;
+        console.warn('[Updater]', data.message);
+        break;
       case 'no-asset':
         setStatus('v' + data.version + ' — no installer attached', 'upd-warn');
         if (dlRow) dlRow.style.display = '';

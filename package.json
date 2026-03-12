@@ -1,7 +1,7 @@
 {
   "name": "storm-surge-weather",
-  "version": "13.7.0",
-  "description": "Storm Surge Weather — Electron desktop app with NEXRAD radar",
+  "version": "13.8.0",
+  "description": "Storm Surge Weather — Electron desktop app with NEXRAD radar, AI assistant, Spotter Network",
   "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
