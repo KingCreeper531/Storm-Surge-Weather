@@ -1,6 +1,7 @@
 // ================================================================
-//  STORM SURGE WEATHER v13.7
-//  + NEXRAD single-site radar (NexradRadar + NexradPanel)
+//  STORM SURGE WEATHER v13.8
+//  + AI assistant (Claude) · Spotter Network (mPing+SPC)
+//  + Severe analysis panel · NEXRAD single-site
 // ================================================================
 
 // ── STATE ─────────────────────────────────────────────────────────
@@ -12,7 +13,7 @@ const S = {
   frames: [], nowcastFrames: [], frame: 0, playing: false,
   showingNowcast: false,
   alerts: [], weather: null, aqi: null, marine: null,
-  stormReports: [],
+  stormReports: [], severeData: null, spotterReports: [],
   fcMode: 'hourly', mapStyle: 'dark', rightTab: 'alerts',
   alertFilter: 'all', alertQuery: '',
   favorites: [],
@@ -22,13 +23,13 @@ const S = {
     nowcast: true, alertZones: true, crosshair: true,
     cardPosition: 'top-left', cardStyle: 'full',
     radarColor: '6', clickAction: 'nws',
-    theme: 'dark', animBg: true
+    theme: 'dark', animBg: true, aiPanel: true,
+    lightning: true, stormCells: true, mcd: true, audio: false
   }
 };
 
 const API = (window.SS_API_URL || window.location.origin || '').replace(/\/$/, '');
 
-// ── Map styles ───────────────────────────────────────────────────
 const MAP_STYLES = {
   dark:      'mapbox://styles/mapbox/navigation-night-v1',
   satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
@@ -38,7 +39,7 @@ const MAP_STYLES = {
 };
 const STYLE_ORDER = ['dark','satellite','outdoors','light','streets'];
 
-// ── BOOT ────────────────────────────────────────────────────────────
+// ── BOOT ─────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
   loadCfg();
   loadFavorites();
@@ -49,9 +50,10 @@ window.addEventListener('load', () => {
   updateDate();
   setInterval(updateDate, 30000);
   setInterval(() => { loadWeather(); loadAlerts(); }, 600000);
+  setInterval(() => { if (window.SpotterNetwork?.isVisible()) SpotterNetwork.refresh(S.lat, S.lng); }, 300000);
 });
 
-// ── UTILS ──────────────────────────────────────────────────────────
+// ── UTILS ─────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
 const pad2 = n => String(n).padStart(2, '0');
@@ -147,7 +149,7 @@ function moonPhase(date) {
   return { icon: icons[idx], name: names[idx], phase };
 }
 
-// ── THEME ────────────────────────────────────────────────────────────
+// ── THEME ────────────────────────────────────────────────────────
 function applyTheme(theme) {
   S.cfg.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
@@ -170,7 +172,7 @@ function updateBgAnim(code, isDay) {
   else                 el.classList.add('bg-clear');
 }
 
-// ── MAP ─────────────────────────────────────────────────────────────
+// ── MAP ──────────────────────────────────────────────────────────
 function initMap() {
   S.canvas = $('radarCanvas');
   S.ctx    = S.canvas.getContext('2d');
@@ -196,23 +198,17 @@ function initMap() {
       S.map.resize();
       resizeCanvas();
 
-      // ── Init RadarAnimator ──────────────────────────────────────
+      // RadarAnimator
       if (window.RadarAnimator) {
         RadarAnimator.init(S.map, S.canvas, {
-          apiBase: API,
-          opacity: S.cfg.opacity,
-          color:   S.cfg.radarColor,
-          speed:   S.cfg.speed,
-          smooth:  S.cfg.smooth,
-          nowcast: S.cfg.nowcast
+          apiBase: API, opacity: S.cfg.opacity, color: S.cfg.radarColor,
+          speed: S.cfg.speed, smooth: S.cfg.smooth, nowcast: S.cfg.nowcast
         });
-        RadarAnimator.onFrameChange = (idx, frame) => {
-          S.frame = idx;
-          S.frames = RadarAnimator._frames;
+        RadarAnimator.onFrameChange = (idx) => {
+          S.frame = idx; S.frames = RadarAnimator._frames;
           updateSlotHighlight(idx);
           const tr = $('tRange'); if (tr) tr.value = idx;
-          const isNowcast = S.cfg.nowcast && idx >= (S.frames.length);
-          $('nowcastBadge').style.display = isNowcast ? 'flex' : 'none';
+          $('nowcastBadge').style.display = (S.cfg.nowcast && idx >= S.frames.length) ? 'flex' : 'none';
         };
         RadarAnimator.onPlayStateChange = (playing) => {
           S.playing = playing;
@@ -221,13 +217,32 @@ function initMap() {
         };
       }
 
-      // ── Init NEXRAD ─────────────────────────────────────────────
-      if (window.NexradRadar) {
-        NexradRadar.init(S.map, API);
+      // NEXRAD
+      if (window.NexradRadar) NexradRadar.init(S.map, API);
+      if (window.NexradPanel) { NexradPanel.init(API); NexradPanel.preloadNearby(S.lat, S.lng); }
+
+      // Spotter Network
+      if (window.SpotterNetwork) {
+        SpotterNetwork.init(S.map, API);
+        SpotterNetwork.onUpdate = (reports) => {
+          S.spotterReports = reports;
+          updateSpotterBadge(reports.length);
+        };
       }
-      if (window.NexradPanel) {
-        NexradPanel.init(API);
-        NexradPanel.preloadNearby(S.lat, S.lng);
+
+      // Severe panel
+      if (window.SeverePanel) SeverePanel.init(API);
+
+      // AI panel
+      if (window.AIPanel) {
+        AIPanel.init(API, () => ({
+          lat: S.lat, lng: S.lng,
+          location: S.locName,
+          weather: S.weather,
+          severe: S.severeData,
+          alerts: S.alerts,
+          spotterReports: S.spotterReports.slice(0, 20)
+        }));
       }
 
       loadRadar();
@@ -251,11 +266,7 @@ function initMap() {
 }
 
 function showMapError(msg) {
-  $('map').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#f59e0b;font-family:monospace;flex-direction:column;gap:12px;padding:24px;text-align:center">
-    <div style="font-size:48px">⛈</div>
-    <div style="font-weight:700;font-size:14px">${msg}</div>
-    <a href="https://account.mapbox.com" target="_blank" style="color:#06b6d4;font-size:11px">Get token → account.mapbox.com</a>
-  </div>`;
+  $('map').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#f59e0b;font-family:monospace;flex-direction:column;gap:12px;padding:24px;text-align:center"><div style="font-size:48px">⛈</div><div style="font-weight:700;font-size:14px">${msg}</div></div>`;
 }
 
 function cycleMapStyle() {
@@ -266,11 +277,11 @@ function cycleMapStyle() {
   S.map.once('style.load', () => {
     if (S.cfg.alertZones && S.alerts.length) putAlertsOnMap();
     if (window.RadarAnimator) RadarAnimator.refresh();
-    // Re-attach NEXRAD layers after style swap
     if (window.NexradRadar && NexradRadar.isVisible()) {
       const st = NexradRadar._station, pr = NexradRadar._product;
       if (st) { NexradRadar.hide(); NexradRadar.show(st.id, pr, st); }
     }
+    if (window.SpotterNetwork?.isVisible()) SpotterNetwork.renderMarkers?.();
     showToast('🗺 ' + S.mapStyle[0].toUpperCase() + S.mapStyle.slice(1));
   });
 }
@@ -279,38 +290,41 @@ function resizeCanvas() {
   const mz = $('mapzone');
   const w  = mz ? mz.clientWidth  : window.innerWidth;
   const h  = mz ? mz.clientHeight : window.innerHeight;
-  [S.canvas, S.drawCanvas].forEach(c => {
-    if (!c) return;
-    c.width  = w;
-    c.height = h;
-  });
+  [S.canvas, S.drawCanvas].forEach(c => { if (!c) return; c.width = w; c.height = h; });
   if (window.RadarAnimator) RadarAnimator.resize();
 }
 
-// ── DRAW MODE ────────────────────────────────────────────────────────
+// ── SPOTTER BADGE ─────────────────────────────────────────────────
+function updateSpotterBadge(count) {
+  const btn = $('spotterBtn');
+  if (!btn) return;
+  const existing = btn.querySelector('.spotter-count');
+  if (existing) existing.remove();
+  if (count > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'spotter-count';
+    badge.style.cssText = 'margin-left:4px;background:rgba(34,197,94,.3);border-radius:10px;padding:1px 6px;font-size:.7rem';
+    badge.textContent = count;
+    btn.appendChild(badge);
+  }
+}
+
+// ── DRAW MODE ─────────────────────────────────────────────────────
 function initDrawMode() {
   S.drawCanvas = $('drawCanvas');
   S.drawCtx    = S.drawCanvas.getContext('2d');
-  const mpos   = e => { const r = S.drawCanvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-  const tpos   = e => { const r = S.drawCanvas.getBoundingClientRect(); return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top }; };
+  const mpos = e => { const r = S.drawCanvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const tpos = e => { const r = S.drawCanvas.getBoundingClientRect(); return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top }; };
   const applyStyle = () => { S.drawCtx.strokeStyle = S.drawColor; S.drawCtx.lineWidth = S.drawSize; S.drawCtx.lineCap = 'round'; S.drawCtx.lineJoin = 'round'; };
   S.drawCanvas.addEventListener('mousedown',  e => { if (!S.drawMode) return; S.drawing = true; const p = mpos(e); S.drawCtx.beginPath(); S.drawCtx.moveTo(p.x, p.y); S.drawStrokes.push({ color: S.drawColor, size: S.drawSize, pts: [p] }); });
   S.drawCanvas.addEventListener('mousemove',  e => { if (!S.drawMode || !S.drawing) return; const p = mpos(e); applyStyle(); S.drawCtx.lineTo(p.x, p.y); S.drawCtx.stroke(); S.drawStrokes[S.drawStrokes.length - 1].pts.push(p); });
   ['mouseup','mouseleave'].forEach(ev => S.drawCanvas.addEventListener(ev, () => S.drawing = false));
   S.drawCanvas.addEventListener('touchstart', e => { if (!S.drawMode) return; e.preventDefault(); S.drawing = true; const p = tpos(e); S.drawCtx.beginPath(); S.drawCtx.moveTo(p.x, p.y); S.drawStrokes.push({ color: S.drawColor, size: S.drawSize, pts: [p] }); }, { passive: false });
   S.drawCanvas.addEventListener('touchmove',  e => { if (!S.drawMode || !S.drawing) return; e.preventDefault(); const p = tpos(e); applyStyle(); S.drawCtx.lineTo(p.x, p.y); S.drawCtx.stroke(); S.drawStrokes[S.drawStrokes.length - 1].pts.push(p); }, { passive: false });
-  S.drawCanvas.addEventListener('touchend',   () => S.drawing = false);
+  S.drawCanvas.addEventListener('touchend', () => S.drawing = false);
 }
-function enterDrawMode() {
-  S.drawMode = true; S.drawCanvas.style.pointerEvents = 'all'; S.drawCanvas.style.cursor = 'crosshair';
-  $('drawToolbar').classList.add('show'); $('drawBtn').classList.add('active');
-  if (S.map) S.map.dragPan.disable(); showToast('✏ Draw mode on');
-}
-function exitDrawMode() {
-  S.drawMode = false; S.drawing = false; S.drawCanvas.style.pointerEvents = 'none'; S.drawCanvas.style.cursor = '';
-  $('drawToolbar').classList.remove('show'); $('drawBtn').classList.remove('active');
-  if (S.map) S.map.dragPan.enable(); showToast('Draw mode off');
-}
+function enterDrawMode() { S.drawMode = true; S.drawCanvas.style.pointerEvents = 'all'; S.drawCanvas.style.cursor = 'crosshair'; $('drawToolbar').classList.add('show'); $('drawBtn').classList.add('active'); if (S.map) S.map.dragPan.disable(); showToast('✏ Draw mode on'); }
+function exitDrawMode()  { S.drawMode = false; S.drawing = false; S.drawCanvas.style.pointerEvents = 'none'; S.drawCanvas.style.cursor = ''; $('drawToolbar').classList.remove('show'); $('drawBtn').classList.remove('active'); if (S.map) S.map.dragPan.enable(); showToast('Draw mode off'); }
 function undoDraw() {
   if (!S.drawStrokes.length) return;
   S.drawStrokes.pop();
@@ -326,7 +340,7 @@ function undoDraw() {
 }
 function clearDraw() { S.drawStrokes = []; S.drawCtx.clearRect(0, 0, S.drawCanvas.width, S.drawCanvas.height); }
 
-// ── MAP CLICK ─────────────────────────────────────────────────────
+// ── MAP CLICK ────────────────────────────────────────────────────
 function handleMapClick(e) {
   const { lat, lng } = e.lngLat;
   if (S.map.getSource && S.map.getSource('alerts-src')) {
@@ -345,14 +359,14 @@ function handleMapClick(e) {
 async function fetchNWSReport(lat, lng) {
   try {
     const ptRes = await fetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lng.toFixed(4)}`,
-      { headers: { 'User-Agent': '(StormSurgeWeather/13.7)', 'Accept': 'application/geo+json' } });
+      { headers: { 'User-Agent': '(StormSurgeWeather/13.8)', 'Accept': 'application/geo+json' } });
     if (!ptRes.ok) throw new Error('NWS points: ' + ptRes.status);
     const pt = await ptRes.json();
     if (!pt.properties?.forecast) throw new Error('Location outside NWS coverage');
     const props = pt.properties;
     const [fcastRes, hourlyRes] = await Promise.allSettled([
-      fetch(props.forecast,       { headers: { 'User-Agent': '(StormSurgeWeather/13.7)' } }),
-      fetch(props.forecastHourly, { headers: { 'User-Agent': '(StormSurgeWeather/13.7)' } })
+      fetch(props.forecast,       { headers: { 'User-Agent': '(StormSurgeWeather/13.8)' } }),
+      fetch(props.forecastHourly, { headers: { 'User-Agent': '(StormSurgeWeather/13.8)' } })
     ]);
     const fcast  = fcastRes.status  === 'fulfilled' && fcastRes.value.ok  ? await fcastRes.value.json()  : null;
     const hourly = hourlyRes.status === 'fulfilled' && hourlyRes.value.ok ? await hourlyRes.value.json() : null;
@@ -396,7 +410,7 @@ function openNWSModal(props, fcast, hourly) {
   openModal('alertModal');
 }
 
-// ── RADAR — thin wrapper around RadarAnimator ────────────────────────
+// ── RADAR ────────────────────────────────────────────────────────
 async function loadRadar() {
   try {
     const r = await fetch(`${API}/api/radar/frames`);
@@ -420,9 +434,7 @@ async function loadRadar() {
   }
 }
 
-function allFrames() {
-  return S.showingNowcast ? [...S.frames, ...S.nowcastFrames] : S.frames;
-}
+function allFrames() { return S.showingNowcast ? [...S.frames, ...S.nowcastFrames] : S.frames; }
 
 function buildSlots() {
   const frames = allFrames();
@@ -434,41 +446,25 @@ function buildSlots() {
     const d   = new Date(f.time * 1000);
     const btn = document.createElement('button');
     btn.className = 'tslot' + (i === S.frame ? ' active' : '') + (i >= S.frames.length ? ' nowcast' : '');
-    btn.textContent = i >= S.frames.length
-      ? '+' + ((i - S.frames.length + 1) * 10) + 'm'
-      : fmtTime(d, true);
-    btn.title = i >= S.frames.length
-      ? 'Nowcast +' + ((i - S.frames.length + 1) * 10) + 'min'
-      : d.toLocaleTimeString();
+    btn.textContent = i >= S.frames.length ? '+' + ((i - S.frames.length + 1) * 10) + 'm' : fmtTime(d, true);
+    btn.title = i >= S.frames.length ? 'Nowcast +' + ((i - S.frames.length + 1) * 10) + 'min' : d.toLocaleTimeString();
     btn.onclick = () => pickFrame(i);
     c.appendChild(btn);
   });
 }
 
-function updateSlotHighlight(idx) {
-  document.querySelectorAll('.tslot').forEach((s, j) => s.classList.toggle('active', j === idx));
-}
-
-function pickFrame(i) {
-  S.frame = Math.max(0, Math.min(allFrames().length - 1, i));
-  updateSlotHighlight(i);
-  const tr = $('tRange'); if (tr) tr.value = i;
-  if (window.RadarAnimator) RadarAnimator.goTo(i);
-}
-function play()       { if (window.RadarAnimator) RadarAnimator.play(); }
-function pause()      { if (window.RadarAnimator) RadarAnimator.pause(); }
+function updateSlotHighlight(idx) { document.querySelectorAll('.tslot').forEach((s, j) => s.classList.toggle('active', j === idx)); }
+function pickFrame(i) { S.frame = Math.max(0, Math.min(allFrames().length - 1, i)); updateSlotHighlight(i); const tr = $('tRange'); if (tr) tr.value = i; if (window.RadarAnimator) RadarAnimator.goTo(i); }
 function togglePlay() { if (window.RadarAnimator) RadarAnimator.togglePlay(); }
-
 function toggleNowcast() {
   if (!S.nowcastFrames.length) { showToast('⚠ Nowcast not available'); return; }
   S.showingNowcast = !S.showingNowcast;
-  if (window.RadarAnimator)
-    RadarAnimator.setFrames(S.frames, S.showingNowcast ? S.nowcastFrames : []);
+  if (window.RadarAnimator) RadarAnimator.setFrames(S.frames, S.showingNowcast ? S.nowcastFrames : []);
   buildSlots();
   showToast(S.showingNowcast ? '🟢 Nowcast ON (+30min)' : 'Nowcast OFF');
 }
 
-// ── WEATHER ──────────────────────────────────────────────────────────
+// ── WEATHER ──────────────────────────────────────────────────────
 async function loadWeather() {
   showLoader(true);
   try {
@@ -480,8 +476,8 @@ async function loadWeather() {
     renderForecast(d);
     updateBgAnim(d.current?.weather_code, d.current?.is_day);
     loadAQI();
-    // Notify NEXRAD panel of location change
     if (window.NexradPanel) NexradPanel.updateLocation(S.lat, S.lng);
+    if (window.SpotterNetwork?.isVisible()) SpotterNetwork.refresh(S.lat, S.lng);
   } catch (e) {
     console.warn('Weather failed:', e.message);
     showToast('⚠ Weather unavailable');
@@ -518,8 +514,8 @@ function renderWeather(d) {
   setText('wcVis',   cvtDist((c.visibility ?? 0) / 1000));
   setText('wcPres',  Math.round(c.surface_pressure ?? 0) + ' hPa');
   setText('wcCloud', (c.cloud_cover ?? '--') + '%');
-  const hi    = heatIndex(c.temperature_2m, c.relative_humidity_2m);
-  const hiEl  = $('wcHeatIdx');
+  const hi = heatIndex(c.temperature_2m, c.relative_humidity_2m);
+  const hiEl = $('wcHeatIdx');
   if (hiEl) {
     if (hi != null) {
       hiEl.textContent = cvtTemp(hi) + '°' + S.cfg.tempUnit;
@@ -548,11 +544,9 @@ function renderWeather(d) {
 }
 
 function updateSunArc(sunrise, sunset, now) {
-  const track   = 157;
-  const total   = sunset - sunrise;
-  const elapsed = now - sunrise;
-  const pct     = Math.max(0, Math.min(1, elapsed / total));
-  const prog    = $('sunArcProg'), dot = $('sunDot');
+  const track = 157, total = sunset - sunrise, elapsed = now - sunrise;
+  const pct = Math.max(0, Math.min(1, elapsed / total));
+  const prog = $('sunArcProg'), dot = $('sunDot');
   if (!prog || !dot) return;
   prog.setAttribute('stroke-dasharray', (pct * track) + ' ' + track);
   const angle = Math.PI - pct * Math.PI;
@@ -565,29 +559,30 @@ function renderForecast(d) {
   c.innerHTML = '';
   if (S.fcMode === 'hourly') {
     for (let i = 0; i < Math.min(24, d.hourly.temperature_2m.length); i++) {
-      const t      = new Date(d.hourly.time[i]);
-      const isNow  = i === 0;
+      const t = new Date(d.hourly.time[i]);
       const precip = d.hourly.precipitation_probability?.[i] ?? 0;
-      const div    = document.createElement('div');
-      div.className = 'fc-item' + (isNow ? ' now' : '');
+      const cape   = d.hourly.cape?.[i] || 0;
+      const div = document.createElement('div');
+      div.className = 'fc-item' + (i === 0 ? ' now' : '');
       div.innerHTML =
-        '<div class="fc-t">' + (isNow ? 'NOW' : fmtTime(t, true)) + '</div>' +
+        '<div class="fc-t">' + (i === 0 ? 'NOW' : fmtTime(t, true)) + '</div>' +
         '<div class="fc-i">' + wIcon(d.hourly.weather_code[i]) + '</div>' +
         '<div class="fc-v">' + cvtTemp(d.hourly.temperature_2m[i]) + '°</div>' +
         '<div class="fc-h" style="opacity:' + (precip > 5 ? 1 : 0.35) + '">🌧 ' + precip + '%</div>' +
+        (cape >= 500 ? '<div style="font-size:.65rem;color:#f97316;margin-top:2px">⚡' + cape + '</div>' : '') +
         '<div class="fc-pbar-wrap"><div class="fc-pbar-fill" style="width:' + Math.round(precip) + '%"></div></div>';
       c.appendChild(div);
     }
   } else if (S.fcMode === 'daily') {
     const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     (d.daily.time || []).slice(0, 10).forEach((ds, i) => {
-      const day   = new Date(ds);
-      const hi    = cvtTemp(d.daily.temperature_2m_max[i]);
-      const lo    = cvtTemp(d.daily.temperature_2m_min[i]);
-      const rain  = d.daily.precipitation_probability_max?.[i] ?? 0;
-      const wind  = cvtWind(d.daily.wind_speed_10m_max?.[i] ?? 0);
-      const prec  = (d.daily.precipitation_sum?.[i] ?? 0).toFixed(1);
-      const div   = document.createElement('div');
+      const day  = new Date(ds);
+      const hi   = cvtTemp(d.daily.temperature_2m_max[i]);
+      const lo   = cvtTemp(d.daily.temperature_2m_min[i]);
+      const rain = d.daily.precipitation_probability_max?.[i] ?? 0;
+      const wind = cvtWind(d.daily.wind_speed_10m_max?.[i] ?? 0);
+      const prec = (d.daily.precipitation_sum?.[i] ?? 0).toFixed(1);
+      const div  = document.createElement('div');
       div.className = 'fc-item fc-day' + (i === 0 ? ' now' : '');
       div.innerHTML =
         '<div class="fc-t">' + (i === 0 ? 'TODAY' : days[day.getDay()]) + '</div>' +
@@ -597,13 +592,9 @@ function renderForecast(d) {
         '<div class="fc-wind">💨 ' + wind + ' ' + windUnit() + '</div>';
       c.appendChild(div);
     });
-  } else if (S.fcMode === 'precip') {
-    renderPrecipChart(d, c);
-  } else if (S.fcMode === 'wind') {
-    renderWindChart(d, c);
-  } else if (S.fcMode === 'feels') {
-    renderFeelsChart(d, c);
-  }
+  } else if (S.fcMode === 'precip') renderPrecipChart(d, c);
+  else if (S.fcMode === 'wind')   renderWindChart(d, c);
+  else if (S.fcMode === 'feels')  renderFeelsChart(d, c);
 }
 
 function renderPrecipChart(d, container) {
@@ -621,11 +612,7 @@ function renderPrecipChart(d, container) {
       const h = (v / 100) * 78, intensity = Math.min(1, v / 100);
       ctx2.fillStyle = `rgba(6,182,212,${0.25 + intensity * 0.75})`;
       ctx2.fillRect(i * barW + 1, 100 - h, barW - 2, h);
-      if (i % 4 === 0) {
-        ctx2.fillStyle = 'rgba(255,255,255,0.45)';
-        ctx2.font = '9px JetBrains Mono, monospace';
-        ctx2.fillText(fmtTime(new Date(d.hourly.time[i]), true), i * barW + 1, 97);
-      }
+      if (i % 4 === 0) { ctx2.fillStyle = 'rgba(255,255,255,0.45)'; ctx2.font = '9px JetBrains Mono, monospace'; ctx2.fillText(fmtTime(new Date(d.hourly.time[i]), true), i * barW + 1, 97); }
     });
     ctx2.strokeStyle = 'rgba(6,182,212,0.5)'; ctx2.lineWidth = 1; ctx2.setLineDash([4,4]);
     ctx2.beginPath(); ctx2.moveTo(0, 40); ctx2.lineTo(w, 40); ctx2.stroke();
@@ -646,19 +633,12 @@ function renderWindChart(d, container) {
     const gusts = d.hourly.wind_gusts_10m.slice(0, 24);
     const maxV  = Math.max(...gusts, 1);
     ctx2.fillStyle = 'rgba(168,85,247,0.07)'; ctx2.fillRect(0, 0, w, 100);
-    const path = pts => {
-      ctx2.beginPath();
-      pts.forEach((v, i) => {
-        const x = (i / (pts.length - 1)) * w, y = 90 - (v / maxV) * 78;
-        i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
-      });
-    };
+    const path = pts => { ctx2.beginPath(); pts.forEach((v, i) => { const x = (i / (pts.length - 1)) * w, y = 90 - (v / maxV) * 78; i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y); }); };
     ctx2.fillStyle = 'rgba(168,85,247,0.18)';
     path(gusts); ctx2.lineTo(w, 100); ctx2.lineTo(0, 100); ctx2.closePath(); ctx2.fill();
     ctx2.strokeStyle = 'rgba(168,85,247,0.6)'; ctx2.lineWidth = 1; ctx2.setLineDash([]);
     path(gusts); ctx2.stroke();
-    ctx2.strokeStyle = '#a855f7'; ctx2.lineWidth = 2;
-    path(vals); ctx2.stroke();
+    ctx2.strokeStyle = '#a855f7'; ctx2.lineWidth = 2; path(vals); ctx2.stroke();
     ctx2.fillStyle = 'rgba(255,255,255,0.7)'; ctx2.font = 'bold 10px Outfit, sans-serif';
     ctx2.fillText('Wind ' + windUnit() + ' — line=speed, fill=gusts (24h)', 6, 14);
   });
@@ -669,23 +649,16 @@ function renderFeelsChart(d, container) {
   canvas.style.cssText = 'width:100%;height:100px;display:block';
   container.appendChild(canvas);
   requestAnimationFrame(() => {
-    const w     = canvas.parentElement.clientWidth;
+    const w = canvas.parentElement.clientWidth;
     canvas.width = w; canvas.height = 100;
-    const ctx2  = canvas.getContext('2d');
+    const ctx2 = canvas.getContext('2d');
     const temps = d.hourly.temperature_2m.slice(0, 24).map(cvtTemp);
     const feels = d.hourly.apparent_temperature.slice(0, 24).map(cvtTemp);
     const allVals = [...temps, ...feels].filter(v => v !== '--');
-    const minV  = Math.min(...allVals) - 2, maxV = Math.max(...allVals) + 2;
+    const minV = Math.min(...allVals) - 2, maxV = Math.max(...allVals) + 2;
     const scaleY = v => 90 - ((v - minV) / (maxV - minV)) * 78;
     ctx2.fillStyle = 'rgba(240,165,0,0.06)'; ctx2.fillRect(0, 0, w, 100);
-    const drawLine = (data, color, width) => {
-      ctx2.beginPath(); ctx2.strokeStyle = color; ctx2.lineWidth = width;
-      data.forEach((v, i) => {
-        const x = (i / (data.length - 1)) * w, y = scaleY(v);
-        i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
-      });
-      ctx2.stroke();
-    };
+    const drawLine = (data, color, width) => { ctx2.beginPath(); ctx2.strokeStyle = color; ctx2.lineWidth = width; data.forEach((v, i) => { const x = (i / (data.length - 1)) * w, y = scaleY(v); i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y); }); ctx2.stroke(); };
     drawLine(temps, 'rgba(240,165,0,0.6)', 1.5);
     drawLine(feels, '#f97316', 2);
     ctx2.fillStyle = 'rgba(255,255,255,0.7)'; ctx2.font = 'bold 10px Outfit, sans-serif';
@@ -693,34 +666,23 @@ function renderFeelsChart(d, container) {
   });
 }
 
-// ── AQI ────────────────────────────────────────────────────────────
+// ── AQI ──────────────────────────────────────────────────────────
 async function loadAQI() {
   try {
     const r = await fetch(`${API}/api/airquality?lat=${S.lat}&lng=${S.lng}`);
     if (!r.ok) throw new Error('AQI ' + r.status);
     S.aqi = await r.json();
     const aqi = S.aqi.current?.us_aqi;
-    if (aqi != null) {
-      const el = $('wcAQI');
-      if (el) { el.textContent = aqi + ' — ' + aqiLabel(aqi); el.style.color = aqiColor(aqi); }
-    }
+    if (aqi != null) { const el = $('wcAQI'); if (el) { el.textContent = aqi + ' — ' + aqiLabel(aqi); el.style.color = aqiColor(aqi); } }
   } catch (e) { const el = $('wcAQI'); if (el) el.textContent = 'N/A'; }
 }
-function aqiLabel(aqi) {
-  if (aqi <= 50)  return 'Good'; if (aqi <= 100) return 'Moderate';
-  if (aqi <= 150) return 'Unhealthy (Sensitive)'; if (aqi <= 200) return 'Unhealthy';
-  if (aqi <= 300) return 'Very Unhealthy'; return 'Hazardous';
-}
-function aqiColor(aqi) {
-  if (aqi <= 50)  return '#22c55e'; if (aqi <= 100) return '#f59e0b';
-  if (aqi <= 150) return '#f97316'; if (aqi <= 200) return '#ef4444';
-  if (aqi <= 300) return '#a855f7'; return '#7f1d1d';
-}
+function aqiLabel(aqi) { if (aqi <= 50) return 'Good'; if (aqi <= 100) return 'Moderate'; if (aqi <= 150) return 'Unhealthy (Sensitive)'; if (aqi <= 200) return 'Unhealthy'; if (aqi <= 300) return 'Very Unhealthy'; return 'Hazardous'; }
+function aqiColor(aqi) { if (aqi <= 50) return '#22c55e'; if (aqi <= 100) return '#f59e0b'; if (aqi <= 150) return '#f97316'; if (aqi <= 200) return '#ef4444'; if (aqi <= 300) return '#a855f7'; return '#7f1d1d'; }
 async function openAQIPanel() {
   openModal('aqiModal');
   if (!S.aqi) { $('aqiBody').innerHTML = '<div class="empty-s"><div class="es-ico">💨</div><div>Loading…</div></div>'; await loadAQI(); }
   if (!S.aqi) { $('aqiBody').innerHTML = '<div class="empty-s"><div class="es-ico">⚠</div><div>AQI data unavailable</div></div>'; return; }
-  const c   = S.aqi.current || {};
+  const c = S.aqi.current || {};
   const aqi = c.us_aqi;
   const pct = Math.min(100, ((aqi || 0) / 500) * 100);
   const hourlyAQI = S.aqi.hourly?.us_aqi?.slice(0, 24) || [];
@@ -736,27 +698,11 @@ async function openAQIPanel() {
     ['Good|0-50|#22c55e','Moderate|51-100|#f59e0b','Unhealthy (Sensitive)|101-150|#f97316',
      'Unhealthy|151-200|#ef4444','Very Unhealthy|201-300|#a855f7','Hazardous|301+|#7f1d1d'
     ].map(s => { const [label,range,color] = s.split('|'); return `<div class="aqi-scale-row"><span class="aqi-dot" style="background:${color}"></span><span>${label}</span><span style="color:var(--t3);font-size:11px">${range}</span></div>`; }).join('') + '</div>';
-  if (hourlyAQI.length) {
-    requestAnimationFrame(() => {
-      const canvas = $('aqiChart'); if (!canvas) return;
-      const w = canvas.parentElement.clientWidth;
-      canvas.width = w; canvas.height = 80;
-      const ctx2 = canvas.getContext('2d');
-      const maxA = Math.max(...hourlyAQI, 1), barW = w / hourlyAQI.length;
-      hourlyAQI.forEach((v, i) => {
-        const h = (v / maxA) * 65;
-        ctx2.fillStyle = aqiColor(v); ctx2.globalAlpha = 0.7;
-        ctx2.fillRect(i * barW + 1, 75 - h, barW - 2, h);
-      });
-    });
-  }
+  if (hourlyAQI.length) { requestAnimationFrame(() => { const canvas = $('aqiChart'); if (!canvas) return; const w = canvas.parentElement.clientWidth; canvas.width = w; canvas.height = 80; const ctx2 = canvas.getContext('2d'); const maxA = Math.max(...hourlyAQI, 1), barW = w / hourlyAQI.length; hourlyAQI.forEach((v, i) => { const h = (v / maxA) * 65; ctx2.fillStyle = aqiColor(v); ctx2.globalAlpha = 0.7; ctx2.fillRect(i * barW + 1, 75 - h, barW - 2, h); }); }); }
 }
-function aqiStat(label, val, unit) {
-  const v = val != null ? parseFloat(val).toFixed(1) : '--';
-  return `<div class="aqi-stat"><div class="aqi-stat-l">${escHtml(label)}</div><div class="aqi-stat-v">${v} <span style="font-size:10px;color:var(--t3)">${unit}</span></div></div>`;
-}
+function aqiStat(label, val, unit) { const v = val != null ? parseFloat(val).toFixed(1) : '--'; return `<div class="aqi-stat"><div class="aqi-stat-l">${escHtml(label)}</div><div class="aqi-stat-v">${v} <span style="font-size:10px;color:var(--t3)">${unit}</span></div></div>`; }
 
-// ── MARINE ──────────────────────────────────────────────────────────
+// ── MARINE ───────────────────────────────────────────────────────
 async function openMarinePanel() {
   openModal('marineModal');
   const body = $('marineBody');
@@ -783,15 +729,13 @@ async function openMarinePanel() {
     body.innerHTML = '<div class="empty-s"><div class="es-ico">🌊</div><div>Marine data not available for this inland location</div></div>';
   }
 }
-function marineStat(label, val) {
-  return `<div class="marine-stat"><div class="marine-stat-l">${label}</div><div class="marine-stat-v">${val}</div></div>`;
-}
+function marineStat(label, val) { return `<div class="marine-stat"><div class="marine-stat-l">${label}</div><div class="marine-stat-v">${val}</div></div>`; }
 
-// ── ALERTS ──────────────────────────────────────────────────────────
+// ── ALERTS ───────────────────────────────────────────────────────
 async function loadAlerts() {
   try {
     const r = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert',
-      { headers: { 'User-Agent': '(StormSurgeWeather/13.7)', 'Accept': 'application/geo+json' } });
+      { headers: { 'User-Agent': '(StormSurgeWeather/13.8)', 'Accept': 'application/geo+json' } });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     S.alerts = (d.features || []).filter(f => f.properties?.event && new Date(f.properties.expires) > new Date());
@@ -799,32 +743,10 @@ async function loadAlerts() {
     if (S.cfg.alertZones && S.map) putAlertsOnMap();
   } catch (e) { S.alerts = []; renderAlerts(); updateAlertCounts(); }
 }
-function updateAlertCounts() {
-  const n = S.alerts.length;
-  setText('alertBadge', n); setText('navAlertBadge', n);
-  $('navAlertBadge').classList.toggle('show', n > 0);
-}
-function alertSev(ev) {
-  const e = (ev || '').toLowerCase();
-  if (e.includes('tornado') || e.includes('hurricane') || e.includes('extreme')) return 'emergency';
-  if (e.includes('warning'))  return 'warning';
-  if (e.includes('watch'))    return 'watch';
-  if (e.includes('advisory')) return 'advisory';
-  return 'default';
-}
-function alertIcon(ev) {
-  const e = (ev || '').toLowerCase();
-  if (e.includes('tornado'))                           return '🌪';
-  if (e.includes('hurricane') || e.includes('typhoon')) return '🌀';
-  if (e.includes('thunder') || e.includes('lightning')) return '⛈';
-  if (e.includes('snow') || e.includes('blizzard') || e.includes('winter')) return '❄️';
-  if (e.includes('flood'))  return '🌊';
-  if (e.includes('wind'))   return '💨';
-  if (e.includes('fog'))    return '🌫';
-  if (e.includes('fire') || e.includes('heat')) return '🔥';
-  if (e.includes('ice') || e.includes('frost')) return '🧊';
-  return '⚠️';
-}
+function updateAlertCounts() { const n = S.alerts.length; setText('alertBadge', n); setText('navAlertBadge', n); $('navAlertBadge').classList.toggle('show', n > 0); }
+function alertSev(ev) { const e = (ev || '').toLowerCase(); if (e.includes('tornado') || e.includes('hurricane') || e.includes('extreme')) return 'emergency'; if (e.includes('warning')) return 'warning'; if (e.includes('watch')) return 'watch'; if (e.includes('advisory')) return 'advisory'; return 'default'; }
+function alertIcon(ev) { const e = (ev || '').toLowerCase(); if (e.includes('tornado')) return '🌪'; if (e.includes('hurricane') || e.includes('typhoon')) return '🌀'; if (e.includes('thunder') || e.includes('lightning')) return '⛈'; if (e.includes('snow') || e.includes('blizzard') || e.includes('winter')) return '❄️'; if (e.includes('flood')) return '🌊'; if (e.includes('wind')) return '💨'; if (e.includes('fog')) return '🌫'; if (e.includes('fire') || e.includes('heat')) return '🔥'; if (e.includes('ice') || e.includes('frost')) return '🧊'; return '⚠️'; }
+
 function renderAlerts() {
   if (S.rightTab !== 'alerts') return;
   const body = $('alertsBody');
@@ -870,8 +792,7 @@ function renderAlerts() {
   bindAlertUI();
 }
 function bindAlertUI() {
-  document.querySelectorAll('.af-btn').forEach(btn =>
-    btn.addEventListener('click', () => { S.alertFilter = btn.dataset.f; renderAlerts(); }));
+  document.querySelectorAll('.af-btn').forEach(btn => btn.addEventListener('click', () => { S.alertFilter = btn.dataset.f; renderAlerts(); }));
   const rb = $('alertRefreshBtn'); if (rb) rb.addEventListener('click', () => { showToast('Refreshing…'); loadAlerts(); });
   const sb = $('alertSearchBtn'), si = $('alertSearchInput');
   const run = () => { S.alertQuery = si ? si.value.trim() : ''; renderAlerts(); };
@@ -880,24 +801,20 @@ function bindAlertUI() {
 }
 function fmtAlertText(text) {
   if (!text?.trim()) return '<p style="color:var(--t3)">No details available.</p>';
-  const paras = [];
-  let cur = [];
-  text.trim().split('\n').forEach(line => {
-    if (line.trim() === '') { if (cur.length) { paras.push(cur.join('\n')); cur = []; } } else cur.push(line);
-  });
+  const paras = []; let cur = [];
+  text.trim().split('\n').forEach(line => { if (line.trim() === '') { if (cur.length) { paras.push(cur.join('\n')); cur = []; } } else cur.push(line); });
   if (cur.length) paras.push(cur.join('\n'));
   return paras.map(para => {
     const t = para.trim(); if (!t) return '';
     const alpha = t.replace(/[^A-Za-z]/g, '');
-    if (alpha.length > 1 && alpha === alpha.toUpperCase() && t.length < 80)
-      return '<div class="ad-para-head">' + escHtml(t) + '</div>';
+    if (alpha.length > 1 && alpha === alpha.toUpperCase() && t.length < 80) return '<div class="ad-para-head">' + escHtml(t) + '</div>';
     return '<p>' + escHtml(t).replace(/\n/g, '<br>') + '</p>';
   }).join('');
 }
 function openAlertModal(idx) {
   const alert = S.alerts[idx]; if (!alert) return;
   const p = alert.properties, ico = alertIcon(p.event);
-  const onset   = p.onset   ? new Date(p.onset)   : p.sent ? new Date(p.sent) : null;
+  const onset = p.onset ? new Date(p.onset) : p.sent ? new Date(p.sent) : null;
   const expires = p.expires ? new Date(p.expires) : null;
   setText('mTitle', ico + ' ' + p.event);
   $('mBody').innerHTML =
@@ -940,21 +857,39 @@ function rmLayers(layers, sources) {
   try { sources.forEach(s => { if (S.map.getSource(s)) S.map.removeSource(s); }); } catch (e) {}
 }
 
-// ── STORM REPORTS ──────────────────────────────────────────────────
+// ── STORM REPORTS ────────────────────────────────────────────────
 function renderStormReports() {
   if (S.rightTab !== 'severe') return;
   const body = $('alertsBody');
-  if (!S.stormReports.length) {
-    body.innerHTML = '<div class="empty-s"><div class="es-ico">⛈</div><div>Loading storm reports…</div></div>';
+  // Show spotter reports + SPC reports
+  const spotterCount = S.spotterReports.length;
+  const spcCount     = S.stormReports.length;
+  if (!spotterCount && !spcCount) {
+    body.innerHTML = '<div class="empty-s"><div class="es-ico">⛈</div><div>Loading spotter & storm reports…</div></div>';
     loadStormReports(); return;
   }
-  body.innerHTML = '<div class="sr-head">SPC Storm Reports — Today</div>' +
-    S.stormReports.slice(0, 40).map(r =>
-      '<div class="sr-row"><span class="sr-type sr-' + r.type + '">' + (r.type==='tornado'?'🌪':r.type==='hail'?'🧭':'💨') + ' ' + r.type.toUpperCase() + '</span>' +
+  let html = '';
+  if (spotterCount) {
+    html += '<div class="sr-head">🌐 Spotter Network (' + spotterCount + ' reports)</div>';
+    html += S.spotterReports.slice(0, 20).map(r =>
+      '<div class="sr-row">' +
+      '<span class="sr-type" style="color:' + (r.verified ? '#22c55e' : '#94a3b8') + '">' + (r.icon || '📍') + ' ' + escHtml(r.type) + '</span>' +
+      (r.magnitude ? '<span class="sr-mag">' + escHtml(r.magnitude) + '</span>' : '') +
+      '<span class="sr-text">' + escHtml([r.city, r.state].filter(Boolean).join(', ') || r.description || '') + '</span>' +
+      (r.distKm ? '<span style="font-size:.68rem;color:#64748b;margin-left:auto">' + r.distKm + 'km</span>' : '') +
+      '</div>'
+    ).join('');
+  }
+  if (spcCount) {
+    html += '<div class="sr-head" style="margin-top:10px">⛈ SPC Storm Reports</div>';
+    html += S.stormReports.slice(0, 20).map(r =>
+      '<div class="sr-row"><span class="sr-type sr-' + r.type + '">' + (r.type==='tornado'?'🌪':r.type==='hail'?'🧊':'💨') + ' ' + r.type.toUpperCase() + '</span>' +
       '<span class="sr-mag">' + escHtml(r.magnitude || '?') + '</span>' +
       '<span class="sr-text">' + escHtml(r.text || '') + '</span></div>'
-    ).join('') +
-    '<div class="sr-src">Source: NOAA Storm Prediction Center</div>';
+    ).join('');
+  }
+  html += '<div class="sr-src">Sources: mPing (NSSL) + NOAA SPC</div>';
+  body.innerHTML = html;
 }
 async function loadStormReports() {
   try {
@@ -964,8 +899,7 @@ async function loadStormReports() {
     putReportsOnMap();
   } catch (e) {
     S.stormReports = [];
-    if (S.rightTab === 'severe')
-      $('alertsBody').innerHTML = '<div class="empty-s"><div class="es-ico">⛈</div><div>SPC reports unavailable</div></div>';
+    if (S.rightTab === 'severe') $('alertsBody').innerHTML = '<div class="empty-s"><div class="es-ico">⛈</div><div>SPC reports unavailable</div></div>';
   }
 }
 function putReportsOnMap() {
@@ -985,9 +919,9 @@ function putReportsOnMap() {
   } catch (e) {}
 }
 
-// ── RADAR INFO ──────────────────────────────────────────────────────
+// ── RADAR INFO ───────────────────────────────────────────────────
 function renderRadarInfo() {
-  const frames  = window.RadarAnimator ? RadarAnimator._allFrames() : allFrames();
+  const frames  = window.RadarAnimator ? RadarAnimator._allFrames?.() || allFrames() : allFrames();
   const newest  = frames.length ? new Date(frames[frames.length-1].time*1000) : null;
   const oldest  = frames.length ? new Date(frames[0].time*1000) : null;
   $('alertsBody').innerHTML = '<div class="radar-info">' +
@@ -1002,6 +936,9 @@ function renderRadarInfo() {
     '<div class="ri-title" style="margin-top:16px">NEXRAD Status</div>' +
     riStat('Station', window.NexradRadar?.isVisible() ? (NexradRadar._station?.id || '—') : 'Off') +
     riStat('Product', window.NexradRadar?.isVisible() ? (NexradRadar._product || '—') : '—') +
+    '<div class="ri-title" style="margin-top:16px">Spotter Network</div>' +
+    riStat('Reports', S.spotterReports.length + ' nearby') +
+    riStat('Status',  window.SpotterNetwork?.isVisible() ? 'Active' : 'Off') +
     '<div class="ri-actions">' +
       '<button class="ri-btn" onclick="if(window.RadarAnimator)RadarAnimator.refresh();showToast(\'↻ Radar refreshed\')">↻ Refresh</button>' +
       '<button class="ri-btn" onclick="toggleNowcast()">🟢 Nowcast</button>' +
@@ -1010,7 +947,7 @@ function renderRadarInfo() {
 }
 const riStat = (l, v) => `<div class="ri-stat"><span>${escHtml(String(l))}</span><span>${escHtml(String(v))}</span></div>`;
 
-// ── SEARCH & GEOCODE ────────────────────────────────────────────────
+// ── SEARCH & GEOCODE ─────────────────────────────────────────────
 async function doSearch(q) {
   if (!q || q.length < 2) { hideDrop(); return; }
   try {
@@ -1069,11 +1006,8 @@ function geolocate() {
   );
 }
 
-// ── FAVORITES ──────────────────────────────────────────────────────────
-function loadFavorites() {
-  try { const s = localStorage.getItem('ss12_favs'); if (s) S.favorites = JSON.parse(s); } catch (e) {}
-  renderFavorites();
-}
+// ── FAVORITES ────────────────────────────────────────────────────
+function loadFavorites() { try { const s = localStorage.getItem('ss12_favs'); if (s) S.favorites = JSON.parse(s); } catch (e) {} renderFavorites(); }
 function saveFavorites() { try { localStorage.setItem('ss12_favs', JSON.stringify(S.favorites)); } catch (e) {} }
 function addFavorite() {
   if (S.favorites.some(f => f.name === S.locName)) { showToast('★ Already saved'); return; }
@@ -1094,14 +1028,11 @@ function renderFavorites() {
     '<div class="fav-item"><button class="fav-loc" data-name="' + escHtml(f.name) + '">' + escHtml(f.name) + '</button>' +
     '<button class="fav-del" data-name="' + escHtml(f.name) + '" aria-label="Remove">×</button></div>'
   ).join('');
-  el.querySelectorAll('.fav-loc').forEach(btn => btn.addEventListener('click', () => {
-    const fav = S.favorites.find(f => f.name === btn.dataset.name);
-    if (fav) goFavorite(fav);
-  }));
+  el.querySelectorAll('.fav-loc').forEach(btn => btn.addEventListener('click', () => { const fav = S.favorites.find(f => f.name === btn.dataset.name); if (fav) goFavorite(fav); }));
   el.querySelectorAll('.fav-del').forEach(btn => btn.addEventListener('click', () => removeFavorite(btn.dataset.name)));
 }
 
-// ── SHARE CARD ─────────────────────────────────────────────────────────
+// ── SHARE CARD ───────────────────────────────────────────────────
 function openShareCard() {
   openModal('shareModal');
   const canvas = $('shareCanvas');
@@ -1114,7 +1045,6 @@ function openShareCard() {
   const grad = ctx2.createLinearGradient(0, 0, 640, 320);
   grad.addColorStop(0, g[0]); grad.addColorStop(1, g[1]);
   ctx2.fillStyle = grad; ctx2.fillRect(0, 0, 640, 320);
-  ctx2.fillStyle = 'rgba(0,0,0,.2)'; ctx2.fillRect(0, 0, 640, 320);
   ctx2.fillStyle = 'rgba(255,255,255,.08)'; ctx2.fillRect(0, 0, 640, 48);
   ctx2.fillStyle = 'rgba(255,255,255,.9)'; ctx2.font = 'bold 13px Outfit, sans-serif'; ctx2.fillText('⛈ STORM SURGE WEATHER', 22, 32);
   ctx2.fillStyle = 'rgba(255,255,255,.35)'; ctx2.font = '11px JetBrains Mono, monospace';
@@ -1136,12 +1066,9 @@ function openShareCard() {
     ctx2.fillStyle = '#06b6d4';
     ctx2.fillText('L: ' + cvtTemp(daily.temperature_2m_min[0]) + '°', 90, 280);
   }
-  ctx2.fillStyle = 'rgba(255,255,255,.06)'; ctx2.fillRect(0, 296, 640, 24);
-  ctx2.font = '10px JetBrains Mono, monospace'; ctx2.fillStyle = 'rgba(255,255,255,.25)';
-  ctx2.fillText('Data: Open-Meteo · storm-surge-weather.app', 22, 312);
 }
 
-// ── LEGEND ────────────────────────────────────────────────────────────
+// ── LEGEND ───────────────────────────────────────────────────────
 function updateLegend() {
   const layer = document.querySelector('.lb.active')?.dataset.layer || 'precipitation';
   const cfg = {
@@ -1157,7 +1084,7 @@ function updateLegend() {
   $('legBar').style.background = c.grad;
 }
 
-// ── UI WIRING ───────────────────────────────────────────────────────────
+// ── UI WIRING ────────────────────────────────────────────────────
 function initUI() {
   $('burger').onclick     = () => $('sidebar').classList.toggle('open');
   $('sidebarX').onclick   = () => $('sidebar').classList.remove('open');
@@ -1169,6 +1096,26 @@ function initUI() {
   $('playBtn').onclick    = togglePlay;
   $('favAddBtn').onclick  = addFavorite;
   $('shareBtn').onclick   = openShareCard;
+
+  // Spotter toggle
+  $('spotterBtn').onclick = () => {
+    const active = SpotterNetwork?.toggle(S.lat, S.lng);
+    $('spotterBtn').classList.toggle('active', active);
+    showToast(active ? '🌐 Spotter Network ON' : 'Spotter Network OFF');
+    if (active) {
+      document.querySelectorAll('.rpt').forEach(x => x.classList.remove('active'));
+      document.querySelector('.rpt[data-rt="severe"]')?.classList.add('active');
+      S.rightTab = 'severe'; renderStormReports();
+    }
+  };
+
+  // Severe analysis toggle
+  $('severeBtn').onclick = () => {
+    if (window.SeverePanel) {
+      if (SeverePanel.isOpen()) { SeverePanel.close(); $('severeBtn').classList.remove('active'); }
+      else { SeverePanel.load(S.lat, S.lng); $('severeBtn').classList.add('active'); }
+    }
+  };
 
   $('tRange').addEventListener('input', e => pickFrame(+e.target.value));
   $('quickOpacity').addEventListener('input', e => {
@@ -1300,24 +1247,24 @@ function initUI() {
   $('sSmooth').addEventListener('change',     e => { S.cfg.smooth    = e.target.checked; saveCfg(); if (window.RadarAnimator) RadarAnimator.setSmooth(e.target.checked); });
   $('sAlertZones').addEventListener('change', e => {
     S.cfg.alertZones = e.target.checked; saveCfg();
-    if (e.target.checked) putAlertsOnMap();
-    else rmLayers(['alert-fill','alert-line'], ['alerts-src']);
+    if (e.target.checked) putAlertsOnMap(); else rmLayers(['alert-fill','alert-line'], ['alerts-src']);
   });
-  $('sCrosshair').addEventListener('change', e => {
-    S.cfg.crosshair = e.target.checked; saveCfg();
-    $('crosshair').style.display = e.target.checked ? '' : 'none';
-  });
+  $('sCrosshair').addEventListener('change', e => { S.cfg.crosshair = e.target.checked; saveCfg(); $('crosshair').style.display = e.target.checked ? '' : 'none'; });
   $('sClickAction').addEventListener('change', e => { S.cfg.clickAction = e.target.checked ? 'nws' : 'weather'; saveCfg(); });
   $('sAnimBg').addEventListener('change', e => {
     S.cfg.animBg = e.target.checked; saveCfg();
     if (!e.target.checked) $('bgAnim').classList.add('bg-off');
     else if (S.weather) updateBgAnim(S.weather.current?.weather_code, S.weather.current?.is_day);
   });
+  // AI panel toggle in settings
+  const aiToggle = $('sAIPanel');
+  if (aiToggle) aiToggle.addEventListener('change', e => { S.cfg.aiPanel = e.target.checked; saveCfg(); const tab = $('ai-panel-tab'); if (tab) tab.style.display = e.target.checked ? '' : 'none'; });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       ['alertModal','settingsModal','aqiModal','marineModal','trafficModal','shareModal'].forEach(closeModal);
       if (window.NexradPanel) NexradPanel.close();
+      if (window.AIPanel) AIPanel.close();
     }
     if (e.key === ' ' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); togglePlay(); }
     if (e.key === 'ArrowLeft')  { if (S.frame > 0) pickFrame(S.frame - 1); }
@@ -1335,10 +1282,10 @@ function searchTrafficCams(q) {
   grid.innerHTML =
     '<div class="empty-s" style="gap:14px"><div class="es-ico">📷</div>' +
     '<div>Cameras for <strong>' + escHtml(q) + '</strong></div>' +
-    '<a class="modal-link" href="' + url + '" target="_blank" rel="noopener">🌐 Open Hazcams &rarr;</a></div>';
+    '<a class="modal-link" href="' + url + '" target="_blank" rel="noopener">🌐 Open Hazcams →</a></div>';
 }
 
-// ── MODALS / SETTINGS ───────────────────────────────────────────────────
+// ── MODALS / SETTINGS ────────────────────────────────────────────
 function openModal(id)  { $(id)?.classList.add('open'); }
 function closeModal(id) { $(id)?.classList.remove('open'); }
 function closeSettingsModal() {
@@ -1368,12 +1315,13 @@ function applySettingsUI() {
   $('sCrosshair').checked  = c.crosshair;
   $('sClickAction').checked = c.clickAction === 'nws';
   $('sAnimBg').checked    = c.animBg;
+  const aiToggle = $('sAIPanel'); if (aiToggle) aiToggle.checked = c.aiPanel !== false;
   if (!c.crosshair) $('crosshair').style.display = 'none';
   if (!c.animBg)    $('bgAnim').classList.add('bg-off');
 }
 
-// ── PERSISTENCE ──────────────────────────────────────────────────────────
+// ── PERSISTENCE ──────────────────────────────────────────────────
 function saveCfg() { try { localStorage.setItem('ss12_cfg', JSON.stringify(S.cfg)); } catch (e) {} }
 function loadCfg() { try { const s = localStorage.getItem('ss12_cfg'); if (s) Object.assign(S.cfg, JSON.parse(s)); } catch (e) {} }
 
-console.log('%c⛈ Storm Surge Weather v13.7%c NEXRAD single-site · IEM tile engine · range rings', 'color:#06b6d4;font-weight:900;font-size:14px', 'color:#7a8ea8;font-size:11px');
+console.log('%c⛈ Storm Surge Weather v13.8%c AI · Spotter Network · NEXRAD · Severe Analysis', 'color:#06b6d4;font-weight:900;font-size:14px', 'color:#7a8ea8;font-size:11px');
