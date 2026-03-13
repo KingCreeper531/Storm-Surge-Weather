@@ -40,17 +40,22 @@ const MAP_STYLES = {
 const STYLE_ORDER = ['dark','satellite','outdoors','light','streets'];
 
 // ── BOOT ─────────────────────────────────────────────────────────
-window.addEventListener('load', () => {
+// Wait for the token to be fetched BEFORE initialising the map.
+window.addEventListener('load', async () => {
   loadCfg();
   loadFavorites();
   applyTheme(S.cfg.theme);
-  initMap();
   initUI();
   initDrawMode();
   updateDate();
   setInterval(updateDate, 30000);
   setInterval(() => { loadWeather(); loadAlerts(); }, 600000);
   setInterval(() => { if (window.SpotterNetwork?.isVisible()) SpotterNetwork.refresh(S.lat, S.lng); }, 300000);
+
+  // Await the async token fetch from token.js before touching Mapbox
+  try { await window._tokenReady; } catch(e) { /* fallback already set in token.js */ }
+
+  initMap();
 });
 
 // ── UTILS ─────────────────────────────────────────────────────────
@@ -178,8 +183,14 @@ function initMap() {
   S.ctx    = S.canvas.getContext('2d');
   window.addEventListener('resize', resizeCanvas);
 
+  if (!window.MAPBOX_TOKEN) {
+    showMapError('Mapbox token missing. Set MAPBOX_TOKEN in your .env file.');
+    loadWeather(); loadAlerts();
+    return;
+  }
+
   try {
-    mapboxgl.accessToken = MAPBOX_TOKEN;
+    mapboxgl.accessToken = window.MAPBOX_TOKEN;
     S.map = new mapboxgl.Map({
       container:  'map',
       style:      MAP_STYLES[S.cfg.theme === 'light' ? 'light' : 'dark'],
@@ -198,7 +209,6 @@ function initMap() {
       S.map.resize();
       resizeCanvas();
 
-      // RadarAnimator
       if (window.RadarAnimator) {
         RadarAnimator.init(S.map, S.canvas, {
           apiBase: API, opacity: S.cfg.opacity, color: S.cfg.radarColor,
@@ -217,11 +227,9 @@ function initMap() {
         };
       }
 
-      // NEXRAD
       if (window.NexradRadar) NexradRadar.init(S.map, API);
       if (window.NexradPanel) { NexradPanel.init(API); NexradPanel.preloadNearby(S.lat, S.lng); }
 
-      // Spotter Network
       if (window.SpotterNetwork) {
         SpotterNetwork.init(S.map, API);
         SpotterNetwork.onUpdate = (reports) => {
@@ -230,10 +238,8 @@ function initMap() {
         };
       }
 
-      // Severe panel
       if (window.SeverePanel) SeverePanel.init(API);
 
-      // AI panel
       if (window.AIPanel) {
         AIPanel.init(API, () => ({
           lat: S.lat, lng: S.lng,
@@ -250,7 +256,7 @@ function initMap() {
       loadAlerts();
     });
 
-    // ── KEY FIX: only log errors — never replace #map innerHTML ──
+    // Only log non-fatal map errors — never replace #map innerHTML
     S.map.on('error', e => {
       console.warn('Mapbox error (non-fatal):', e?.error?.message || e);
     });
@@ -259,7 +265,7 @@ function initMap() {
 
   } catch (e) {
     console.error('Map init failed:', e);
-    showMapError('Could not initialize map: ' + e.message);
+    showMapError('Map failed to initialize: ' + e.message);
     loadWeather(); loadAlerts();
   }
 }
@@ -951,7 +957,7 @@ async function doSearch(q) {
   try {
     const d = await (await fetch(
       'https://api.mapbox.com/geocoding/v5/mapbox.places/' + encodeURIComponent(q) +
-      '.json?access_token=' + MAPBOX_TOKEN + '&limit=6&types=place,locality,neighborhood,postcode,address'
+      '.json?access_token=' + window.MAPBOX_TOKEN + '&limit=6&types=place,locality,neighborhood,postcode,address'
     )).json();
     showDrop(d.features || []);
   } catch (e) { hideDrop(); }
@@ -983,7 +989,7 @@ async function reverseGeocode(lat, lng) {
   try {
     const d = await (await fetch(
       'https://api.mapbox.com/geocoding/v5/mapbox.places/' + lng + ',' + lat +
-      '.json?access_token=' + MAPBOX_TOKEN + '&limit=1'
+      '.json?access_token=' + window.MAPBOX_TOKEN + '&limit=1'
     )).json();
     if (d.features?.length) {
       S.locName = d.features[0].text || d.features[0].place_name.split(',')[0];

@@ -1,10 +1,18 @@
-// Token is injected at runtime from /api/config (set MAPBOX_TOKEN in .env)
-// Falls back to the built-in public token for browser dev use only.
-// app.js waits for window._tokenReady before calling initMap().
+// Fetches the Mapbox token from the server so the .env secret token is used.
+// In Electron, window.location.origin = http://localhost:3001 which is NOT
+// on the Mapbox public token allowlist — a secret token (no URL restrictions)
+// set via MAPBOX_TOKEN in .env is required.
+window.MAPBOX_TOKEN = '';
 window._tokenReady = fetch('/api/config')
   .then(r => r.json())
-  .then(d => { window.MAPBOX_TOKEN = d.mapboxToken; })
+  .then(d => {
+    if (d && d.mapboxToken) {
+      window.MAPBOX_TOKEN = d.mapboxToken;
+    } else {
+      throw new Error('no token in config');
+    }
+  })
   .catch(() => {
-    // fallback — public token, works in browser but NOT in Electron without URL allowlist
+    // Hard fallback — public token only works in browser with URL allowlist set
     window.MAPBOX_TOKEN = 'pk.eyJ1Ijoic3Rvcm0tc3VyZ2UiLCJhIjoiY21scmM2Y3N3MDEzYjNmczViemZueTZuMSJ9.yHlnNztU7CgMaXUNuCzCrg';
   });
