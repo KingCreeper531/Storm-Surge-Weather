@@ -250,17 +250,16 @@ function initMap() {
       loadAlerts();
     });
 
+    // ── KEY FIX: only log errors — never replace #map innerHTML ──
     S.map.on('error', e => {
-      console.error('Mapbox:', e);
-      showMapError('Map error — check your MAPBOX_TOKEN');
-      loadWeather(); loadAlerts();
+      console.warn('Mapbox error (non-fatal):', e?.error?.message || e);
     });
 
     S.map.on('click', e => { if (!S.drawMode) handleMapClick(e); });
 
   } catch (e) {
     console.error('Map init failed:', e);
-    showMapError('Could not init map — set MAPBOX_TOKEN env var');
+    showMapError('Could not initialize map: ' + e.message);
     loadWeather(); loadAlerts();
   }
 }
@@ -861,7 +860,6 @@ function rmLayers(layers, sources) {
 function renderStormReports() {
   if (S.rightTab !== 'severe') return;
   const body = $('alertsBody');
-  // Show spotter reports + SPC reports
   const spotterCount = S.spotterReports.length;
   const spcCount     = S.stormReports.length;
   if (!spotterCount && !spcCount) {
@@ -1097,7 +1095,6 @@ function initUI() {
   $('favAddBtn').onclick  = addFavorite;
   $('shareBtn').onclick   = openShareCard;
 
-  // Spotter toggle
   $('spotterBtn').onclick = () => {
     const active = SpotterNetwork?.toggle(S.lat, S.lng);
     $('spotterBtn').classList.toggle('active', active);
@@ -1109,7 +1106,6 @@ function initUI() {
     }
   };
 
-  // Severe analysis toggle
   $('severeBtn').onclick = () => {
     if (window.SeverePanel) {
       if (SeverePanel.isOpen()) { SeverePanel.close(); $('severeBtn').classList.remove('active'); }
@@ -1256,7 +1252,6 @@ function initUI() {
     if (!e.target.checked) $('bgAnim').classList.add('bg-off');
     else if (S.weather) updateBgAnim(S.weather.current?.weather_code, S.weather.current?.is_day);
   });
-  // AI panel toggle in settings
   const aiToggle = $('sAIPanel');
   if (aiToggle) aiToggle.addEventListener('change', e => { S.cfg.aiPanel = e.target.checked; saveCfg(); const tab = $('ai-panel-tab'); if (tab) tab.style.display = e.target.checked ? '' : 'none'; });
 
