@@ -6,443 +6,344 @@
   <title>Storm Surge Weather</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%88%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <style>
-    /* ── Update banner ── */
-    .update-banner{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;background:linear-gradient(135deg,#5865f2 0%,#3b4fd8 100%);color:#fff;border-radius:14px;padding:14px 20px;min-width:340px;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,.5);align-items:center;gap:14px;font-family:'Outfit',sans-serif;animation:bannerIn .35s cubic-bezier(.34,1.56,.64,1) forwards}
-    .update-banner.visible{display:flex}
-    @keyframes bannerIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-    .ub-icon{font-size:1.6rem;flex-shrink:0}.ub-text{flex:1;min-width:0}.ub-text strong{display:block;font-size:.95rem;font-weight:700}.ub-text span{font-size:.8rem;opacity:.85}
-    .ub-progress{width:100%;height:4px;background:rgba(255,255,255,.2);border-radius:2px;margin-top:6px;display:none}.ub-progress-fill{height:100%;background:#fff;border-radius:2px;transition:width .2s}
-    .ub-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .2s;flex-shrink:0}.ub-btn:hover{background:rgba(255,255,255,.35)}.ub-btn:disabled{opacity:.5;cursor:default}
-    .ub-dismiss{background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:1.1rem;padding:2px 6px;flex-shrink:0}.ub-dismiss:hover{color:#fff}
-    .update-check-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.upd-status{font-size:.8rem;opacity:.7;flex:1}.upd-status.has-update{color:#5865f2;opacity:1;font-weight:600}.upd-status.up-to-date{color:#22c55e;opacity:1}.upd-status.upd-warn{color:#f59e0b;opacity:1}
-    .upd-progress-bar{width:100%;height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin-top:4px;display:none}.upd-progress-fill{height:100%;background:#5865f2;border-radius:3px;transition:width .2s}
-    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
-    .upd-no-asset{font-size:.78rem;color:var(--t3,#9ca3af);margin-top:6px;line-height:1.5;padding:8px 10px;background:rgba(255,255,255,.05);border-radius:6px;border-left:3px solid #f59e0b}
-    /* ── NEXRAD panel ── */
-    .nexrad-panel{padding:10px 0}.nx-header{display:flex;align-items:center;justify-content:space-between;padding:0 14px 8px}.nx-title{font-size:.8rem;font-weight:700;letter-spacing:.08em;color:var(--t3,#9ca3af);text-transform:uppercase}.nx-src-badge{font-size:.68rem;padding:2px 7px;background:rgba(6,182,212,.15);color:#06b6d4;border-radius:10px;border:1px solid rgba(6,182,212,.25)}
-    .nx-station-row{display:flex;align-items:center;gap:8px;padding:0 12px 8px}.nx-station-select{flex:1;background:var(--bg2,#1a1f2e);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t1,#f1f5f9);border-radius:8px;padding:6px 10px;font-size:.82rem;font-family:'Outfit',sans-serif}.nx-station-select option{background:#1a1f2e}
-    .nx-refresh-btn{background:rgba(6,182,212,.15);border:1px solid rgba(6,182,212,.25);color:#06b6d4;border-radius:8px;padding:6px 10px;font-size:.8rem;cursor:pointer;transition:background .2s;white-space:nowrap}.nx-refresh-btn:hover{background:rgba(6,182,212,.3)}
-    .nx-products{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 8px}.nx-prod-btn{padding:5px 10px;border-radius:7px;border:1px solid var(--bdr,rgba(255,255,255,.1));background:transparent;color:var(--t2,#94a3b8);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .18s;font-family:'Outfit',sans-serif}.nx-prod-btn:hover{border-color:rgba(6,182,212,.4);color:#06b6d4}.nx-prod-btn.active{background:rgba(6,182,212,.18);border-color:#06b6d4;color:#06b6d4}
-    .nx-vis-row{display:flex;align-items:center;justify-content:space-between;padding:0 14px 8px}.nx-vis-label{font-size:.78rem;color:var(--t3,#9ca3af)}.nx-tog{display:flex;align-items:center;gap:6px}
-    .nx-desc{font-size:.72rem;color:var(--t3,#9ca3af);padding:0 14px 6px;line-height:1.4}.nx-legend{padding:0 12px 6px}.nx-legend img{width:100%;max-width:220px;border-radius:6px;display:block}
-    .nx-station-info{font-size:.72rem;color:var(--t3,#9ca3af);padding:0 14px 4px}.nx-station-info strong{color:var(--t1,#f1f5f9)}
-    .nx-error{padding:10px 14px;font-size:.78rem;color:#f59e0b;background:rgba(245,158,11,.08);border-radius:8px;margin:0 12px 8px}
-    .ri-stat{display:flex;justify-content:space-between;padding:4px 14px;font-size:.78rem}.ri-stat span:first-child{color:var(--t3,#9ca3af)}
-    .ri-title{font-size:.78rem;font-weight:700;letter-spacing:.08em;color:var(--t3,#9ca3af);text-transform:uppercase;padding:0 14px 6px;margin-top:8px}
-    .ri-actions{display:flex;gap:8px;padding:8px 12px}.ri-btn{flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t2,#94a3b8);border-radius:8px;font-size:.78rem;cursor:pointer;transition:background .18s}.ri-btn:hover{background:rgba(255,255,255,.12)}
-    .mapboxgl-popup-content.spotter-popup{background:var(--bg2,#1a1f2e);color:var(--t1,#f1f5f9);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 14px;font-family:'Outfit',sans-serif;font-size:.82rem;min-width:180px;max-width:260px}
-    .mapboxgl-popup-tip{border-top-color:var(--bg2,#1a1f2e)!important}
-    /* ── Widgets panel ── */
-    #widgetsPanel{position:fixed;top:60px;right:320px;width:280px;max-height:calc(100vh - 80px);overflow-y:auto;background:var(--bg2,#1a1f2e);border:1px solid rgba(255,255,255,.1);border-radius:12px;z-index:700;display:none;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.5)}
-    #widgetsPanel.open{display:flex}
-    .wp-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.07);font-weight:700;font-size:.85rem;flex-shrink:0}
-    .wp-section{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
-    .wp-title{font-size:.72rem;font-weight:700;letter-spacing:.08em;color:var(--t3,#9ca3af);text-transform:uppercase;margin-bottom:8px}
-    @keyframes spin{to{transform:rotate(360deg)}}
-  </style>
 </head>
 <body>
 
+<!-- BG ANIMATION -->
+<div class="bg-anim" id="bgAnim"><div class="bg-l bg-l1"></div><div class="bg-l bg-l2"></div></div>
+
+<!-- LOADER BAR -->
+<div class="loader" id="loader"></div>
+
 <!-- UPDATE BANNER -->
-<div class="update-banner" id="updateBanner">
-  <div class="ub-icon" id="ubIcon">🔄</div>
-  <div class="ub-text">
-    <strong id="ubTitle">Update Available</strong>
-    <span id="ubDesc">A new version is ready</span>
-    <div class="ub-progress" id="ubProgress"><div class="ub-progress-fill" id="ubProgressFill" style="width:0%"></div></div>
-  </div>
-  <button class="ub-btn" id="ubAction">Download</button>
-  <button class="ub-dismiss" id="ubDismiss">✕</button>
+<div class="upd-banner" id="updBanner">
+  <div class="upd-icon" id="updIcon">🔄</div>
+  <div class="upd-text"><strong id="updTitle">Update Available</strong><span id="updDesc">A new version is ready</span></div>
+  <button class="upd-btn" id="updAction">Install</button>
+  <button class="upd-dismiss" id="updDismiss">✕</button>
 </div>
 
-<!-- ANIMATED BACKGROUND -->
-<div class="bg-anim" id="bgAnim" aria-hidden="true">
-  <div class="bg-layer bg-l1"></div>
-  <div class="bg-layer bg-l2"></div>
-  <div class="bg-layer bg-l3"></div>
-</div>
+<!-- SHELL -->
+<div id="shell">
 
-<!-- SIDEBAR -->
+<!-- ── SIDEBAR ── -->
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
-    <div class="logo-mark">⛈</div>
+    <span class="logo-icon">⛈</span>
     <div class="logo-text">
-      <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v13.9</span>
+      <strong>StormSurge</strong>
+      <span>v13.9</span>
     </div>
-    <button class="sidebar-x" id="sidebarX">✕</button>
+    <button class="sidebar-toggle" id="sidebarToggle" title="Collapse">‹</button>
   </div>
+
   <div class="sidebar-loc">
-    <div class="sl-label">CURRENT LOCATION</div>
+    <div class="sl-label">Location</div>
     <div class="sl-name" id="sideLocName">—</div>
     <div class="sl-coords" id="sideLocCoords">—</div>
   </div>
+
   <div class="sidebar-snap" id="sideSnap">
     <div class="snap-temp" id="snapTemp">—°</div>
     <div class="snap-right">
       <div class="snap-icon" id="snapIcon">🌡</div>
       <div class="snap-desc" id="snapDesc">—</div>
-      <div class="snap-hl">
-        <span id="snapHi">H:—</span>
-        <span id="snapLo">L:—</span>
-      </div>
+      <div class="snap-hl"><span id="snapHi">H:—</span><span id="snapLo">L:—</span></div>
     </div>
   </div>
-  <nav class="sidenav">
-    <a href="#" class="sni active" data-p="home"><span class="sni-ico">⌂</span><span class="sni-lbl">Dashboard</span></a>
-    <a href="#" class="sni" data-p="alerts"><span class="sni-ico">◈</span><span class="sni-lbl">Alerts<em class="nav-badge" id="navAlertBadge">0</em></span></a>
-    <a href="#" class="sni" data-p="nwssocial"><span class="sni-ico">🐦</span><span class="sni-lbl">NWS Feed</span></a>
-    <a href="#" class="sni" data-p="widgets"><span class="sni-ico">📊</span><span class="sni-lbl">Widgets</span></a>
-    <a href="#" class="sni" data-p="aqi"><span class="sni-ico">💨</span><span class="sni-lbl">Air Quality</span></a>
-    <a href="#" class="sni" data-p="marine"><span class="sni-ico">🌊</span><span class="sni-lbl">Marine</span></a>
-    <a href="#" class="sni" data-p="cameras"><span class="sni-ico">📷</span><span class="sni-lbl">Cameras</span></a>
-    <a href="#" class="sni" data-p="settings"><span class="sni-ico">⚙</span><span class="sni-lbl">Settings</span></a>
+
+  <nav class="sidenav" id="sidenav">
+    <a class="sni active" data-p="home"><span class="sni-ico">⌂</span><span class="sni-lbl">Dashboard</span></a>
+    <a class="sni" data-p="alerts"><span class="sni-ico">◈</span><span class="sni-lbl">Alerts<em class="nav-badge" id="navBadge">0</em></span></a>
+    <a class="sni" data-p="nwssocial"><span class="sni-ico">🐦</span><span class="sni-lbl">NWS Feed</span></a>
+    <a class="sni" data-p="widgets"><span class="sni-ico">📊</span><span class="sni-lbl">Widgets</span></a>
+    <a class="sni" data-p="aqi"><span class="sni-ico">💨</span><span class="sni-lbl">Air Quality</span></a>
+    <a class="sni" data-p="marine"><span class="sni-ico">🌊</span><span class="sni-lbl">Marine</span></a>
+    <a class="sni" data-p="cameras"><span class="sni-ico">📷</span><span class="sni-lbl">Cameras</span></a>
+    <a class="sni" data-p="settings"><span class="sni-ico">⚙</span><span class="sni-lbl">Settings</span></a>
   </nav>
-  <div class="fav-section">
-    <div class="fav-head">
-      <span>SAVED LOCATIONS</span>
-      <button class="fav-add" id="favAddBtn">＋</button>
+
+  <div class="sidebar-favs">
+    <div class="favs-head">
+      <span class="favs-label">Saved</span>
+      <button class="favs-add" id="favAddBtn" title="Save current location">＋</button>
     </div>
-    <div class="fav-list" id="favList"></div>
+    <div id="favList"><div class="fav-empty">No saved locations</div></div>
   </div>
+
   <div class="sidebar-bottom">
-    <button class="theme-row" id="themeBtn">
-      <span id="themeIcon">🌙</span>
-      <span id="themeLabel">Dark Mode</span>
-      <div class="tog-mini" id="themeTog"></div>
-    </button>
-    <div class="ver-badge">Storm Surge v13.9 — Open-Meteo · RainViewer · NWS · NEXRAD · AI</div>
+    <button class="theme-btn" id="themeBtn"><span id="themeIco">🌙</span><span id="themeLbl">Dark Mode</span></button>
+    <span class="ver-tag">Open-Meteo · RainViewer · NWS</span>
   </div>
 </aside>
 
-<!-- MAIN -->
-<main class="main">
+<!-- ── MAIN ── -->
+<div class="main-area">
+  <!-- TOPBAR -->
   <header class="topbar">
-    <div class="tb-left">
-      <button class="burger" id="burger"><span></span><span></span><span></span></button>
-      <div class="loc-chip">
-        <div class="loc-tag">LOCATION</div>
-        <div class="loc-val" id="locName">New York</div>
-      </div>
+    <div class="tb-loc">
+      <div class="tb-loc-name" id="locName">New York</div>
+      <div class="tb-loc-sub" id="locDate">—</div>
     </div>
-    <div class="tb-mid">
-      <div class="searchbox">
-        <span class="s-ico">⌕</span>
-        <input id="searchInput" type="text" placeholder="Search city, zip, or coordinates..." autocomplete="off" spellcheck="false">
-        <div class="s-drop" id="searchDrop"></div>
-      </div>
+
+    <div class="searchbox">
+      <span class="search-ico">⌕</span>
+      <input id="searchInput" type="text" placeholder="Search city, zip, coordinates…" autocomplete="off" spellcheck="false">
+      <div class="s-drop" id="searchDrop"></div>
     </div>
-    <div class="tb-right">
+
+    <div class="tb-pills">
       <div class="live-pill"><span class="live-dot"></span>LIVE</div>
-      <div class="date-pill" id="datePill">—</div>
-      <button class="tb-btn" id="geoBtn">◎</button>
-      <button class="tb-btn" id="shareBtn">⤴</button>
-      <button class="tb-btn" id="drawBtn">✏</button>
-      <button class="tb-btn" id="refreshBtn">↻</button>
+      <span class="date-pill" id="datePill">—</span>
+      <button class="tb-btn" id="geoBtn" title="My Location">◎</button>
+      <button class="tb-btn" id="drawBtn" title="Draw">✏</button>
+      <button class="tb-btn" id="shareBtn" title="Share">⤴</button>
+      <button class="tb-btn" id="refreshBtn" title="Refresh">↻</button>
+      <button class="tb-btn" id="rpanelToggle" title="Right panel">▣</button>
     </div>
   </header>
 
-  <div class="layerbar">
-    <button class="lb active" data-layer="precipitation">🌧 Radar</button>
-    <button class="lb" data-layer="temperature">🌡 Temp</button>
-    <button class="lb" data-layer="wind">💨 Wind</button>
-    <button class="lb" data-layer="clouds">☁ Clouds</button>
-    <button class="lb" data-layer="pressure">📊 Pressure</button>
-    <div class="lb-sep"></div>
-    <button class="lb lb-sat" data-layer="satellite">🛰 Satellite</button>
-    <button class="lb lb-nexrad" id="nexradBtn" onclick="if(window.NexradPanel)NexradPanel.toggle()">📡 NEXRAD</button>
-    <button class="lb lb-spotter" id="spotterBtn">🌐 Spotter</button>
-    <button class="lb lb-severe" id="severeBtn">⚡ Severe</button>
-    <button class="lb lb-nws" id="nwsSocialBtn">🐦 NWS Feed</button>
-    <button class="style-btn" id="styleBtn">◑ Style</button>
-  </div>
+  <!-- CONTENT -->
+  <div class="content-area">
+    <!-- MAP ZONE -->
+    <div class="map-zone" id="mapzone">
+      <div id="map"></div>
+      <canvas id="radarCanvas" style="position:absolute;inset:0;pointer-events:none"></canvas>
+      <canvas id="drawCanvas" style="position:absolute;inset:0"></canvas>
 
-  <div class="draw-toolbar" id="drawToolbar">
-    <span class="dt-label">✏ Draw Mode</span>
-    <div class="dt-colors">
-      <button class="dc active" data-c="#f59e0b" style="background:#f59e0b"></button>
-      <button class="dc" data-c="#ef4444" style="background:#ef4444"></button>
-      <button class="dc" data-c="#06b6d4" style="background:#06b6d4"></button>
-      <button class="dc" data-c="#ffffff" style="background:#ffffff"></button>
-      <button class="dc" data-c="#22c55e" style="background:#22c55e"></button>
-    </div>
-    <div class="dt-sizes">
-      <button class="ds active" data-s="3">S</button>
-      <button class="ds" data-s="6">M</button>
-      <button class="ds" data-s="12">L</button>
-    </div>
-    <button class="dt-btn" id="drawUndo">↩ Undo</button>
-    <button class="dt-btn" id="drawClear">🗑 Clear</button>
-    <button class="dt-btn danger" id="drawExit">✕ Exit</button>
-  </div>
+      <!-- LAYER BAR -->
+      <div class="layerbar">
+        <button class="lb active" data-layer="precipitation">🌧 Radar</button>
+        <button class="lb" data-layer="temperature">🌡 Temp</button>
+        <button class="lb" data-layer="wind">💨 Wind</button>
+        <button class="lb" data-layer="clouds">☁ Clouds</button>
+        <button class="lb" data-layer="pressure">📊 Pressure</button>
+        <div class="lb sep"></div>
+        <button class="lb" id="nexradBtn">📡 NEXRAD</button>
+        <button class="lb" id="spotterBtn">🌐 Spotter</button>
+        <button class="lb" id="severeBtn">⚡ Severe</button>
+        <button class="lb" id="nwsSocialBtn">🐦 NWS Feed</button>
+        <button class="lb" id="styleBtn">◑ Style</button>
+      </div>
 
-  <div class="mapzone" id="mapzone">
-    <div id="map"></div>
-    <canvas id="radarCanvas"></canvas>
-    <canvas id="drawCanvas"></canvas>
-
-    <div class="wcard" id="wcard">
-      <div class="wc-header">
+      <!-- WEATHER CARD -->
+      <div class="wcard tl" id="wcard">
         <div class="wc-loc" id="wcLoc">—</div>
         <div class="wc-time" id="wcTime">—</div>
-      </div>
-      <div class="wc-hero">
-        <div class="wc-icon" id="wcIcon">🌡</div>
-        <div class="wc-temps">
-          <div class="wc-temp" id="wcTemp">--°</div>
-          <div class="wc-feels" id="wcFeels">Feels --°</div>
-          <div class="wc-desc" id="wcDesc">—</div>
+        <div class="wc-hero">
+          <div class="wc-icon" id="wcIcon">🌡</div>
+          <div>
+            <div class="wc-temp" id="wcTemp">--°</div>
+            <div class="wc-feels" id="wcFeels">Feels like --°</div>
+            <div class="wc-desc" id="wcDesc">—</div>
+            <div><span class="wc-hi" id="wcHi">H: --°</span><span class="wc-lo" id="wcLo">L: --°</span></div>
+          </div>
         </div>
-        <div class="wc-hilo">
-          <span class="wc-hi" id="wcHi">H: --°</span>
-          <span class="wc-lo" id="wcLo">L: --°</span>
+        <div class="wc-uv">
+          <div class="uv-label">UV</div>
+          <div class="uv-bar"><div class="uv-dot" id="uvDot" style="left:0%"></div></div>
+          <div class="uv-val" id="wcUV">--</div>
+        </div>
+        <div class="wc-grid">
+          <div class="wcs"><div class="wcs-l">💧 Humidity</div><div class="wcs-v" id="wcHum">--</div></div>
+          <div class="wcs"><div class="wcs-l">🌫 Dew Point</div><div class="wcs-v" id="wcDew">--</div></div>
+          <div class="wcs"><div class="wcs-l">💨 Wind</div><div class="wcs-v" id="wcWind">--</div></div>
+          <div class="wcs"><div class="wcs-l">🌬 Gusts</div><div class="wcs-v" id="wcGust">--</div></div>
+          <div class="wcs"><div class="wcs-l">🌧 Precip</div><div class="wcs-v" id="wcRain">--</div></div>
+          <div class="wcs"><div class="wcs-l">👁 Visibility</div><div class="wcs-v" id="wcVis">--</div></div>
+          <div class="wcs"><div class="wcs-l">📊 Pressure</div><div class="wcs-v" id="wcPres">--</div></div>
+          <div class="wcs"><div class="wcs-l">☁ Cloud</div><div class="wcs-v" id="wcCloud">--</div></div>
+          <div class="wcs"><div class="wcs-l">🫁 AQI</div><div class="wcs-v" id="wcAQI">--</div></div>
+          <div class="wcs"><div class="wcs-l">🌡 Feels Like</div><div class="wcs-v" id="wcHeatIdx">--</div></div>
+        </div>
+        <div class="wc-sun">
+          <div class="sun-arc-wrap">
+            <svg viewBox="0 0 120 55" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10,50 A50,50 0 0,1 110,50" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3"/>
+              <path id="sunArcProg" d="M10,50 A50,50 0 0,1 110,50" fill="none" stroke="#f59e0b" stroke-width="3" stroke-dasharray="0 157" stroke-linecap="round"/>
+              <circle id="sunDot" cx="10" cy="50" r="4" fill="#f59e0b"/>
+            </svg>
+          </div>
+          <div class="sun-times">
+            <span>🌅 <span id="wcSunrise">--:--</span></span>
+            <span id="wcDaylight">--h</span>
+            <span>🌇 <span id="wcSunset">--:--</span></span>
+          </div>
+        </div>
+        <div class="wc-moon" id="wcMoon">🌙 —</div>
+      </div>
+
+      <!-- LEGEND -->
+      <div class="legend" id="legend">
+        <div class="leg-title" id="legTitle">mm/h</div>
+        <div class="leg-bar" id="legBar" style="background:linear-gradient(to top,#555,#04e9e7,#019ff4,#02fd02,#fdf802,#fd9500,#fd0000)"></div>
+        <div class="leg-nums"><span>60+</span><span>10</span><span>1</span><span>0</span></div>
+      </div>
+
+      <!-- MAP BUTTONS -->
+      <div class="map-btns">
+        <button class="map-btn" id="zoomIn" title="Zoom in">＋</button>
+        <button class="map-btn" id="zoomOut" title="Zoom out">－</button>
+        <button class="map-btn" id="compassBtn" title="Reset north">⊕</button>
+      </div>
+
+      <!-- CROSSHAIR -->
+      <div class="crosshair" id="crosshair">
+        <div class="ch-h"></div><div class="ch-v"></div><div class="ch-ring"></div>
+      </div>
+
+      <!-- DRAW TOOLBAR -->
+      <div class="draw-toolbar" id="drawToolbar">
+        <span class="dt-label">Draw</span>
+        <div class="dt-colors">
+          <div class="dc active" data-c="#f59e0b" style="background:#f59e0b"></div>
+          <div class="dc" data-c="#ef4444" style="background:#ef4444"></div>
+          <div class="dc" data-c="#06b6d4" style="background:#06b6d4"></div>
+          <div class="dc" data-c="#22c55e" style="background:#22c55e"></div>
+          <div class="dc" data-c="#fff" style="background:#fff"></div>
+        </div>
+        <div class="dt-sizes">
+          <button class="ds active" data-s="3">S</button>
+          <button class="ds" data-s="6">M</button>
+          <button class="ds" data-s="12">L</button>
+        </div>
+        <button class="dt-btn" id="drawUndo">↩</button>
+        <button class="dt-btn" id="drawClear">🗑</button>
+        <button class="dt-btn danger" id="drawExit">✕</button>
+      </div>
+
+      <!-- FORECAST STRIP -->
+      <div class="fcast" id="fcast">
+        <div class="fcast-tabs">
+          <button class="fct active" data-ft="hourly">Hourly</button>
+          <button class="fct" data-ft="daily">14-Day</button>
+          <button class="fct" data-ft="precip">🌧 Rain</button>
+          <button class="fct" data-ft="wind">💨 Wind</button>
+          <button class="fct" data-ft="feels">🌡 Feels</button>
+        </div>
+        <div class="fc-scroll" id="fcScroll"></div>
+      </div>
+
+      <!-- TIMEBAR -->
+      <div class="timebar">
+        <button class="t-ctrl" id="tPrev">‹</button>
+        <div class="tslots" id="tSlots"></div>
+        <button class="t-ctrl" id="tNext">›</button>
+        <button class="playbtn" id="playBtn">▶</button>
+        <div class="nowcast-badge" id="nowcastBadge">NOWCAST</div>
+        <div class="opacity-wrap">
+          <label>Opacity</label>
+          <input type="range" class="thin" id="quickOpacity" min="10" max="100" value="75">
         </div>
       </div>
-      <div class="wc-uv-row" id="wcUVRow">
-        <span class="wc-uv-label">UV Index</span>
-        <div class="wc-uv-bar"><div class="wc-uv-fill" id="wcUVFill"></div></div>
-        <span class="wc-uv-val" id="wcUV">--</span>
+    </div><!-- /map-zone -->
+
+    <!-- RIGHT PANEL -->
+    <aside class="rpanel" id="rpanel">
+      <div class="rp-tabs">
+        <button class="rp-tab active" data-rt="alerts">Alerts<span class="badge" id="alertBadge">0</span></button>
+        <button class="rp-tab" data-rt="info">Radar</button>
+        <button class="rp-tab" data-rt="severe">Reports</button>
       </div>
-      <div class="wc-divider"></div>
-      <div class="wc-grid" id="wcGrid">
-        <div class="wcs"><div class="wcs-l">💧 Humidity</div>  <div class="wcs-v" id="wcHum">--</div></div>
-        <div class="wcs"><div class="wcs-l">🌫 Dew Point</div> <div class="wcs-v" id="wcDew">--</div></div>
-        <div class="wcs"><div class="wcs-l">💨 Wind</div>       <div class="wcs-v" id="wcWind">--</div></div>
-        <div class="wcs"><div class="wcs-l">🌬 Gusts</div>      <div class="wcs-v" id="wcGust">--</div></div>
-        <div class="wcs"><div class="wcs-l">🌧 Precip</div>     <div class="wcs-v" id="wcRain">--</div></div>
-        <div class="wcs"><div class="wcs-l">👁 Visibility</div> <div class="wcs-v" id="wcVis">--</div></div>
-        <div class="wcs"><div class="wcs-l">📊 Pressure</div>   <div class="wcs-v" id="wcPres">--</div></div>
-        <div class="wcs"><div class="wcs-l">☁ Cloud</div>       <div class="wcs-v" id="wcCloud">--</div></div>
-        <div class="wcs"><div class="wcs-l">🫁 AQI</div>        <div class="wcs-v" id="wcAQI">--</div></div>
-        <div class="wcs"><div class="wcs-l">🌡 Feels Like</div> <div class="wcs-v" id="wcHeatIdx">--</div></div>
+      <div class="rp-body" id="alertsBody">
+        <div class="empty-s"><div class="es-ico">⌛</div><div class="es-txt">Loading alerts…</div></div>
       </div>
-      <div class="wc-divider"></div>
-      <div class="wc-sun-arc" id="wcSunArc">
-        <svg class="sun-arc-svg" viewBox="0 0 120 60">
-          <path class="sun-arc-track" d="M10,55 A50,50 0 0,1 110,55"/>
-          <path class="sun-arc-prog" id="sunArcProg" d="M10,55 A50,50 0 0,1 110,55" stroke-dasharray="0 157"/>
-          <circle class="sun-dot" id="sunDot" cx="10" cy="55" r="4"/>
-        </svg>
-        <div class="wc-sun-row">
-          <div class="wc-sun-item"><span>🌅</span><span id="wcSunrise">--:--</span></div>
-          <div class="wc-sun-item center"><span id="wcDaylight">--h</span><span class="wcs-l">daylight</span></div>
-          <div class="wc-sun-item"><span>🌇</span><span id="wcSunset">--:--</span></div>
-        </div>
-      </div>
-      <div class="wc-moon" id="wcMoon">🌙 —</div>
-    </div>
+    </aside>
 
-    <div class="legend" id="legend">
-      <div class="leg-title" id="legTitle">mm/h</div>
-      <div class="leg-bar" id="legBar"></div>
-      <div class="leg-nums"><span>60+</span><span>32</span><span>10</span><span>1</span><span>0</span></div>
-    </div>
+  </div><!-- /content-area -->
+</div><!-- /main-area -->
+</div><!-- /shell -->
 
-    <div class="mapbtns">
-      <button id="zoomIn">＋</button>
-      <button id="zoomOut">－</button>
+<!-- NWS SOCIAL PANEL -->
+<div id="nws-social-panel">
+  <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+    <span>🐦</span>
+    <div style="flex:1">
+      <div style="font-weight:700;font-size:.88rem" id="nwsSocialTitle">NWS Updates</div>
+      <div style="font-size:.68rem;color:var(--t3)" id="nwsSocialSub">Finding nearest office…</div>
     </div>
-
-    <div class="crosshair" id="crosshair">
-      <div class="ch-h"></div><div class="ch-v"></div><div class="ch-ring"></div>
-    </div>
-
-    <div class="fcast" id="fcast">
-      <div class="fcast-tabs">
-        <button class="fct active" data-ft="hourly" id="tab-hourly">Hourly</button>
-        <button class="fct" data-ft="daily" id="tab-daily">10-Day</button>
-        <button class="fct" data-ft="precip" id="tab-precip">🌧 Rain</button>
-        <button class="fct" data-ft="wind" id="tab-wind">💨 Wind</button>
-        <button class="fct" data-ft="feels" id="tab-feels">🌡 Feels</button>
-      </div>
-      <div class="fc-scroll" id="fcScroll"></div>
-    </div>
-
-    <div class="timebar">
-      <button class="t-arr" id="tPrev">‹</button>
-      <div class="tslots" id="tSlots"></div>
-      <input type="range" id="tRange" min="0" max="0" value="0">
-      <button class="t-arr" id="tNext">›</button>
-      <button class="playbtn" id="playBtn">▶</button>
-      <div class="nowcast-badge" id="nowcastBadge" style="display:none">NOWCAST</div>
-      <label class="quick-op">Opacity
-        <input type="range" id="quickOpacity" min="10" max="100" value="75">
-      </label>
-    </div>
+    <a id="nwsSocialXLink" href="#" target="_blank" rel="noopener" style="font-size:.7rem;color:#1d9bf0;border:1px solid rgba(29,155,240,.3);padding:2px 8px;border-radius:20px;text-decoration:none">X ↗</a>
+    <button id="nwsSocialClose" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:1rem">✕</button>
   </div>
-</main>
-
-<!-- RIGHT PANEL -->
-<aside class="rpanel" id="rpanel">
-  <div class="rp-head">
-    <button class="rpt active" data-rt="alerts">Alerts <span class="rpt-badge danger" id="alertBadge">0</span></button>
-    <button class="rpt" data-rt="info">NEXRAD</button>
-    <button class="rpt" data-rt="severe">Reports</button>
-  </div>
-  <div class="rp-body" id="alertsBody">
-    <div class="empty-s"><div class="es-ico">⌛</div><div>Loading alerts…</div></div>
-  </div>
-</aside>
+  <div id="nwsSocialFeed" style="overflow-y:auto;flex:1"></div>
+</div>
 
 <!-- WIDGETS PANEL -->
-<div id="widgetsPanel">
-  <div class="wp-head">
-    <span>📊 Widgets</span>
-    <button onclick="document.getElementById('widgetsPanel').classList.remove('open')" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:1rem">✕</button>
+<div id="widgets-panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border)">
+    <span style="font-weight:700;font-size:.85rem">📊 Widgets</span>
+    <button onclick="document.getElementById('widgets-panel').classList.remove('open')" style="background:none;border:none;color:var(--t3);cursor:pointer">✕</button>
   </div>
-  <div class="wp-section">
-    <div class="wp-title">Wind Rose (24h)</div>
-    <canvas id="windRoseCanvas" style="width:100%;display:block"></canvas>
+  <div class="wp-sec"><div class="wp-sec-title">Wind Rose (24h)</div><canvas id="windRoseCanvas" style="width:100%;display:block"></canvas></div>
+  <div class="wp-sec"><div class="wp-sec-title">Feels Like</div><canvas id="feelsGaugeCanvas" style="width:100%;display:block"></canvas></div>
+  <div class="wp-sec"><div class="wp-sec-title">Precip Calendar (14-day)</div><div id="precipCalendar"></div></div>
+  <div class="wp-sec"><div class="wp-sec-title">Humidity &amp; Dew</div><div id="humidityBar"></div></div>
+  <div class="wp-sec"><div class="wp-sec-title">Pressure Trend</div><canvas id="pressureTrendCanvas" style="width:100%;display:block"></canvas></div>
+  <div class="wp-sec"><div class="wp-sec-title">🎣 Solunar</div><div id="solunarTable"></div></div>
+</div>
+
+<!-- AI PANEL -->
+<div id="ai-panel">
+  <div class="ai-head">
+    <div class="ai-dot"></div>
+    <div class="ai-title">⚡ Storm Surge AI</div>
+    <button class="ai-close" id="aiClose">✕</button>
   </div>
-  <div class="wp-section">
-    <div class="wp-title">Feels Like</div>
-    <canvas id="feelsGaugeCanvas" style="width:100%;display:block"></canvas>
+  <div class="ai-feed" id="aiFeed">
+    <div class="ai-msg bot"><div class="ai-bubble">Hi! I'm Storm Surge AI. Ask me anything about the weather at your current location.</div></div>
   </div>
-  <div class="wp-section">
-    <div class="wp-title">14-Day Precip Calendar</div>
-    <div id="precipCalendar"></div>
+  <div class="ai-quick">
+    <button class="ai-qbtn" data-q="What's the tornado risk today?">🌪 Tornado risk</button>
+    <button class="ai-qbtn" data-q="Is it safe to go outside?">☀ Go outside?</button>
+    <button class="ai-qbtn" data-q="Summarize active alerts">⚠ Alerts</button>
+    <button class="ai-qbtn" data-q="Flood or heavy rain risk?">🌊 Flood risk</button>
   </div>
-  <div class="wp-section">
-    <div class="wp-title">Humidity &amp; Dew</div>
-    <div id="humidityBar"></div>
-  </div>
-  <div class="wp-section">
-    <div class="wp-title">Pressure Trend (24h)</div>
-    <canvas id="pressureTrendCanvas" style="width:100%;display:block"></canvas>
-  </div>
-  <div class="wp-section">
-    <div class="wp-title">🎣 Solunar Table</div>
-    <div id="solunarTable"></div>
+  <div class="ai-input-row">
+    <input class="ai-input" id="aiInput" type="text" placeholder="Ask about the weather…">
+    <button class="ai-send" id="aiSend">Send</button>
   </div>
 </div>
 
 <!-- MODALS -->
-<div class="modal" id="alertModal" role="dialog" aria-modal="true">
+<div class="modal" id="alertModal">
   <div class="mbox large">
     <div class="mbox-head"><div class="mbox-title" id="mTitle">Alert</div><button class="mbox-x" id="mClose">✕</button></div>
     <div class="mbox-body" id="mBody"></div>
   </div>
 </div>
-<div class="modal" id="aqiModal" role="dialog" aria-modal="true">
+<div class="modal" id="aqiModal">
   <div class="mbox wide">
-    <div class="mbox-head"><div class="mbox-title" id="aqiTitle">💨 Air Quality Index</div><button class="mbox-x" id="aqiClose">✕</button></div>
-    <div class="mbox-body" id="aqiBody"><div class="empty-s"><div class="es-ico">💨</div><div>Loading AQI data…</div></div></div>
+    <div class="mbox-head"><div class="mbox-title">💨 Air Quality</div><button class="mbox-x" id="aqiClose">✕</button></div>
+    <div class="mbox-body" id="aqiBody"></div>
   </div>
 </div>
-<div class="modal" id="marineModal" role="dialog" aria-modal="true">
+<div class="modal" id="marineModal">
   <div class="mbox wide">
-    <div class="mbox-head"><div class="mbox-title" id="marineTitle">🌊 Marine Conditions</div><button class="mbox-x" id="marineClose">✕</button></div>
-    <div class="mbox-body" id="marineBody"><div class="empty-s"><div class="es-ico">🌊</div><div>Loading marine data…</div></div></div>
+    <div class="mbox-head"><div class="mbox-title">🌊 Marine</div><button class="mbox-x" id="marineClose">✕</button></div>
+    <div class="mbox-body" id="marineBody"></div>
   </div>
 </div>
-<div class="modal" id="trafficModal" role="dialog" aria-modal="true">
+<div class="modal" id="cameraModal">
   <div class="mbox large">
-    <div class="mbox-head"><div class="mbox-title">📷 Live Cameras</div><button class="mbox-x" id="tcClose">✕</button></div>
+    <div class="mbox-head"><div class="mbox-title">📷 Live Cameras</div><button class="mbox-x" id="camClose">✕</button></div>
     <div class="mbox-body">
-      <div class="tc-search">
-        <input class="modal-input" id="tcSearch" type="text" placeholder="Search city, state, highway…" autocomplete="off">
-        <button class="modal-btn" id="tcSearchBtn">Search</button>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="camSearch" type="text" placeholder="Search city, highway…" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--t1);border-radius:7px;padding:6px 10px;font-size:.8rem;outline:none">
+        <button class="modal-btn" id="camSearchBtn">Search</button>
       </div>
-      <div id="tcGrid" class="tc-grid"><div class="empty-s"><div class="es-ico">📷</div><div>Enter a location to find cameras</div></div></div>
+      <div id="camGrid"><div class="empty-s"><div class="es-ico">📷</div><div class="es-txt">Enter a location to find cameras</div></div></div>
     </div>
   </div>
 </div>
-
-<!-- SETTINGS MODAL -->
-<div class="modal" id="settingsModal" role="dialog" aria-modal="true">
-  <div class="mbox wide">
-    <div class="mbox-head"><div class="mbox-title">⚙ Settings</div><button class="mbox-x" id="sClose">✕</button></div>
-    <div class="mbox-body">
-      <div class="s-sec">
-        <div class="s-sec-title">Units</div>
-        <div class="s-row"><span>Temperature</span><div class="seg" id="sTempUnit"><button class="sb active" data-v="C">°C</button><button class="sb" data-v="F">°F</button></div></div>
-        <div class="s-row"><span>Wind Speed</span><div class="seg" id="sWindUnit"><button class="sb active" data-v="ms">m/s</button><button class="sb" data-v="kmh">km/h</button><button class="sb" data-v="mph">mph</button><button class="sb" data-v="kts">kts</button></div></div>
-        <div class="s-row"><span>Distance</span><div class="seg" id="sDistUnit"><button class="sb active" data-v="km">km</button><button class="sb" data-v="mi">mi</button></div></div>
-        <div class="s-row"><span>Time Format</span><div class="seg" id="sTimeFormat"><button class="sb active" data-v="12">12h</button><button class="sb" data-v="24">24h</button></div></div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">Radar</div>
-        <div class="s-row"><span>Opacity</span><div class="slider-row"><input type="range" id="sOpacity" min="10" max="100" value="75"><span id="sOpacityVal">75%</span></div></div>
-        <div class="s-row"><span>Animation Speed</span><div class="seg" id="sSpeed"><button class="sb" data-v="300">Fast</button><button class="sb active" data-v="600">Normal</button><button class="sb" data-v="1000">Slow</button></div></div>
-        <div class="s-row"><span>Color Scheme</span><div class="seg" id="sRadarColor"><button class="sb" data-v="1">Classic</button><button class="sb" data-v="2">Universal</button><button class="sb" data-v="4">Rainbow</button><button class="sb active" data-v="6">NOAA</button><button class="sb" data-v="7">Dark Sky</button></div></div>
-        <div class="s-row"><span>Show Nowcast</span><label class="tog"><input type="checkbox" id="sNowcast" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Auto-play on Load</span><label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Smooth Animation</span><label class="tog"><input type="checkbox" id="sSmooth" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Loop Count</span><div class="seg" id="sLoopCount"><button class="sb" data-v="1">1×</button><button class="sb active" data-v="3">3×</button><button class="sb" data-v="0">∞</button></div></div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">Map &amp; Display</div>
-        <div class="s-row"><span>Show Alert Zones</span><label class="tog"><input type="checkbox" id="sAlertZones" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Show Crosshair</span><label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Map Click → NWS Forecast</span><label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Animated Background</span><label class="tog"><input type="checkbox" id="sAnimBg" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Show Storm Reports on Map</span><label class="tog"><input type="checkbox" id="sShowReports" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Weather Card Position</span><div class="seg" id="sCardPos"><button class="sb active" data-v="top-left">↖ TL</button><button class="sb" data-v="top-right">↗ TR</button><button class="sb" data-v="bottom-left">↙ BL</button></div></div>
-        <div class="s-row"><span>Card Style</span><div class="seg" id="sCardStyle"><button class="sb active" data-v="full">Full</button><button class="sb" data-v="compact">Compact</button><button class="sb" data-v="minimal">Minimal</button></div></div>
-        <div class="s-row"><span>Map Default Zoom</span><div class="seg" id="sDefaultZoom"><button class="sb" data-v="4">Country</button><button class="sb active" data-v="7">Region</button><button class="sb" data-v="10">City</button></div></div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">Notifications &amp; Alerts</div>
-        <div class="s-row"><span>🔔 Audio Alerts</span><label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Alert Severity Filter</span><div class="seg" id="sAlertSeverity"><button class="sb active" data-v="all">All</button><button class="sb" data-v="warning">Warnings+</button><button class="sb" data-v="emergency">Emergency</button></div></div>
-        <div class="s-row"><span>Refresh Interval</span><div class="seg" id="sRefreshInterval"><button class="sb" data-v="300000">5 min</button><button class="sb active" data-v="600000">10 min</button><button class="sb" data-v="1800000">30 min</button></div></div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">AI Assistant</div>
-        <div class="s-row"><span>⚡ Storm Surge AI Panel</span><label class="tog"><input type="checkbox" id="sAIPanel" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>AI Response Length</span><div class="seg" id="sAILength"><button class="sb active" data-v="short">Short</button><button class="sb" data-v="detailed">Detailed</button></div></div>
-        <div style="font-size:.75rem;color:var(--t3);padding:4px 0 0">Requires <code>ANTHROPIC_API_KEY</code> in your <code>.env</code> file.</div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">NWS Social Feed</div>
-        <div class="s-row"><span>🐦 Show NWS Feed Button</span><label class="tog"><input type="checkbox" id="sNWSSocial" checked><span class="tog-t"></span></label></div>
-        <div style="font-size:.75rem;color:var(--t3);padding:4px 0 0">Fetches latest posts from your nearest NWS office via X/Twitter (uses Nitter RSS — no API key needed).</div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">Live Overlays</div>
-        <div class="s-row"><span>⚡ Lightning Strikes</span><label class="tog"><input type="checkbox" id="sLightning" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>🌀 Storm Cell Tracking</span><label class="tog"><input type="checkbox" id="sStormCells" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>🌪 Mesoscale Discussions</span><label class="tog"><input type="checkbox" id="sMCD" checked><span class="tog-t"></span></label></div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">Updates</div>
-        <div class="s-row"><span>App Version</span><span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.9.0</span></div>
-        <div class="s-row update-check-row">
-          <span>Check for updates</span>
-          <button class="modal-btn" id="checkUpdateBtn" style="padding:6px 14px;font-size:.8rem">🔄 Check</button>
-          <span class="upd-status" id="updStatus">—</span>
-        </div>
-        <div id="updDownloadRow" style="display:none">
-          <div class="s-row"><span id="updLatestLabel">Latest version available</span><button class="modal-btn" id="updDownloadBtn" style="padding:6px 14px;font-size:.8rem;background:#5865f2">⬇ Download &amp; Install</button></div>
-          <div class="upd-progress-bar" id="updProgressBar"><div class="upd-progress-fill" id="updProgressFill" style="width:0%"></div></div>
-          <div style="font-size:.75rem;opacity:.5;margin-top:4px" id="updProgressLabel"></div>
-          <div class="upd-no-asset" id="updNoAsset" style="display:none">⚠ No installer found on this release.<br>To enable in-app updates: build the <code>.exe</code> with <code>npx electron-builder</code>, create a GitHub Release tagged <strong id="updNoAssetVer"></strong>, and attach the <code>dist/Storm Surge Weather Setup *.exe</code> file.</div>
-        </div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">About</div>
-        <div class="about-box">
-          <div><strong>Storm Surge Weather v13.9</strong></div>
-          <div>Radar — RainViewer + NEXRAD/IEM · Weather — Open-Meteo</div>
-          <div>Alerts — NWS · AQI — Open-Meteo · Marine — Open-Meteo</div>
-          <div>Spotter — mPing (NSSL) + SPC LSR · AI — Anthropic Claude</div>
-          <div>NWS Feed — X/Twitter via Nitter RSS · Maps — Mapbox</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal" id="shareModal" role="dialog" aria-modal="true">
+<div class="modal" id="shareModal">
   <div class="mbox">
-    <div class="mbox-head"><div class="mbox-title">⤴ Share Weather</div><button class="mbox-x" id="shareClose">✕</button></div>
+    <div class="mbox-head"><div class="mbox-title">⤴ Share</div><button class="mbox-x" id="shareClose">✕</button></div>
     <div class="mbox-body">
-      <canvas id="shareCanvas" style="width:100%;border-radius:12px;display:block"></canvas>
-      <div style="margin-top:14px;display:flex;gap:10px;justify-content:center">
+      <canvas id="shareCanvas"></canvas>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center">
         <button class="modal-btn" id="shareDownload">⬇ Download</button>
         <button class="modal-btn secondary" id="shareCopy">📋 Copy Link</button>
       </div>
@@ -450,8 +351,69 @@
   </div>
 </div>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
-<div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading…</div></div>
+<!-- SETTINGS MODAL -->
+<div class="modal" id="settingsModal">
+  <div class="mbox wide">
+    <div class="mbox-head"><div class="mbox-title">⚙ Settings</div><button class="mbox-x" id="settClose">✕</button></div>
+    <div class="mbox-body">
+      <div class="s-sec">
+        <div class="s-sec-title">Units</div>
+        <div class="s-row"><span>Temperature</span><div class="seg" id="sTempUnit"><button class="sb active" data-v="C">°C</button><button class="sb" data-v="F">°F</button></div></div>
+        <div class="s-row"><span>Wind Speed</span><div class="seg" id="sWindUnit"><button class="sb active" data-v="ms">m/s</button><button class="sb" data-v="kmh">km/h</button><button class="sb" data-v="mph">mph</button><button class="sb" data-v="kts">kts</button></div></div>
+        <div class="s-row"><span>Distance</span><div class="seg" id="sDistUnit"><button class="sb active" data-v="km">km</button><button class="sb" data-v="mi">mi</button></div></div>
+        <div class="s-row"><span>Time Format</span><div class="seg" id="sTimeFmt"><button class="sb active" data-v="12">12h</button><button class="sb" data-v="24">24h</button></div></div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">Radar</div>
+        <div class="s-row"><span>Opacity</span><div class="slider-row"><input type="range" id="sOpacity" min="10" max="100" value="75"><span id="sOpacityVal">75%</span></div></div>
+        <div class="s-row"><span>Speed</span><div class="seg" id="sSpeed"><button class="sb" data-v="300">Fast</button><button class="sb active" data-v="600">Normal</button><button class="sb" data-v="1000">Slow</button></div></div>
+        <div class="s-row"><span>Color Scheme</span><div class="seg" id="sRadarColor"><button class="sb" data-v="1">Classic</button><button class="sb" data-v="2">Universal</button><button class="sb" data-v="4">Rainbow</button><button class="sb active" data-v="6">NOAA</button><button class="sb" data-v="7">Dark Sky</button></div></div>
+        <div class="s-row"><span>Nowcast</span><label class="tog"><input type="checkbox" id="sNowcast" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Auto-play</span><label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label></div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">Map &amp; Display</div>
+        <div class="s-row"><span>Alert Zones on Map</span><label class="tog"><input type="checkbox" id="sAlertZones" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Show Crosshair</span><label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Click → NWS Forecast</span><label class="tog"><input type="checkbox" id="sClickNWS" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Animated Background</span><label class="tog"><input type="checkbox" id="sAnimBg" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Weather Card Position</span><div class="seg" id="sCardPos"><button class="sb active" data-v="tl">↖</button><button class="sb" data-v="tr">↗</button><button class="sb" data-v="bl">↙</button><button class="sb" data-v="br">↘</button></div></div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">AI Assistant</div>
+        <div class="s-row"><span>Enable AI Panel</span><label class="tog"><input type="checkbox" id="sAI" checked><span class="tog-t"></span></label></div>
+        <div style="font-size:.72rem;color:var(--t3)">Requires ANTHROPIC_API_KEY in .env</div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">Updates</div>
+        <div class="s-row"><span>Version</span><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--t3)" id="sVersion">v13.9.0</span></div>
+        <div class="s-row">
+          <span>Check for updates</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="modal-btn" id="checkUpdateBtn" style="padding:4px 12px;font-size:.75rem">🔄 Check</button>
+            <span class="upd-status" id="updStatus">—</span>
+          </div>
+        </div>
+        <div id="updDlRow" style="display:none">
+          <div class="s-row"><span id="updLatestLbl">Update ready</span><button class="modal-btn" id="updDlBtn" style="padding:4px 12px;font-size:.75rem;background:#5865f2">⬇ Install</button></div>
+          <div class="upd-no-asset" id="updNoAsset" style="display:none">⚠ No installer attached to this release. Build with <code>npx electron-builder</code> and attach to a GitHub release.</div>
+        </div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">About</div>
+        <div class="about-box">
+          <strong>Storm Surge Weather v13.9</strong><br>
+          Radar: RainViewer + NEXRAD/IEM · Weather: Open-Meteo<br>
+          Alerts: NWS · AQI: Open-Meteo · Marine: Open-Meteo<br>
+          Spotter: mPing (NSSL) + SPC LSR · AI: Anthropic Claude<br>
+          Maps: Mapbox · NWS Feed: Nitter RSS
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
 
 <!-- SCRIPTS -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -466,37 +428,39 @@
 <script src="widgets.js"></script>
 <script src="app.js"></script>
 <script>
-// ── IN-APP UPDATER v13.9 ──────────────────────────────────────────
+// ── IN-APP UPDATER ────────────────────────────────────────────────
 (function(){
-  'use strict';
   const $=id=>document.getElementById(id);
-  const banner=$('updateBanner'),ubIcon=$('ubIcon'),ubTitle=$('ubTitle'),ubDesc=$('ubDesc');
-  const ubProgress=$('ubProgress'),ubProgFill=$('ubProgressFill');
-  const ubAction=$('ubAction'),ubDismiss=$('ubDismiss');
-  const statusEl=$('updStatus'),dlRow=$('updDownloadRow'),dlBtn=$('updDownloadBtn');
-  const lblEl=$('updLatestLabel'),noAssetEl=$('updNoAsset'),noAssetVer=$('updNoAssetVer');
-  function setStatus(text,cls){if(!statusEl)return;statusEl.textContent=text;statusEl.className='upd-status'+(cls?' '+cls:'');}
-  function showBanner(title,desc,lbl,fn){if(sessionStorage.getItem('upd_dismissed'))return;ubTitle.textContent=title;ubDesc.textContent=desc;if(lbl&&fn){ubAction.textContent=lbl;ubAction.disabled=false;ubAction.onclick=fn;ubAction.style.display='';}else{ubAction.style.display='none';}banner.classList.add('visible');}
+  const banner=$('updBanner'),statusEl=$('updStatus'),dlRow=$('updDlRow'),dlBtn=$('updDlBtn');
+  const lblEl=$('updLatestLbl'),noAssetEl=$('updNoAsset');
+  function setStatus(t,c){if(statusEl){statusEl.textContent=t;statusEl.className='upd-status'+(c?' '+c:'');}}
   function dispatch(d){
     switch(d.event){
       case'checking':setStatus('Checking…');break;
-      case'available':if(d.assetUrl!==undefined){setStatus('v'+d.version+' — downloading…','has-update');if(lblEl)lblEl.textContent='v'+d.version+(d.releaseName?' — '+d.releaseName:'');if(noAssetEl)noAssetEl.style.display='none';}else{setStatus('v'+d.version+' — no installer','upd-warn');if(dlRow)dlRow.style.display='';if(dlBtn)dlBtn.style.display='none';if(noAssetEl){noAssetEl.style.display='';if(noAssetVer)noAssetVer.textContent='v'+d.version;}}break;
-      case'ready':setStatus('✓ Update ready','up-to-date');if(dlRow)dlRow.style.display='';if(dlBtn){dlBtn.textContent='🔁 Restart & Install';dlBtn.disabled=false;dlBtn.style.display='';dlBtn.onclick=installNow;}showBanner('🟢 Update Ready','Restart to install','🔁 Restart & Install',installNow);break;
-      case'up-to-date':setStatus('✓ Up to date (v'+(d.version||')+')','up-to-date');if(dlRow)dlRow.style.display='none';break;
-      case'error':setStatus('⚠ Check failed','');break;
+      case'available':setStatus('v'+d.version+' available','has-update');if(dlRow)dlRow.style.display='';if(lblEl)lblEl.textContent='v'+d.version+' ready';if(noAssetEl&&!d.assetUrl)noAssetEl.style.display='';break;
+      case'ready':setStatus('✓ Update ready','up-to-date');if(dlRow)dlRow.style.display='';if(dlBtn){dlBtn.textContent='🔁 Restart & Install';dlBtn.onclick=()=>window.electronUpdater?.installNow();}if(banner){banner.querySelector('#updTitle').textContent='Update Ready';banner.querySelector('#updDesc').textContent='Restart to install';$('updAction').textContent='Restart';$('updAction').onclick=()=>window.electronUpdater?.installNow();banner.classList.add('show');}break;
+      case'up-to-date':setStatus('✓ Up to date','up-to-date');if(dlRow)dlRow.style.display='none';break;
+      case'error':setStatus('⚠ Check failed');break;
     }
   }
-  function installNow(){if(window.electronUpdater?.installNow)window.electronUpdater.installNow();}
   if(window.electronUpdater?.onUpdaterEvent){
     window.electronUpdater.onUpdaterEvent(dispatch);
     $('checkUpdateBtn')?.addEventListener('click',()=>{setStatus('Checking…');window.electronUpdater.checkUpdate();});
-  }else{
-    async function browserCheck(silent){setStatus('Checking…');try{const r=await fetch('/api/app-version');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();if(d.hasUpdate){dispatch({event:'available',version:d.latest,releaseName:d.releaseName||'',assetUrl:d.assetUrl||null});}else{dispatch({event:'up-to-date',version:d.current});if(!silent)alert('Storm Surge is up to date ✓ (v'+d.current+')')}}catch(e){dispatch({event:'error',message:e.message});}}
-    $('checkUpdateBtn')?.addEventListener('click',()=>browserCheck(false));
-    setTimeout(()=>browserCheck(true),4000);
-    setInterval(()=>browserCheck(true),30*60*1000);
+  } else {
+    async function check(silent){
+      setStatus('Checking…');
+      try{
+        const r=await fetch('/api/app-version');if(!r.ok)throw new Error();
+        const d=await r.json();
+        if(d.hasUpdate){dispatch({event:'available',version:d.latest,assetUrl:d.assetUrl});}
+        else{dispatch({event:'up-to-date'});if(!silent)alert('Up to date ✓ (v'+d.current+')');}
+      }catch(e){dispatch({event:'error'});}
+    }
+    $('checkUpdateBtn')?.addEventListener('click',()=>check(false));
+    setTimeout(()=>check(true),5000);
+    setInterval(()=>check(true),30*60*1000);
   }
-  ubDismiss.addEventListener('click',()=>{banner.classList.remove('visible');sessionStorage.setItem('upd_dismissed','1');});
+  $('updDismiss')?.addEventListener('click',()=>{banner?.classList.remove('show');sessionStorage.setItem('upd_dismissed','1');});
 })();
 </script>
 </body>
