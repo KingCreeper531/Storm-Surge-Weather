@@ -11,76 +11,38 @@
   <link rel="stylesheet" href="style.css">
   <style>
     /* ── Update banner ── */
-    .update-banner {
-      display:none; position:fixed; bottom:24px; left:50%;
-      transform:translateX(-50%); z-index:9999;
-      background:linear-gradient(135deg,#5865f2 0%,#3b4fd8 100%);
-      color:#fff; border-radius:14px; padding:14px 20px;
-      min-width:340px; max-width:520px;
-      box-shadow:0 8px 32px rgba(0,0,0,.5);
-      align-items:center; gap:14px;
-      font-family:'Outfit',sans-serif;
-      animation:bannerIn .35s cubic-bezier(.34,1.56,.64,1) forwards;
-    }
+    .update-banner{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;background:linear-gradient(135deg,#5865f2 0%,#3b4fd8 100%);color:#fff;border-radius:14px;padding:14px 20px;min-width:340px;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,.5);align-items:center;gap:14px;font-family:'Outfit',sans-serif;animation:bannerIn .35s cubic-bezier(.34,1.56,.64,1) forwards}
     .update-banner.visible{display:flex}
-    @keyframes bannerIn{
-      from{opacity:0;transform:translateX(-50%) translateY(20px)}
-      to  {opacity:1;transform:translateX(-50%) translateY(0)}
-    }
-    .ub-icon{font-size:1.6rem;flex-shrink:0}
-    .ub-text{flex:1;min-width:0}
-    .ub-text strong{display:block;font-size:.95rem;font-weight:700}
-    .ub-text span  {font-size:.8rem;opacity:.85}
-    .ub-progress{width:100%;height:4px;background:rgba(255,255,255,.2);border-radius:2px;margin-top:6px;display:none}
-    .ub-progress-fill{height:100%;background:#fff;border-radius:2px;transition:width .2s}
-    .ub-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .2s;flex-shrink:0}
-    .ub-btn:hover   {background:rgba(255,255,255,.35)}
-    .ub-btn:disabled{opacity:.5;cursor:default}
-    .ub-dismiss{background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:1.1rem;padding:2px 6px;flex-shrink:0}
-    .ub-dismiss:hover{color:#fff}
-    .update-check-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .upd-status{font-size:.8rem;opacity:.7;flex:1}
-    .upd-status.has-update{color:#5865f2;opacity:1;font-weight:600}
-    .upd-status.up-to-date{color:#22c55e;opacity:1}
-    .upd-status.upd-warn  {color:#f59e0b;opacity:1}
-    .upd-progress-bar{width:100%;height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin-top:4px;display:none}
-    .upd-progress-fill{height:100%;background:#5865f2;border-radius:3px;transition:width .2s}
+    @keyframes bannerIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+    .ub-icon{font-size:1.6rem;flex-shrink:0}.ub-text{flex:1;min-width:0}.ub-text strong{display:block;font-size:.95rem;font-weight:700}.ub-text span{font-size:.8rem;opacity:.85}
+    .ub-progress{width:100%;height:4px;background:rgba(255,255,255,.2);border-radius:2px;margin-top:6px;display:none}.ub-progress-fill{height:100%;background:#fff;border-radius:2px;transition:width .2s}
+    .ub-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .2s;flex-shrink:0}.ub-btn:hover{background:rgba(255,255,255,.35)}.ub-btn:disabled{opacity:.5;cursor:default}
+    .ub-dismiss{background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:1.1rem;padding:2px 6px;flex-shrink:0}.ub-dismiss:hover{color:#fff}
+    .update-check-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.upd-status{font-size:.8rem;opacity:.7;flex:1}.upd-status.has-update{color:#5865f2;opacity:1;font-weight:600}.upd-status.up-to-date{color:#22c55e;opacity:1}.upd-status.upd-warn{color:#f59e0b;opacity:1}
+    .upd-progress-bar{width:100%;height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin-top:4px;display:none}.upd-progress-fill{height:100%;background:#5865f2;border-radius:3px;transition:width .2s}
     @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
     .upd-no-asset{font-size:.78rem;color:var(--t3,#9ca3af);margin-top:6px;line-height:1.5;padding:8px 10px;background:rgba(255,255,255,.05);border-radius:6px;border-left:3px solid #f59e0b}
-
     /* ── NEXRAD panel ── */
-    .nexrad-panel{padding:10px 0}
-    .nx-header{display:flex;align-items:center;justify-content:space-between;padding:0 14px 8px}
-    .nx-title{font-size:.8rem;font-weight:700;letter-spacing:.08em;color:var(--t3,#9ca3af);text-transform:uppercase}
-    .nx-src-badge{font-size:.68rem;padding:2px 7px;background:rgba(6,182,212,.15);color:#06b6d4;border-radius:10px;border:1px solid rgba(6,182,212,.25)}
-    .nx-station-row{display:flex;align-items:center;gap:8px;padding:0 12px 8px}
-    .nx-station-select{flex:1;background:var(--bg2,#1a1f2e);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t1,#f1f5f9);border-radius:8px;padding:6px 10px;font-size:.82rem;font-family:'Outfit',sans-serif}
-    .nx-station-select option{background:#1a1f2e}
-    .nx-refresh-btn{background:rgba(6,182,212,.15);border:1px solid rgba(6,182,212,.25);color:#06b6d4;border-radius:8px;padding:6px 10px;font-size:.8rem;cursor:pointer;transition:background .2s;white-space:nowrap}
-    .nx-refresh-btn:hover{background:rgba(6,182,212,.3)}
-    .nx-products{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 8px}
-    .nx-prod-btn{padding:5px 10px;border-radius:7px;border:1px solid var(--bdr,rgba(255,255,255,.1));background:transparent;color:var(--t2,#94a3b8);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .18s;font-family:'Outfit',sans-serif}
-    .nx-prod-btn:hover{border-color:rgba(6,182,212,.4);color:#06b6d4}
-    .nx-prod-btn.active{background:rgba(6,182,212,.18);border-color:#06b6d4;color:#06b6d4}
-    .nx-vis-row{display:flex;align-items:center;justify-content:space-between;padding:0 14px 8px}
-    .nx-vis-label{font-size:.78rem;color:var(--t3,#9ca3af)}
-    .nx-tog{display:flex;align-items:center;gap:6px}
-    .nx-desc{font-size:.72rem;color:var(--t3,#9ca3af);padding:0 14px 6px;line-height:1.4}
-    .nx-legend{padding:0 12px 6px}
-    .nx-legend img{width:100%;max-width:220px;border-radius:6px;display:block}
-    .nx-station-info{font-size:.72rem;color:var(--t3,#9ca3af);padding:0 14px 4px}
-    .nx-station-info strong{color:var(--t1,#f1f5f9)}
+    .nexrad-panel{padding:10px 0}.nx-header{display:flex;align-items:center;justify-content:space-between;padding:0 14px 8px}.nx-title{font-size:.8rem;font-weight:700;letter-spacing:.08em;color:var(--t3,#9ca3af);text-transform:uppercase}.nx-src-badge{font-size:.68rem;padding:2px 7px;background:rgba(6,182,212,.15);color:#06b6d4;border-radius:10px;border:1px solid rgba(6,182,212,.25)}
+    .nx-station-row{display:flex;align-items:center;gap:8px;padding:0 12px 8px}.nx-station-select{flex:1;background:var(--bg2,#1a1f2e);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t1,#f1f5f9);border-radius:8px;padding:6px 10px;font-size:.82rem;font-family:'Outfit',sans-serif}.nx-station-select option{background:#1a1f2e}
+    .nx-refresh-btn{background:rgba(6,182,212,.15);border:1px solid rgba(6,182,212,.25);color:#06b6d4;border-radius:8px;padding:6px 10px;font-size:.8rem;cursor:pointer;transition:background .2s;white-space:nowrap}.nx-refresh-btn:hover{background:rgba(6,182,212,.3)}
+    .nx-products{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 8px}.nx-prod-btn{padding:5px 10px;border-radius:7px;border:1px solid var(--bdr,rgba(255,255,255,.1));background:transparent;color:var(--t2,#94a3b8);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .18s;font-family:'Outfit',sans-serif}.nx-prod-btn:hover{border-color:rgba(6,182,212,.4);color:#06b6d4}.nx-prod-btn.active{background:rgba(6,182,212,.18);border-color:#06b6d4;color:#06b6d4}
+    .nx-vis-row{display:flex;align-items:center;justify-content:space-between;padding:0 14px 8px}.nx-vis-label{font-size:.78rem;color:var(--t3,#9ca3af)}.nx-tog{display:flex;align-items:center;gap:6px}
+    .nx-desc{font-size:.72rem;color:var(--t3,#9ca3af);padding:0 14px 6px;line-height:1.4}.nx-legend{padding:0 12px 6px}.nx-legend img{width:100%;max-width:220px;border-radius:6px;display:block}
+    .nx-station-info{font-size:.72rem;color:var(--t3,#9ca3af);padding:0 14px 4px}.nx-station-info strong{color:var(--t1,#f1f5f9)}
     .nx-error{padding:10px 14px;font-size:.78rem;color:#f59e0b;background:rgba(245,158,11,.08);border-radius:8px;margin:0 12px 8px}
-    .ri-stat{display:flex;justify-content:space-between;padding:4px 14px;font-size:.78rem}
-    .ri-stat span:first-child{color:var(--t3,#9ca3af)}
+    .ri-stat{display:flex;justify-content:space-between;padding:4px 14px;font-size:.78rem}.ri-stat span:first-child{color:var(--t3,#9ca3af)}
     .ri-title{font-size:.78rem;font-weight:700;letter-spacing:.08em;color:var(--t3,#9ca3af);text-transform:uppercase;padding:0 14px 6px;margin-top:8px}
-    .ri-actions{display:flex;gap:8px;padding:8px 12px}
-    .ri-btn{flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t2,#94a3b8);border-radius:8px;font-size:.78rem;cursor:pointer;transition:background .18s}
-    .ri-btn:hover{background:rgba(255,255,255,.12)}
-
-    /* ── Spotter popup dark theme override ── */
+    .ri-actions{display:flex;gap:8px;padding:8px 12px}.ri-btn{flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid var(--bdr,rgba(255,255,255,.1));color:var(--t2,#94a3b8);border-radius:8px;font-size:.78rem;cursor:pointer;transition:background .18s}.ri-btn:hover{background:rgba(255,255,255,.12)}
     .mapboxgl-popup-content.spotter-popup{background:var(--bg2,#1a1f2e);color:var(--t1,#f1f5f9);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 14px;font-family:'Outfit',sans-serif;font-size:.82rem;min-width:180px;max-width:260px}
     .mapboxgl-popup-tip{border-top-color:var(--bg2,#1a1f2e)!important}
+    /* ── Widgets panel ── */
+    #widgetsPanel{position:fixed;top:60px;right:320px;width:280px;max-height:calc(100vh - 80px);overflow-y:auto;background:var(--bg2,#1a1f2e);border:1px solid rgba(255,255,255,.1);border-radius:12px;z-index:700;display:none;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+    #widgetsPanel.open{display:flex}
+    .wp-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.07);font-weight:700;font-size:.85rem;flex-shrink:0}
+    .wp-section{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+    .wp-title{font-size:.72rem;font-weight:700;letter-spacing:.08em;color:var(--t3,#9ca3af);text-transform:uppercase;margin-bottom:8px}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
@@ -110,7 +72,7 @@
     <div class="logo-mark">⛈</div>
     <div class="logo-text">
       <span class="logo-name">StormSurge</span>
-      <span class="logo-ver">v13.8</span>
+      <span class="logo-ver">v13.9</span>
     </div>
     <button class="sidebar-x" id="sidebarX">✕</button>
   </div>
@@ -133,6 +95,8 @@
   <nav class="sidenav">
     <a href="#" class="sni active" data-p="home"><span class="sni-ico">⌂</span><span class="sni-lbl">Dashboard</span></a>
     <a href="#" class="sni" data-p="alerts"><span class="sni-ico">◈</span><span class="sni-lbl">Alerts<em class="nav-badge" id="navAlertBadge">0</em></span></a>
+    <a href="#" class="sni" data-p="nwssocial"><span class="sni-ico">🐦</span><span class="sni-lbl">NWS Feed</span></a>
+    <a href="#" class="sni" data-p="widgets"><span class="sni-ico">📊</span><span class="sni-lbl">Widgets</span></a>
     <a href="#" class="sni" data-p="aqi"><span class="sni-ico">💨</span><span class="sni-lbl">Air Quality</span></a>
     <a href="#" class="sni" data-p="marine"><span class="sni-ico">🌊</span><span class="sni-lbl">Marine</span></a>
     <a href="#" class="sni" data-p="cameras"><span class="sni-ico">📷</span><span class="sni-lbl">Cameras</span></a>
@@ -151,7 +115,7 @@
       <span id="themeLabel">Dark Mode</span>
       <div class="tog-mini" id="themeTog"></div>
     </button>
-    <div class="ver-badge">Storm Surge v13.8 — Open-Meteo · RainViewer · NWS · NEXRAD · AI</div>
+    <div class="ver-badge">Storm Surge v13.9 — Open-Meteo · RainViewer · NWS · NEXRAD · AI</div>
   </div>
 </aside>
 
@@ -193,6 +157,7 @@
     <button class="lb lb-nexrad" id="nexradBtn" onclick="if(window.NexradPanel)NexradPanel.toggle()">📡 NEXRAD</button>
     <button class="lb lb-spotter" id="spotterBtn">🌐 Spotter</button>
     <button class="lb lb-severe" id="severeBtn">⚡ Severe</button>
+    <button class="lb lb-nws" id="nwsSocialBtn">🐦 NWS Feed</button>
     <button class="style-btn" id="styleBtn">◑ Style</button>
   </div>
 
@@ -323,6 +288,38 @@
   </div>
 </aside>
 
+<!-- WIDGETS PANEL -->
+<div id="widgetsPanel">
+  <div class="wp-head">
+    <span>📊 Widgets</span>
+    <button onclick="document.getElementById('widgetsPanel').classList.remove('open')" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:1rem">✕</button>
+  </div>
+  <div class="wp-section">
+    <div class="wp-title">Wind Rose (24h)</div>
+    <canvas id="windRoseCanvas" style="width:100%;display:block"></canvas>
+  </div>
+  <div class="wp-section">
+    <div class="wp-title">Feels Like</div>
+    <canvas id="feelsGaugeCanvas" style="width:100%;display:block"></canvas>
+  </div>
+  <div class="wp-section">
+    <div class="wp-title">14-Day Precip Calendar</div>
+    <div id="precipCalendar"></div>
+  </div>
+  <div class="wp-section">
+    <div class="wp-title">Humidity &amp; Dew</div>
+    <div id="humidityBar"></div>
+  </div>
+  <div class="wp-section">
+    <div class="wp-title">Pressure Trend (24h)</div>
+    <canvas id="pressureTrendCanvas" style="width:100%;display:block"></canvas>
+  </div>
+  <div class="wp-section">
+    <div class="wp-title">🎣 Solunar Table</div>
+    <div id="solunarTable"></div>
+  </div>
+</div>
+
 <!-- MODALS -->
 <div class="modal" id="alertModal" role="dialog" aria-modal="true">
   <div class="mbox large">
@@ -375,6 +372,7 @@
         <div class="s-row"><span>Show Nowcast</span><label class="tog"><input type="checkbox" id="sNowcast" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>Auto-play on Load</span><label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label></div>
         <div class="s-row"><span>Smooth Animation</span><label class="tog"><input type="checkbox" id="sSmooth" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Loop Count</span><div class="seg" id="sLoopCount"><button class="sb" data-v="1">1×</button><button class="sb active" data-v="3">3×</button><button class="sb" data-v="0">∞</button></div></div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">Map &amp; Display</div>
@@ -382,24 +380,37 @@
         <div class="s-row"><span>Show Crosshair</span><label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>Map Click → NWS Forecast</span><label class="tog"><input type="checkbox" id="sClickAction" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>Animated Background</span><label class="tog"><input type="checkbox" id="sAnimBg" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Show Storm Reports on Map</span><label class="tog"><input type="checkbox" id="sShowReports" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>Weather Card Position</span><div class="seg" id="sCardPos"><button class="sb active" data-v="top-left">↖ TL</button><button class="sb" data-v="top-right">↗ TR</button><button class="sb" data-v="bottom-left">↙ BL</button></div></div>
         <div class="s-row"><span>Card Style</span><div class="seg" id="sCardStyle"><button class="sb active" data-v="full">Full</button><button class="sb" data-v="compact">Compact</button><button class="sb" data-v="minimal">Minimal</button></div></div>
+        <div class="s-row"><span>Map Default Zoom</span><div class="seg" id="sDefaultZoom"><button class="sb" data-v="4">Country</button><button class="sb active" data-v="7">Region</button><button class="sb" data-v="10">City</button></div></div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">Notifications &amp; Alerts</div>
+        <div class="s-row"><span>🔔 Audio Alerts</span><label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Alert Severity Filter</span><div class="seg" id="sAlertSeverity"><button class="sb active" data-v="all">All</button><button class="sb" data-v="warning">Warnings+</button><button class="sb" data-v="emergency">Emergency</button></div></div>
+        <div class="s-row"><span>Refresh Interval</span><div class="seg" id="sRefreshInterval"><button class="sb" data-v="300000">5 min</button><button class="sb active" data-v="600000">10 min</button><button class="sb" data-v="1800000">30 min</button></div></div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">AI Assistant</div>
         <div class="s-row"><span>⚡ Storm Surge AI Panel</span><label class="tog"><input type="checkbox" id="sAIPanel" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>AI Response Length</span><div class="seg" id="sAILength"><button class="sb active" data-v="short">Short</button><button class="sb" data-v="detailed">Detailed</button></div></div>
         <div style="font-size:.75rem;color:var(--t3);padding:4px 0 0">Requires <code>ANTHROPIC_API_KEY</code> in your <code>.env</code> file.</div>
+      </div>
+      <div class="s-sec">
+        <div class="s-sec-title">NWS Social Feed</div>
+        <div class="s-row"><span>🐦 Show NWS Feed Button</span><label class="tog"><input type="checkbox" id="sNWSSocial" checked><span class="tog-t"></span></label></div>
+        <div style="font-size:.75rem;color:var(--t3);padding:4px 0 0">Fetches latest posts from your nearest NWS office via X/Twitter (uses Nitter RSS — no API key needed).</div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">Live Overlays</div>
         <div class="s-row"><span>⚡ Lightning Strikes</span><label class="tog"><input type="checkbox" id="sLightning" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>🌀 Storm Cell Tracking</span><label class="tog"><input type="checkbox" id="sStormCells" checked><span class="tog-t"></span></label></div>
         <div class="s-row"><span>🌪 Mesoscale Discussions</span><label class="tog"><input type="checkbox" id="sMCD" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>🔔 Audio Alerts</span><label class="tog"><input type="checkbox" id="sAudio"><span class="tog-t"></span></label></div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">Updates</div>
-        <div class="s-row"><span>App Version</span><span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.8.0</span></div>
+        <div class="s-row"><span>App Version</span><span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;opacity:.7" id="sVersionLabel">v13.9.0</span></div>
         <div class="s-row update-check-row">
           <span>Check for updates</span>
           <button class="modal-btn" id="checkUpdateBtn" style="padding:6px 14px;font-size:.8rem">🔄 Check</button>
@@ -409,17 +420,17 @@
           <div class="s-row"><span id="updLatestLabel">Latest version available</span><button class="modal-btn" id="updDownloadBtn" style="padding:6px 14px;font-size:.8rem;background:#5865f2">⬇ Download &amp; Install</button></div>
           <div class="upd-progress-bar" id="updProgressBar"><div class="upd-progress-fill" id="updProgressFill" style="width:0%"></div></div>
           <div style="font-size:.75rem;opacity:.5;margin-top:4px" id="updProgressLabel"></div>
-          <div class="upd-no-asset" id="updNoAsset" style="display:none">⚠ No installer found on this release.<br>To enable in-app updates: build the <code>.exe</code> with <code>npx electron-builder</code>, create a GitHub Release tagged <strong id="updNoAssetVer"></strong>, and attach the <code>dist/Storm Surge Weather Setup *.exe</code> file as a release asset.</div>
+          <div class="upd-no-asset" id="updNoAsset" style="display:none">⚠ No installer found on this release.<br>To enable in-app updates: build the <code>.exe</code> with <code>npx electron-builder</code>, create a GitHub Release tagged <strong id="updNoAssetVer"></strong>, and attach the <code>dist/Storm Surge Weather Setup *.exe</code> file.</div>
         </div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <div><strong>Storm Surge Weather v13.8</strong></div>
+          <div><strong>Storm Surge Weather v13.9</strong></div>
           <div>Radar — RainViewer + NEXRAD/IEM · Weather — Open-Meteo</div>
           <div>Alerts — NWS · AQI — Open-Meteo · Marine — Open-Meteo</div>
           <div>Spotter — mPing (NSSL) + SPC LSR · AI — Anthropic Claude</div>
-          <div>Maps — Mapbox · Storm Reports — NOAA SPC · Cams — Hazcams</div>
+          <div>NWS Feed — X/Twitter via Nitter RSS · Maps — Mapbox</div>
         </div>
       </div>
     </div>
@@ -442,7 +453,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="loader" id="loader"><div class="spin"></div><div class="load-txt">Loading…</div></div>
 
-<!-- SCRIPTS: token → radar → nexrad → nexrad-panel → spotter → severe-panel → ai-panel → app -->
+<!-- SCRIPTS -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
 <script src="radar.js"></script>
@@ -451,107 +462,41 @@
 <script src="spotter.js"></script>
 <script src="severe-panel.js"></script>
 <script src="ai-panel.js"></script>
+<script src="nws-social.js"></script>
+<script src="widgets.js"></script>
 <script src="app.js"></script>
 <script>
-// ================================================================
-//  IN-APP UPDATER v13.8  (Discord-style: silent DL → green button)
-// ================================================================
-(function () {
+// ── IN-APP UPDATER v13.9 ──────────────────────────────────────────
+(function(){
   'use strict';
-  const $ = id => document.getElementById(id);
-  const banner     = $('updateBanner');
-  const ubIcon     = $('ubIcon'),  ubTitle  = $('ubTitle'),   ubDesc    = $('ubDesc');
-  const ubProgress = $('ubProgress'), ubProgFill = $('ubProgressFill');
-  const ubAction   = $('ubAction'),ubDismiss = $('ubDismiss');
-  const statusEl   = $('updStatus'),dlRow    = $('updDownloadRow'), dlBtn = $('updDownloadBtn');
-  const lblEl      = $('updLatestLabel'),progBar = $('updProgressBar');
-  const progFill   = $('updProgressFill'),progLabel = $('updProgressLabel');
-  const noAssetEl  = $('updNoAsset'),noAssetVer = $('updNoAssetVer');
-
-  function setStatus(text, cls) {
-    if (!statusEl) return;
-    statusEl.textContent = text;
-    statusEl.className = 'upd-status' + (cls ? ' ' + cls : '');
-  }
-  function showBanner(title, desc, actionLabel, actionFn) {
-    if (sessionStorage.getItem('upd_dismissed')) return;
-    ubTitle.textContent = title; ubDesc.textContent = desc;
-    if (actionLabel && actionFn) {
-      ubAction.textContent = actionLabel; ubAction.disabled = false;
-      ubAction.onclick = actionFn; ubAction.style.display = '';
-    } else { ubAction.style.display = 'none'; }
-    banner.classList.add('visible');
-  }
-
-  function dispatch(data) {
-    switch (data.event) {
-      case 'checking': setStatus('Checking…'); break;
-      case 'available':
-        if (data.assetUrl !== undefined) {
-          setStatus('v' + data.version + ' — downloading…', 'has-update');
-          if (lblEl) lblEl.textContent = 'v' + data.version + (data.releaseName ? ' — ' + data.releaseName : '');
-          if (noAssetEl) noAssetEl.style.display = 'none';
-        } else {
-          setStatus('v' + data.version + ' — no installer attached', 'upd-warn');
-          if (dlRow) dlRow.style.display = '';
-          if (dlBtn) dlBtn.style.display = 'none';
-          if (noAssetEl) { noAssetEl.style.display = ''; if (noAssetVer) noAssetVer.textContent = 'v' + data.version; }
-        }
-        break;
-      case 'downloading':
-        setStatus('Downloading ' + (data.percent || 0) + '%…', 'has-update');
-        break;
-      case 'ready':
-        setStatus('✓ Update ready', 'up-to-date');
-        if (dlRow) { dlRow.style.display = ''; }
-        if (dlBtn) { dlBtn.textContent = '🔁 Restart & Install'; dlBtn.disabled = false; dlBtn.style.display = ''; dlBtn.onclick = installNow; }
-        showBanner('🟢 Update Ready', 'Click to restart and install in seconds', '🔁 Restart & Install', installNow);
-        break;
-      case 'up-to-date':
-        setStatus('✓ Up to date (v' + (data.version || '') + ')', 'up-to-date');
-        if (dlRow) dlRow.style.display = 'none';
-        break;
-      case 'error':
-        setStatus('⚠ Check failed', '');
-        console.warn('[Updater]', data.message);
-        break;
-      case 'no-asset':
-        setStatus('v' + data.version + ' — no installer attached', 'upd-warn');
-        if (dlRow) dlRow.style.display = '';
-        if (dlBtn) dlBtn.style.display = 'none';
-        if (noAssetEl) { noAssetEl.style.display = ''; if (noAssetVer) noAssetVer.textContent = 'v' + data.version; }
-        break;
+  const $=id=>document.getElementById(id);
+  const banner=$('updateBanner'),ubIcon=$('ubIcon'),ubTitle=$('ubTitle'),ubDesc=$('ubDesc');
+  const ubProgress=$('ubProgress'),ubProgFill=$('ubProgressFill');
+  const ubAction=$('ubAction'),ubDismiss=$('ubDismiss');
+  const statusEl=$('updStatus'),dlRow=$('updDownloadRow'),dlBtn=$('updDownloadBtn');
+  const lblEl=$('updLatestLabel'),noAssetEl=$('updNoAsset'),noAssetVer=$('updNoAssetVer');
+  function setStatus(text,cls){if(!statusEl)return;statusEl.textContent=text;statusEl.className='upd-status'+(cls?' '+cls:'');}
+  function showBanner(title,desc,lbl,fn){if(sessionStorage.getItem('upd_dismissed'))return;ubTitle.textContent=title;ubDesc.textContent=desc;if(lbl&&fn){ubAction.textContent=lbl;ubAction.disabled=false;ubAction.onclick=fn;ubAction.style.display='';}else{ubAction.style.display='none';}banner.classList.add('visible');}
+  function dispatch(d){
+    switch(d.event){
+      case'checking':setStatus('Checking…');break;
+      case'available':if(d.assetUrl!==undefined){setStatus('v'+d.version+' — downloading…','has-update');if(lblEl)lblEl.textContent='v'+d.version+(d.releaseName?' — '+d.releaseName:'');if(noAssetEl)noAssetEl.style.display='none';}else{setStatus('v'+d.version+' — no installer','upd-warn');if(dlRow)dlRow.style.display='';if(dlBtn)dlBtn.style.display='none';if(noAssetEl){noAssetEl.style.display='';if(noAssetVer)noAssetVer.textContent='v'+d.version;}}break;
+      case'ready':setStatus('✓ Update ready','up-to-date');if(dlRow)dlRow.style.display='';if(dlBtn){dlBtn.textContent='🔁 Restart & Install';dlBtn.disabled=false;dlBtn.style.display='';dlBtn.onclick=installNow;}showBanner('🟢 Update Ready','Restart to install','🔁 Restart & Install',installNow);break;
+      case'up-to-date':setStatus('✓ Up to date (v'+(d.version||')+')','up-to-date');if(dlRow)dlRow.style.display='none';break;
+      case'error':setStatus('⚠ Check failed','');break;
     }
   }
-
-  function installNow() {
-    if (window.electronUpdater?.installNow) window.electronUpdater.installNow();
-  }
-
-  if (window.electronUpdater?.onUpdaterEvent) {
+  function installNow(){if(window.electronUpdater?.installNow)window.electronUpdater.installNow();}
+  if(window.electronUpdater?.onUpdaterEvent){
     window.electronUpdater.onUpdaterEvent(dispatch);
-    $('checkUpdateBtn')?.addEventListener('click', () => { setStatus('Checking…'); window.electronUpdater.checkUpdate(); });
-  } else {
-    async function browserCheck(silent) {
-      setStatus('Checking…');
-      try {
-        const r = await fetch('/api/app-version');
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const d = await r.json();
-        if (d.hasUpdate) {
-          dispatch({ event: 'available', version: d.latest, releaseName: d.releaseName || '', assetUrl: d.assetUrl || null });
-        } else {
-          dispatch({ event: 'up-to-date', version: d.current });
-          if (!silent) alert('Storm Surge is up to date ✓ (v' + d.current + ')');
-        }
-      } catch (e) { dispatch({ event: 'error', message: e.message }); }
-    }
-    $('checkUpdateBtn')?.addEventListener('click', () => browserCheck(false));
-    setTimeout(() => browserCheck(true), 4000);
-    setInterval(() => browserCheck(true), 30 * 60 * 1000);
+    $('checkUpdateBtn')?.addEventListener('click',()=>{setStatus('Checking…');window.electronUpdater.checkUpdate();});
+  }else{
+    async function browserCheck(silent){setStatus('Checking…');try{const r=await fetch('/api/app-version');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();if(d.hasUpdate){dispatch({event:'available',version:d.latest,releaseName:d.releaseName||'',assetUrl:d.assetUrl||null});}else{dispatch({event:'up-to-date',version:d.current});if(!silent)alert('Storm Surge is up to date ✓ (v'+d.current+')')}}catch(e){dispatch({event:'error',message:e.message});}}
+    $('checkUpdateBtn')?.addEventListener('click',()=>browserCheck(false));
+    setTimeout(()=>browserCheck(true),4000);
+    setInterval(()=>browserCheck(true),30*60*1000);
   }
-
-  ubDismiss.addEventListener('click', () => { banner.classList.remove('visible'); sessionStorage.setItem('upd_dismissed', '1'); });
+  ubDismiss.addEventListener('click',()=>{banner.classList.remove('visible');sessionStorage.setItem('upd_dismissed','1');});
 })();
 </script>
 </body>
