@@ -1,9 +1,10 @@
 // ================================================================
-//  NWS SOCIAL PANEL v13.9
-//  Nearest NWS office X/Twitter feed via Nitter RSS (no API key)
+//  NWS SOCIAL PANEL v13.9 — FIXED
+//  Fetches via /api/nws-feed server proxy (avoids CORS/Nitter issues)
 // ================================================================
 window.NWSsocial = (() => {
   'use strict';
+
   const OFFICES = [
     {id:'AKQ',name:'NWS Wakefield VA',handle:'NWSWakefield',lat:36.98,lng:-77.01},
     {id:'ALY',name:'NWS Albany NY',handle:'NWSAlbany',lat:42.75,lng:-73.83},
@@ -118,83 +119,88 @@ window.NWSsocial = (() => {
     {id:'VEF',name:'NWS Las Vegas NV',handle:'NWSLasVegas',lat:36.17,lng:-115.14},
   ];
 
-  const NITTER = [
-    'https://nitter.privacydev.net',
-    'https://nitter.poast.org',
-    'https://nitter.nl',
-  ];
-
-  let _panel=null, _open=false, _office=null, _proxyIdx=0;
+  let _panel=null, _open=false, _office=null;
+  const _API = () => (window.SS_API_URL || window.location.origin || '').replace(/\/$/, '');
 
   function _hav(a,b,c,d){const R=6371,dL=(c-a)*Math.PI/180,dN=(d-b)*Math.PI/180,x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dN/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
-
-  function nearest(lat,lng){
-    return OFFICES.reduce((b,o)=>{const d=_hav(lat,lng,o.lat,o.lng);return d<b.d?{o,d}:b},{o:OFFICES[0],d:Infinity}).o;
-  }
-
+  function nearest(lat,lng){return OFFICES.reduce((b,o)=>{const d=_hav(lat,lng,o.lat,o.lng);return d<b.d?{o,d}:b},{o:OFFICES[0],d:Infinity}).o;}
   function _esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-  function _ago(d){const s=Math.floor((Date.now()-d)/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
+  function _ago(d){const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
 
   async function _fetch(handle){
-    for(let i=0;i<NITTER.length;i++){
-      const proxy=NITTER[(_proxyIdx+i)%NITTER.length];
-      try{
-        const r=await fetch(`${proxy}/${handle}/rss`,{signal:AbortSignal.timeout(6000)});
-        if(!r.ok)continue;
-        const xml=await r.text();
-        const doc=new DOMParser().parseFromString(xml,'text/xml');
-        const items=Array.from(doc.querySelectorAll('item')).slice(0,12);
-        if(!items.length)continue;
-        _proxyIdx=(_proxyIdx+i)%NITTER.length;
-        return items.map(it=>({
-          text:(it.querySelector('description')?.textContent||'')
-            .replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#039;/g,"'").trim(),
-          link:it.querySelector('link')?.textContent||`https://x.com/${handle}`,
-          ts:new Date(it.querySelector('pubDate')?.textContent||Date.now()),
-        }));
-      }catch(e){continue;}
-    }
-    return null;
+    try{
+      const r=await fetch(`${_API()}/api/nws-feed?handle=${encodeURIComponent(handle)}`,{signal:AbortSignal.timeout(12000)});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      return d.posts||null;
+    }catch(e){console.warn('NWS feed error:',e.message);return null;}
   }
 
-  function _render(posts, office){
-    const feed=$('nwsSocialFeed'), sub=$('nwsSocialSub'), lnk=$('nwsSocialXLink');
-    if(sub) sub.textContent=`@${office.handle} · ${office.name}`;
-    if(lnk){ lnk.href=`https://x.com/${office.handle}`; lnk.textContent='Open on X ↗'; }
+  function _render(posts,office){
+    const feed=document.getElementById('nwsSocialFeed'),
+          sub=document.getElementById('nwsSocialSub'),
+          lnk=document.getElementById('nwsSocialXLink');
+    if(sub)sub.textContent=`@${office.handle} · ${office.name}`;
+    if(lnk){lnk.href=`https://x.com/${office.handle}`;lnk.textContent='Open on X ↗';}
     if(!posts||!posts.length){
-      feed.innerHTML=`<div style="text-align:center;padding:32px;color:var(--t3)"><div style="font-size:2rem">🐦</div><div style="margin-top:8px;font-size:.82rem">Nitter unavailable — <a href="https://x.com/${_esc(office.handle)}" target="_blank" rel="noopener" style="color:#1d9bf0">view on X.com ↗</a></div></div>`;
+      feed.innerHTML=`<div style="text-align:center;padding:32px;color:var(--t3,#64748b)">
+        <div style="font-size:2rem">🐦</div>
+        <div style="margin-top:8px;font-size:.82rem">No posts loaded from @${_esc(office.handle)}</div>
+        <div style="margin-top:4px;font-size:.72rem;color:var(--t3)">Check that the server has internet access.</div>
+        <a href="https://x.com/${_esc(office.handle)}" target="_blank" rel="noopener"
+           style="display:inline-block;margin-top:10px;color:#1d9bf0;font-size:.78rem;text-decoration:none">
+          View @${_esc(office.handle)} on X.com ↗
+        </a>
+      </div>`;
       return;
     }
     feed.innerHTML=posts.map(p=>{
-      const isAlert=/warning|watch|advisory|tornado|hurricane|flood|blizzard|urgent|statement/i.test(p.text);
-      const txt=_esc(p.text).replace(/https?:\/\/[^\s<]+/g,u=>`<a href="${u}" target="_blank" rel="noopener" style="color:#1d9bf0">${u.replace(/^https?:\/\//,'')}</a>`);
-      return `<div style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05)${isAlert?';background:rgba(239,68,68,.06);border-left:3px solid #ef4444':''}"><div style="font-size:.82rem;color:var(--t1,#f1f5f9);line-height:1.5">${txt}</div><div style="display:flex;align-items:center;gap:8px;margin-top:5px"><span style="font-size:.68rem;color:var(--t3)">${_ago(p.ts)}</span>${isAlert?'<span style="font-size:.65rem;background:rgba(239,68,68,.2);color:#ef4444;padding:1px 6px;border-radius:10px">⚠ ALERT</span>':''}<a href="${_esc(p.link)}" target="_blank" rel="noopener" style="font-size:.68rem;color:#1d9bf0;margin-left:auto">View ↗</a></div></div>`;
+      const isAlert=/warning|watch|advisory|tornado|hurricane|flood|blizzard|urgent|statement/i.test(p.text||'');
+      const txt=_esc(p.text||'').replace(/https?:\/\/[^\s<]+/g,u=>`<a href="${u}" target="_blank" rel="noopener" style="color:#1d9bf0">${u.replace(/^https?:\/\//,'').slice(0,45)}</a>`);
+      return `<div style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05)${isAlert?';background:rgba(239,68,68,.06);border-left:3px solid #ef4444':''}">
+        <div style="font-size:.82rem;color:var(--t1,#f1f5f9);line-height:1.5">${txt}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+          <span style="font-size:.68rem;color:var(--t3,#64748b)">${_ago(p.ts)}</span>
+          ${isAlert?'<span style="font-size:.65rem;background:rgba(239,68,68,.2);color:#ef4444;padding:1px 6px;border-radius:10px">⚠ ALERT</span>':''}
+          <a href="${_esc(p.link||'#')}" target="_blank" rel="noopener"
+             style="font-size:.68rem;color:#1d9bf0;margin-left:auto;text-decoration:none">View ↗</a>
+        </div>
+      </div>`;
     }).join('');
   }
 
   async function _load(lat,lng){
     _office=nearest(lat,lng);
-    const t=$('nwsSocialTitle'),sub=$('nwsSocialSub'),feed=$('nwsSocialFeed');
-    if(t)   t.textContent='NWS Updates';
-    if(sub) sub.textContent=`Finding office for ${lat.toFixed(1)}, ${lng.toFixed(1)}…`;
-    if(feed)feed.innerHTML='<div style="text-align:center;padding:28px;color:var(--t3)"><div style="font-size:1.5rem;animation:spin 1s linear infinite;display:inline-block">⟳</div><div style="margin-top:8px;font-size:.82rem">Loading posts…</div></div>';
+    const t=document.getElementById('nwsSocialTitle'),
+          sub=document.getElementById('nwsSocialSub'),
+          feed=document.getElementById('nwsSocialFeed');
+    if(t)  t.textContent='NWS Social Feed';
+    if(sub)sub.textContent=`Finding office near ${lat.toFixed(1)}°, ${lng.toFixed(1)}°…`;
+    if(feed)feed.innerHTML=`<div style="text-align:center;padding:28px;color:var(--t3,#64748b)">
+      <div style="font-size:1.4rem;animation:spin 1s linear infinite;display:inline-block">⟳</div>
+      <div style="margin-top:8px;font-size:.82rem">Loading @${_esc(_office.handle)}…</div>
+    </div>`;
     const posts=await _fetch(_office.handle);
-    _render(posts||[], _office);
+    _render(posts||[],_office);
   }
 
   function _build(){
     const el=document.createElement('div');
     el.id='nwsSocialPanel';
-    el.style.cssText='position:fixed;bottom:0;left:50%;transform:translateX(-50%) translateY(110%);width:min(500px,96vw);max-height:440px;background:var(--bg2,#1a1f2e);border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius:14px 14px 0 0;z-index:8000;display:flex;flex-direction:column;box-shadow:0 -8px 32px rgba(0,0,0,.5);transition:transform .3s cubic-bezier(.34,1.2,.64,1);font-family:Outfit,sans-serif;overflow:hidden';
+    el.style.cssText='position:fixed;bottom:0;left:50%;transform:translateX(-50%) translateY(110%);width:min(500px,96vw);max-height:440px;background:var(--bg2,#1a1f2e);border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius:14px 14px 0 0;z-index:8000;display:flex;flex-direction:column;box-shadow:0 -8px 32px rgba(0,0,0,.5);transition:transform .3s cubic-bezier(.34,1.2,.64,1);font-family:Outfit,Inter,sans-serif;overflow:hidden';
     el.innerHTML=`
       <div style="display:flex;align-items:center;gap:10px;padding:12px 16px 10px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
         <span style="font-size:1.15rem">🐦</span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:.9rem;color:var(--t1,#f1f5f9)" id="nwsSocialTitle">NWS Updates</div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--t1,#f1f5f9)" id="nwsSocialTitle">NWS Social Feed</div>
           <div style="font-size:.72rem;color:var(--t3,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="nwsSocialSub">Loading…</div>
         </div>
-        <a id="nwsSocialXLink" href="#" target="_blank" rel="noopener" style="font-size:.72rem;color:#1d9bf0;border:1px solid rgba(29,155,240,.35);padding:3px 10px;border-radius:20px;white-space:nowrap;text-decoration:none">Open on X ↗</a>
-        <button id="nwsSocialClose" style="background:none;border:none;color:var(--t3,#94a3b8);font-size:1.1rem;cursor:pointer;padding:2px 6px;flex-shrink:0">✕</button>
+        <a id="nwsSocialXLink" href="#" target="_blank" rel="noopener"
+           style="font-size:.72rem;color:#1d9bf0;border:1px solid rgba(29,155,240,.35);padding:3px 10px;border-radius:20px;white-space:nowrap;text-decoration:none">
+          Open on X ↗
+        </a>
+        <button id="nwsSocialClose"
+                style="background:none;border:none;color:var(--t3,#94a3b8);font-size:1.1rem;cursor:pointer;padding:2px 6px;flex-shrink:0">✕</button>
       </div>
       <div id="nwsSocialFeed" style="overflow-y:auto;flex:1"></div>
     `;
@@ -203,13 +209,13 @@ window.NWSsocial = (() => {
     return el;
   }
 
-  return {
-    init(){ _panel=_build(); },
-    open(lat,lng){ if(!_panel)_panel=_build(); _open=true; _panel.style.transform='translateX(-50%) translateY(0)'; _load(lat,lng); },
-    close(){ _open=false; if(_panel)_panel.style.transform='translateX(-50%) translateY(110%)'; },
-    toggle(lat,lng){ _open?this.close():this.open(lat,lng); return _open; },
-    isOpen(){ return _open; },
-    getOffice(){ return _office; },
+  return{
+    init(){_panel=_build();},
+    open(lat,lng){if(!_panel)_panel=_build();_open=true;_panel.style.transform='translateX(-50%) translateY(0)';_load(lat,lng);},
+    close(){_open=false;if(_panel)_panel.style.transform='translateX(-50%) translateY(110%)';},
+    toggle(lat,lng){_open?this.close():this.open(lat,lng);return _open;},
+    isOpen(){return _open;},
+    getOffice(){return _office;},
     nearest,
   };
 })();
