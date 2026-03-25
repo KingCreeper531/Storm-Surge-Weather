@@ -35,6 +35,34 @@ const SERVER_PORT = process.env.PORT || '3001';
 process.env.PORT  = SERVER_PORT;
 require('./server.js');
 
+// ── Python Radar Microservice ─────────────────────────────────────
+let radarServiceProc = null;
+function startRadarService() {
+  const pythonCmds = ['python3', 'python', 'py'];
+  const scriptPath = path.join(__dirname, 'radar_service.py');
+  if (!fs.existsSync(scriptPath)) {
+    console.warn('radar_service.py not found — advanced radar features unavailable');
+    return;
+  }
+  for (const cmd of pythonCmds) {
+    try {
+      radarServiceProc = spawn(cmd, [scriptPath], {
+        env: { ...process.env, RADAR_PORT: '3002' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      radarServiceProc.stdout.on('data', d => console.log('[radar_service]', d.toString().trim()));
+      radarServiceProc.stderr.on('data', d => console.warn('[radar_service]', d.toString().trim()));
+      radarServiceProc.on('close', code => { console.log(`[radar_service] exited (${code})`); radarServiceProc = null; });
+      console.log(`[radar_service] started with ${cmd}`);
+      return;
+    } catch(e) {
+      console.warn(`[radar_service] ${cmd} failed: ${e.message}`);
+    }
+  }
+}
+startRadarService();
+app.on('will-quit', () => { if (radarServiceProc) radarServiceProc.kill(); });
+
 // Poll until the Express server is actually accepting connections,
 // then resolve — prevents loadURL racing the server startup.
 function waitForServer(port, timeout = 10000) {

@@ -418,6 +418,81 @@ app.get('/api/nws-feed', async (req, res) => {
   res.json({ posts: [], handle, source: 'unavailable', error: 'All Nitter instances unavailable' });
 });
 
+// ================================================================
+//  METAR single station — used by pro panel aviation tab
+// ================================================================
+app.get('/api/metar/station', async (req, res) => {
+  const station = String(req.query.station || '').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (!station) return res.status(400).json({ error: 'station required' });
+  const cacheKey = `metar_${station}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+  try {
+    const url = `https://aviationweather.gov/api/data/metar?ids=${station}&format=json`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'StormSurgeWeather/14.0' }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const result = { metars: data, station };
+    cache.set(cacheKey, result, 600);
+    res.json(result);
+  } catch(e) {
+    res.status(502).json({ error: 'METAR unavailable', detail: e.message });
+  }
+});
+
+// ================================================================
+//  PYTHON RADAR MICROSERVICE PROXY
+//  Routes /api/radar/nearest, /api/radar/level2/*, /api/metar/*,
+//  /api/skewt*, /api/gdd, /api/pollen, /api/tide, /api/ensemble,
+//  /api/alerts/custom to Python service on port 3002
+// ================================================================
+const RADAR_SERVICE_URL = process.env.RADAR_SERVICE_URL || 'http://127.0.0.1:3002';
+
+const PROXY_ROUTES = [
+  '/api/radar/nearest',
+  '/api/radar/level2',
+  '/api/metar',
+  '/api/taf',
+  '/api/radar/skewtdata',
+  '/api/gdd',
+  '/api/pollen',
+  '/api/tide',
+  '/api/ensemble',
+  '/api/alerts/custom',
+  '/api/lightning',
+];
+
+// Generic proxy handler
+async function proxyToPython(req, res) {
+  const url = `${RADAR_SERVICE_URL}${req.originalUrl}`;
+  try {
+    const opts = {
+      method: req.method,
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'StormSurgeNode/14.0' },
+      signal: AbortSignal.timeout(30000),
+    };
+    if (req.method === 'POST' && req.body) {
+      opts.body = JSON.stringify(req.body);
+    }
+    const r = await fetch(url, opts);
+    const ct = r.headers.get('content-type') || 'application/json';
+    res.status(r.status).set('Content-Type', ct);
+    if (ct.includes('image/')) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.send(buf);
+    } else {
+      res.send(await r.text());
+    }
+  } catch(e) {
+    console.warn(`Python proxy error for ${url}:`, e.message);
+    res.status(503).json({ error: 'Radar service unavailable. Run: python3 radar_service.py', detail: e.message });
+  }
+}
+
+PROXY_ROUTES.forEach(route => {
+  app.all(`${route}*`, proxyToPython);
+});
+
 // ── STATIC ────────────────────────────────────────────────────────
 const fp = path.join(__dirname,'public');
 app.use(express.static(fp));

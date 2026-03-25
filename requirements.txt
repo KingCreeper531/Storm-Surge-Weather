@@ -1,0 +1,8 @@
+flask>=2.3.0
+flask-cors>=4.0.0
+nexradaws>=2.1.1
+boto3>=1.26.0
+requests>=2.31.0
+numpy>=1.24.0
+pyart-mch>=1.13.0
+matplotlib>=3.7.0

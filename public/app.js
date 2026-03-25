@@ -750,6 +750,15 @@ function initUI(){
     toast(open?'🐦 NWS Feed ON':'NWS Feed OFF');
   };
 
+  // Pro Tools panel
+  const _ppBtn=$('proPanelBtn');
+  if(_ppBtn) _ppBtn.onclick=()=>{
+    if(!window.ProPanel)return;
+    const open=ProPanel.toggle('radar');
+    _ppBtn.classList.toggle('active',open);
+    toast(open?'🔬 Pro Tools opened':'Pro Tools closed');
+  };
+
   $('tPrev').onclick=()=>{if(S.frame>0)goFrame(S.frame-1);};
   $('tNext').onclick=()=>{if(S.frame<allF().length-1)goFrame(S.frame+1);};
   $('quickOpacity').addEventListener('input',e=>{
@@ -859,7 +868,7 @@ function initUI(){
   $('sAI').addEventListener('change',e=>{S.cfg.ai=e.target.checked;saveCfg();});
 
   document.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){['alertModal','settingsModal','aqiModal','marineModal','cameraModal','shareModal'].forEach(closeModal);if(window.NexradPanel)NexradPanel.close();$('ai-panel').classList.remove('open');document.getElementById('nws-social-panel').classList.remove('open');}
+    if(e.key==='Escape'){['alertModal','settingsModal','aqiModal','marineModal','cameraModal','shareModal'].forEach(closeModal);if(window.NexradPanel)NexradPanel.close();if(window.ProPanel?.isOpen())ProPanel.close();if(window.NWSsocial?.isOpen())NWSsocial.close();$('ai-panel')?.classList.remove('open');}
     if(e.key===' '&&document.activeElement.tagName!=='INPUT'){e.preventDefault();togglePlay();}
     if(e.key==='ArrowLeft'){if(S.frame>0)goFrame(S.frame-1);}
     if(e.key==='ArrowRight'){if(S.frame<allF().length-1)goFrame(S.frame+1);}
