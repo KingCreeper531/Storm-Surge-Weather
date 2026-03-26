@@ -1,0 +1,4 @@
+# Optional: install for Level II radar rendering (PyART)
+# These are large packages and take a few minutes to install
+pyart-mch>=1.13.0
+cartopy>=0.21.0

@@ -4,5 +4,4 @@ nexradaws>=2.0.0
 boto3>=1.26.0
 requests>=2.31.0
 numpy>=1.24.0
-pyart-mch>=1.13.0
 matplotlib>=3.7.0
