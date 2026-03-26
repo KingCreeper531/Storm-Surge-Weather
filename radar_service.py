@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
 Storm Surge Weather — Python Radar Microservice v14.0
-Handles: NEXRAD Level II (AWS), Dual-Pol, Velocity, GOES satellite, Skew-T
+Renders NEXRAD Level II using nexradaws + numpy + matplotlib only.
+No PyART, no cartopy, no pygrib required.
 """
 
-import os, io, json, math, datetime, tempfile, threading, time, logging
+import os, io, json, math, datetime, tempfile, threading, time, logging, struct, gzip
 from pathlib import Path
 from flask import Flask, jsonify, request, send_file, Response
 from flask_cors import CORS
@@ -15,38 +16,35 @@ log = logging.getLogger('radar_service')
 app = Flask(__name__)
 CORS(app)
 
-# ── In-memory cache ──────────────────────────────────────────────
+# ── Cache ────────────────────────────────────────────────────────
 _cache = {}
-def cache_get(key): 
+def cache_get(key):
     v = _cache.get(key)
     if v and v['exp'] > time.time(): return v['data']
     return None
 def cache_set(key, data, ttl=300):
     _cache[key] = {'data': data, 'exp': time.time() + ttl}
 
-# ── NEXRAD Level II via nexradaws + AWS S3 ───────────────────────
+# ── Package availability ─────────────────────────────────────────
 try:
     import nexradaws
     NEXRAD_OK = True
-    log.info("nexradaws loaded OK")
+    log.info("nexradaws OK")
 except ImportError:
     NEXRAD_OK = False
     log.warning("nexradaws not available")
 
 try:
-    import pyart
-    PYART_OK = True
-    log.info("PyART loaded OK")
-except ImportError:
-    PYART_OK = False
-    log.warning("PyART not available")
-
-try:
     import numpy as np
-    NUMPY_OK = True
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+    PLOT_OK = True
+    log.info("matplotlib/numpy OK")
 except ImportError:
-    NUMPY_OK = False
-
+    PLOT_OK = False
+    log.warning("matplotlib/numpy not available")
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
@@ -55,15 +53,13 @@ def haversine(lat1, lon1, lat2, lon2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-
-# Hardcoded NEXRAD stations (160 WSR-88D sites)
+# ── All 160 NEXRAD WSR-88D stations ─────────────────────────────
 NEXRAD_STATIONS = [
     {"id":"KABR","name":"Aberdeen SD","lat":45.456,"lng":-98.413},
     {"id":"KABX","name":"Albuquerque NM","lat":35.150,"lng":-106.824},
     {"id":"KAKQ","name":"Wakefield VA","lat":36.984,"lng":-77.008},
     {"id":"KALY","name":"Albany NY","lat":42.747,"lng":-73.838},
     {"id":"KAMX","name":"Miami FL","lat":25.611,"lng":-80.413},
-    {"id":"KAPD","name":"Fairbanks AK","lat":64.808,"lng":-147.501},
     {"id":"KAPX","name":"Gaylord MI","lat":44.907,"lng":-84.720},
     {"id":"KARX","name":"La Crosse WI","lat":43.823,"lng":-91.191},
     {"id":"KATX","name":"Seattle WA","lat":48.195,"lng":-122.496},
@@ -99,7 +95,7 @@ NEXRAD_STATIONS = [
     {"id":"KDYX","name":"Dyess TX","lat":32.538,"lng":-99.254},
     {"id":"KEAX","name":"Kansas City MO","lat":38.810,"lng":-94.264},
     {"id":"KEMX","name":"Tucson AZ","lat":31.894,"lng":-110.630},
-    {"id":"KENX","name":"Albany NY","lat":42.587,"lng":-74.064},
+    {"id":"KENX","name":"Albany NY (East)","lat":42.587,"lng":-74.064},
     {"id":"KEOX","name":"Ft Rucker AL","lat":31.460,"lng":-85.460},
     {"id":"KEPZ","name":"El Paso TX","lat":31.873,"lng":-106.698},
     {"id":"KESX","name":"Las Vegas NV","lat":35.701,"lng":-114.892},
@@ -216,208 +212,299 @@ def radar_nearest():
     return jsonify({'stations': with_dist, 'source': 'hardcoded'})
 
 
-@app.route('/api/radar/level2/latest')
-def radar_level2_latest():
-    """Get latest Level II scan files from AWS for a station."""
-    station = request.args.get('station', 'KOKX').upper()
-    product = request.args.get('product', 'reflectivity')  # reflectivity|velocity|zdr|cc
-    
-    if not NEXRAD_OK:
-        return jsonify({'error': 'nexradaws not available'}), 503
+def _nws_reflectivity_cmap():
+    """NWS standard reflectivity colormap."""
+    colors = [
+        (0.00, '#646464'), (0.01, '#04e9e7'), (0.10, '#019ff4'),
+        (0.20, '#0300f4'), (0.30, '#02fd02'), (0.40, '#01c501'),
+        (0.50, '#008e00'), (0.60, '#fdf802'), (0.70, '#e5bc00'),
+        (0.80, '#fd9500'), (0.90, '#fd0000'), (0.95, '#d40000'),
+        (1.00, '#bc0000'),
+    ]
+    return mcolors.LinearSegmentedColormap.from_list('nws_ref', colors)
 
-    cache_key = f'l2_latest_{station}_{product}'
-    cached = cache_get(cache_key)
-    if cached:
-        return jsonify(cached)
+def _nws_velocity_cmap():
+    """NWS velocity colormap (green=toward, red=away)."""
+    colors = [
+        (0.00, '#00008B'), (0.15, '#0000FF'), (0.30, '#00BFFF'),
+        (0.45, '#00FF00'), (0.50, '#808080'), (0.55, '#FFFF00'),
+        (0.70, '#FF8C00'), (0.85, '#FF0000'), (1.00, '#8B0000'),
+    ]
+    return mcolors.LinearSegmentedColormap.from_list('nws_vel', colors)
 
-    try:
-        conn = nexradaws.NexradAwsInterface()
-        now = datetime.datetime.utcnow()
-        scans = conn.get_available_scans_in_range(
-            now - datetime.timedelta(minutes=30), now, station
-        )
-        if not scans:
-            # Try last hour
-            scans = conn.get_available_scans_in_range(
-                now - datetime.timedelta(hours=1), now, station
-            )
-        if not scans:
-            return jsonify({'error': 'No scans found', 'station': station}), 404
+def _parse_nexrad_level2(filepath, product='reflectivity'):
+    """
+    Parse NEXRAD Level II archive file (AR2V format) using pure Python.
+    Returns (azimuth_angles, ranges_km, data_2d, radar_lat, radar_lon, elevation_deg)
+    """
+    import struct
 
-        latest = scans[-1]
-        result = {
-            'station': station,
-            'scan_time': str(latest.scan_time),
-            'key': latest.key,
-            'filename': latest.filename,
-            'available_scans': len(scans),
-        }
-        cache_set(cache_key, result, 120)
-        return jsonify(result)
-    except Exception as e:
-        log.error(f'Level2 latest error: {e}')
-        return jsonify({'error': str(e)}), 500
+    PRODUCTS = {
+        'reflectivity': {'moment': b'REF ', 'scale': 0.5, 'offset': 66.0},
+        'velocity':     {'moment': b'VEL ', 'scale': 0.5, 'offset': 129.0},
+        'zdr':          {'moment': b'ZDR ', 'scale': 0.0625, 'offset': 128.0},
+        'cc':           {'moment': b'RHO ', 'scale': 0.00333, 'offset': -0.33},
+        'sw':           {'moment': b'SW  ', 'scale': 0.5, 'offset': 129.0},
+    }
+
+    prod_info = PRODUCTS.get(product, PRODUCTS['reflectivity'])
+
+    with open(filepath, 'rb') as f:
+        # Skip 24-byte volume header
+        header = f.read(24)
+        if header[:4] == b'AR2V':
+            pass  # standard format
+        elif header[:4] == b'\x1f\x8b':
+            # gzip compressed
+            f.seek(0)
+            import gzip as gz_mod
+            data = gz_mod.decompress(f.read())
+            import io
+            f = io.BytesIO(data)
+            f.read(24)
+
+        azimuths, data_radials = [], []
+        radar_lat = radar_lon = elev = None
+        gates = 1832
+        range_start_km = 2.125
+        gate_size_km = 0.25
+
+        while True:
+            # Read message header (28 bytes)
+            msg_hdr = f.read(28)
+            if len(msg_hdr) < 28:
+                break
+
+            # LDM record size (first 4 bytes, big-endian int)
+            try:
+                msg_size = struct.unpack('>I', msg_hdr[:4])[0] & 0x7FFFFFFF
+                msg_type = struct.unpack('B', msg_hdr[15:16])[0]
+            except Exception:
+                break
+
+            if msg_size < 28:
+                break
+
+            payload = f.read(msg_size - 28)
+            if len(payload) < msg_size - 28:
+                break
+
+            if msg_type == 31:
+                # Digital Radar Data Generic Format (Msg 31)
+                try:
+                    az  = struct.unpack('>f', payload[4:8])[0]
+                    el  = struct.unpack('>f', payload[8:12])[0]
+                    rlat= struct.unpack('>f', payload[20:24])[0]
+                    rlon= struct.unpack('>f', payload[24:28])[0]
+                    if radar_lat is None and -90 <= rlat <= 90:
+                        radar_lat, radar_lon, elev = rlat, rlon, el
+
+                    # Find data block for this product
+                    num_blocks = struct.unpack('>H', payload[18:20])[0]
+                    blk_ptr_offset = 28  # data block pointers start here
+                    for b in range(min(num_blocks, 9)):
+                        ptr = struct.unpack('>I', payload[blk_ptr_offset + b*4: blk_ptr_offset + b*4 + 4])[0]
+                        if ptr == 0 or ptr >= len(payload):
+                            continue
+                        blk_type = payload[ptr:ptr+1]
+                        blk_name = payload[ptr+1:ptr+4]
+                        full_name = blk_type + blk_name
+                        if full_name[:4] == prod_info['moment'][:4] or blk_name == prod_info['moment'][:3]:
+                            num_gates = struct.unpack('>H', payload[ptr+8:ptr+10])[0]
+                            first_gate_m = struct.unpack('>H', payload[ptr+10:ptr+12])[0]
+                            gate_size_m  = struct.unpack('>H', payload[ptr+12:ptr+14])[0]
+                            scale  = struct.unpack('>f', payload[ptr+20:ptr+24])[0]
+                            offset = struct.unpack('>f', payload[ptr+24:ptr+28])[0]
+                            raw = np.frombuffer(payload[ptr+28:ptr+28+num_gates], dtype=np.uint8).astype(float)
+                            # Convert: val = (raw - offset) / scale, mask 0 and 1
+                            data = np.where(raw <= 1, np.nan, (raw - offset) / scale)
+                            azimuths.append(az)
+                            data_radials.append(data)
+                            gates = num_gates
+                            range_start_km = first_gate_m / 1000.0
+                            gate_size_km   = gate_size_m  / 1000.0
+                            break
+                except Exception:
+                    continue
+
+    if not azimuths:
+        return None
+
+    # Sort by azimuth
+    order = np.argsort(azimuths)
+    azimuths = np.array(azimuths)[order]
+    max_gates = max(len(r) for r in data_radials)
+    grid = np.full((len(data_radials), max_gates), np.nan)
+    for i, r in enumerate(data_radials):
+        grid[order[i], :len(r)] = r
+
+    ranges_km = range_start_km + np.arange(max_gates) * gate_size_km
+
+    return azimuths, ranges_km, grid, radar_lat or 40.0, radar_lon or -74.0, elev or 0.5
+
+
+def _render_ppi(azimuths, ranges_km, data, product, station, scan_time):
+    """Render PPI sweep to PNG using polar-to-Cartesian conversion."""
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8), facecolor='#0b0f1a')
+    ax.set_facecolor('#0b0f1a')
+
+    cmap = _nws_reflectivity_cmap() if product == 'reflectivity' else _nws_velocity_cmap()
+    vmin, vmax = (-20, 80) if product == 'reflectivity' else (-30, 30)
+    if product == 'zdr':   vmin, vmax = -2, 6
+    if product == 'cc':    vmin, vmax = 0.6, 1.05
+    if product == 'sw':    vmin, vmax = 0, 10
+
+    # Convert polar to Cartesian
+    az_rad = np.radians(azimuths)
+    R, A = np.meshgrid(ranges_km, az_rad)
+    X = R * np.sin(A)
+    Y = R * np.cos(A)
+
+    max_range = float(np.nanmax(ranges_km))
+    im = ax.pcolormesh(X, Y, data, cmap=cmap, vmin=vmin, vmax=vmax, shading='nearest')
+
+    # Range rings
+    for ring_km in [50, 100, 150, 200, 250]:
+        if ring_km <= max_range:
+            circle = plt.Circle((0, 0), ring_km, fill=False,
+                                color='rgba(255,255,255,0.15)' if False else 'white',
+                                alpha=0.12, linewidth=0.8)
+            ax.add_patch(circle)
+            ax.text(0, ring_km, f'{ring_km}km', ha='center', va='bottom',
+                   color='white', alpha=0.3, fontsize=7)
+
+    # Azimuth spokes
+    for spoke_az in range(0, 360, 30):
+        rad = math.radians(spoke_az)
+        ax.plot([0, max_range * math.sin(rad)], [0, max_range * math.cos(rad)],
+               color='white', alpha=0.08, linewidth=0.5)
+
+    # Radar location dot
+    ax.plot(0, 0, 'w+', markersize=8, markeredgewidth=1.5, alpha=0.8)
+
+    ax.set_xlim(-max_range, max_range)
+    ax.set_ylim(-max_range, max_range)
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    # Colorbar
+    cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.01, orientation='vertical')
+    cbar.ax.tick_params(colors='white', labelsize=8)
+    unit = {'reflectivity':'dBZ','velocity':'m/s','zdr':'dB','cc':'ρhv','sw':'m/s'}.get(product,'')
+    cbar.set_label(unit, color='white', fontsize=9)
+
+    # Title
+    ax.set_title(f'{station}  {product.upper()}  {scan_time}',
+                color='white', fontsize=10, pad=4)
+
+    plt.tight_layout(pad=0.3)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight',
+               facecolor='#0b0f1a', transparent=False)
+    plt.close(fig)
+    buf.seek(0)
+    import base64
+    return base64.b64encode(buf.read()).decode()
 
 
 @app.route('/api/radar/level2/render')
 def radar_level2_render():
-    """Download and render a Level II scan to PNG tiles using PyART."""
     station = request.args.get('station', 'KOKX').upper()
     product = request.args.get('product', 'reflectivity')
-    sweep   = int(request.args.get('sweep', 0))
-    
-    if not NEXRAD_OK or not PYART_OK or not NUMPY_OK:
-        return jsonify({'error': 'PyART or nexradaws not available'}), 503
 
-    cache_key = f'l2_render_{station}_{product}_{sweep}'
+    if not NEXRAD_OK:
+        return jsonify({'error': 'nexradaws not installed. Run: pip install nexradaws'}), 503
+    if not PLOT_OK:
+        return jsonify({'error': 'matplotlib not installed. Run: pip install matplotlib numpy'}), 503
+
+    cache_key = f'l2_render_{station}_{product}'
     cached = cache_get(cache_key)
     if cached:
         return jsonify(cached)
 
     try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-        import matplotlib.cm as cm
-        import cartopy.crs as ccrs
-
         conn = nexradaws.NexradAwsInterface()
-        now = datetime.datetime.utcnow()
+        now  = datetime.datetime.utcnow()
         scans = conn.get_available_scans_in_range(
-            now - datetime.timedelta(minutes=45), now, station
+            now - datetime.timedelta(minutes=60), now, station
         )
         if not scans:
-            return jsonify({'error': 'No recent scans'}), 404
+            return jsonify({'error': f'No recent scans found for {station}'}), 404
+
+        latest = scans[-1]
+        scan_time = str(latest.scan_time)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             results = conn.download(scans[-1:], tmpdir)
             if not results.success:
-                return jsonify({'error': 'Download failed'}), 500
-            
-            radar = pyart.io.read_nexrad_archive(results.success[0].filepath)
-            
-            # Map product name to PyART field
-            FIELD_MAP = {
-                'reflectivity': 'reflectivity',
-                'velocity': 'velocity',
-                'zdr': 'differential_reflectivity',
-                'cc': 'cross_correlation_ratio',
-                'kdp': 'specific_differential_phase',
-                'sw': 'spectrum_width',
-            }
-            field = FIELD_MAP.get(product, 'reflectivity')
-            
-            if field not in radar.fields:
-                # Fallback
-                field = list(radar.fields.keys())[0]
+                return jsonify({'error': 'Download from AWS S3 failed'}), 500
 
-            # Render to PNG
-            fig = plt.figure(figsize=(8, 8), dpi=100)
-            ax = plt.subplot(111, projection=ccrs.PlateCarree())
-            
-            display = pyart.graph.RadarMapDisplay(radar)
-            
-            # Product-specific colormap and range
-            CMAPS = {
-                'reflectivity': ('pyart_NWSRef', -20, 80),
-                'velocity':     ('pyart_NWSVel', -30, 30),
-                'differential_reflectivity': ('pyart_HomeyerRainbow', -2, 6),
-                'cross_correlation_ratio':   ('pyart_BlueBrown11', 0.6, 1.05),
-                'specific_differential_phase': ('pyart_Theodore16', -2, 6),
-                'spectrum_width': ('pyart_NWSRef', 0, 10),
-            }
-            cmap, vmin, vmax = CMAPS.get(field, ('pyart_NWSRef', -20, 80))
-            
-            try:
-                display.plot_ppi_map(
-                    field, sweep=sweep, ax=ax,
-                    vmin=vmin, vmax=vmax,
-                    cmap=cmap,
-                    title='',
-                    colorbar_flag=False,
-                )
-            except Exception:
-                display.plot_ppi_map(field, sweep=sweep, ax=ax, title='', colorbar_flag=False)
+            filepath = results.success[0].filepath
+            parsed = _parse_nexrad_level2(filepath, product)
 
-            ax.set_axis_off()
-            plt.tight_layout(pad=0)
-            
-            buf = io.BytesIO()
-            plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0,
-                       transparent=True, dpi=100)
-            plt.close(fig)
-            buf.seek(0)
+            if parsed is None:
+                return jsonify({
+                    'error': f'Could not parse {product} from scan. Available products depend on VCP.',
+                    'station': station, 'scan_time': scan_time
+                }), 422
 
-            import base64
-            img_b64 = base64.b64encode(buf.read()).decode()
-            
-            # Get radar extent for map overlay positioning
-            lats = [radar.latitude['data'][0]]
-            lons = [radar.longitude['data'][0]]
-            max_range_km = radar.instrument_parameters['unambiguous_range']['data'][0] / 1000 if 'unambiguous_range' in (radar.instrument_parameters or {}) else 250
-            
+            azimuths, ranges_km, data, rlat, rlon, elev = parsed
+            img_b64 = _render_ppi(azimuths, ranges_km, data, product, station, scan_time[:19])
+
             result = {
                 'station': station,
                 'product': product,
-                'field': field,
-                'sweep': sweep,
-                'scan_time': str(radar.time['units']),
-                'lat': float(lats[0]),
-                'lng': float(lons[0]),
-                'range_km': float(max_range_km),
+                'scan_time': scan_time,
+                'lat': rlat, 'lng': rlon,
+                'elevation_deg': round(elev, 2),
+                'range_km': round(float(np.nanmax(ranges_km)), 1),
+                'num_radials': len(azimuths),
                 'image_b64': img_b64,
-                'available_sweeps': radar.nsweeps,
-                'available_fields': list(radar.fields.keys()),
+                'available_fields': ['reflectivity', 'velocity', 'zdr', 'cc', 'sw'],
             }
             cache_set(cache_key, result, 300)
             return jsonify(result)
 
     except Exception as e:
-        log.error(f'Level2 render error: {e}')
-        return jsonify({'error': str(e), 'station': station, 'product': product}), 500
+        log.error(f'Level2 render error: {e}', exc_info=True)
+        return jsonify({'error': str(e), 'station': station}), 500
 
 
-@app.route('/api/radar/level2/skewtdata')
-def skewt_data():
-    """Get sounding data for Skew-T diagram via University of Wyoming."""
-    lat  = float(request.args.get('lat', 40.7))
-    lng  = float(request.args.get('lng', -74.0))
-    date = request.args.get('date', '')  # YYYYMMDDHH or empty for latest
-    
-    cache_key = f'skewt_{lat:.1f}_{lng:.1f}_{date}'
+@app.route('/api/radar/level2/latest')
+def radar_level2_latest():
+    station = request.args.get('station', 'KOKX').upper()
+    if not NEXRAD_OK:
+        return jsonify({'error': 'nexradaws not installed'}), 503
+    cache_key = f'l2_latest_{station}'
     cached = cache_get(cache_key)
     if cached:
         return jsonify(cached)
+    try:
+        conn  = nexradaws.NexradAwsInterface()
+        now   = datetime.datetime.utcnow()
+        scans = conn.get_available_scans_in_range(now - datetime.timedelta(minutes=60), now, station)
+        if not scans:
+            return jsonify({'error': 'No scans found'}), 404
+        latest = scans[-1]
+        result = {'station': station, 'scan_time': str(latest.scan_time),
+                  'key': latest.key, 'available': len(scans)}
+        cache_set(cache_key, result, 120)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/radar/skewtdata')
+def skewt_data():
+    lat  = float(request.args.get('lat', 40.7))
+    lng  = float(request.args.get('lng', -74.0))
+    cache_key = f'skewt_{lat:.1f}_{lng:.1f}'
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
     try:
         import requests as req
-        
-        # Find nearest upper-air sounding station
-        # Use University of Wyoming's sounding API
-        if not date:
-            now = datetime.datetime.utcnow()
-            # Soundings are at 00Z and 12Z
-            if now.hour < 6:
-                snd_hour = '00'
-                snd_date = (now - datetime.timedelta(days=1)).strftime('%Y%m%d')
-            elif now.hour < 18:
-                snd_hour = '12'
-                snd_date = now.strftime('%Y%m%d')
-            else:
-                snd_hour = '00'
-                snd_date = now.strftime('%Y%m%d')
-        else:
-            snd_date = date[:8]
-            snd_hour = date[8:10] if len(date) > 8 else '12'
-
-        # Wyoming sounding API — find nearest station
-        # We'll use the region-based approach with the US network
-        year  = snd_date[:4]
-        month = snd_date[4:6]
-        day   = snd_date[6:8]
-        
-        # Nearest RAOB stations (simplified — real implementation would use a full DB)
-        RAOB_STATIONS = [
+        RAOB = [
             {'id':'72501','name':'Upton NY','lat':40.87,'lng':-72.86},
             {'id':'72528','name':'Albany NY','lat':42.75,'lng':-73.80},
             {'id':'72208','name':'Jacksonville FL','lat':30.35,'lng':-81.65},
@@ -436,86 +523,100 @@ def skewt_data():
             {'id':'72364','name':'Dallas TX','lat':32.85,'lng':-97.30},
             {'id':'72558','name':'Amarillo TX','lat':35.23,'lng':-101.71},
             {'id':'72645','name':'Salt Lake City UT','lat':40.77,'lng':-111.97},
+            {'id':'72476','name':'Rapid City SD','lat':44.07,'lng':-103.07},
+            {'id':'72562','name':'Topeka KS','lat':39.07,'lng':-95.63},
+            {'id':'72261','name':'Corpus Christi TX','lat':27.77,'lng':-97.50},
+            {'id':'72317','name':'Shreveport LA','lat':32.52,'lng':-93.82},
+            {'id':'72327','name':'Jackson MS','lat':32.32,'lng':-90.08},
+            {'id':'72340','name':'Nashville TN','lat':36.25,'lng':-86.57},
         ]
-        nearest = min(RAOB_STATIONS, key=lambda s: haversine(lat, lng, s['lat'], s['lng']))
-        
-        url = f'https://weather.uwyo.edu/cgi-bin/bufrraob.py?year={year}&month={month}&from={day}{snd_hour}&to={day}{snd_hour}&stnm={nearest["id"]}&type=TEXT:LIST'
-        r = req.get(url, timeout=10)
-        
-        if r.ok and len(r.text) > 200:
-            lines = r.text.strip().split('\n')
-            data_lines = [l for l in lines if l.strip() and not l.startswith('<') and not l.startswith('%')]
-            
-            pressures, temps, dewpoints, winds_u, winds_v = [], [], [], [], []
-            
-            for line in data_lines[6:]:
-                parts = line.split()
-                if len(parts) >= 5:
-                    try:
-                        p   = float(parts[0])
-                        t   = float(parts[2])
-                        td  = float(parts[3])
-                        wdir= float(parts[6]) if len(parts) > 6 else 0
-                        wspd= float(parts[7]) if len(parts) > 7 else 0
-                        if 1000 >= p >= 10:
-                            wdir_rad = math.radians(wdir)
-                            pressures.append(p)
-                            temps.append(t)
-                            dewpoints.append(td)
-                            winds_u.append(-wspd * math.sin(wdir_rad))
-                            winds_v.append(-wspd * math.cos(wdir_rad))
-                    except (ValueError, IndexError):
-                        continue
-            
-            result = {
-                'station': nearest,
-                'date': f'{year}-{month}-{day} {snd_hour}Z',
-                'pressure': pressures,
-                'temperature': temps,
-                'dewpoint': dewpoints,
-                'wind_u': winds_u,
-                'wind_v': winds_v,
-                'levels': len(pressures),
-            }
-            cache_set(cache_key, result, 3600)
-            return jsonify(result)
-        else:
+        nearest = min(RAOB, key=lambda s: haversine(lat, lng, s['lat'], s['lng']))
+        now = datetime.datetime.utcnow()
+        snd_hour = '00' if now.hour < 12 else '12'
+        y, m, d = now.strftime('%Y'), now.strftime('%m'), now.strftime('%d')
+        url = (f'https://weather.uwyo.edu/cgi-bin/bufrraob.py'
+               f'?year={y}&month={m}&from={d}{snd_hour}&to={d}{snd_hour}'
+               f'&stnm={nearest["id"]}&type=TEXT:LIST')
+        r = req.get(url, timeout=12, headers={'User-Agent': 'StormSurgeWeather/14.0'})
+        if not r.ok or len(r.text) < 200:
             return jsonify({'error': 'Sounding data unavailable', 'station': nearest}), 404
-
+        lines = [l for l in r.text.split('\n') if l.strip() and not l.startswith('<') and not l.startswith('%')]
+        pressures, temps, dews, wu, wv = [], [], [], [], []
+        for line in lines[6:]:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            try:
+                p = float(parts[0])
+                if not (1 <= p <= 1050): continue
+                t  = float(parts[2])
+                td = float(parts[3])
+                wd = float(parts[6]) if len(parts) > 6 else 0
+                ws = float(parts[7]) if len(parts) > 7 else 0
+                wr = math.radians(wd)
+                pressures.append(p); temps.append(t); dews.append(td)
+                wu.append(-ws * math.sin(wr)); wv.append(-ws * math.cos(wr))
+            except (ValueError, IndexError):
+                continue
+        if not pressures:
+            return jsonify({'error': 'No valid sounding levels parsed', 'station': nearest}), 404
+        result = {'station': nearest, 'date': f'{y}-{m}-{d} {snd_hour}Z',
+                  'pressure': pressures, 'temperature': temps, 'dewpoint': dews,
+                  'wind_u': wu, 'wind_v': wv, 'levels': len(pressures)}
+        cache_set(cache_key, result, 3600)
+        return jsonify(result)
     except Exception as e:
-        log.error(f'Skew-T error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/metar/nearest')
 def metar_nearest():
-    """Get METARs from nearby airports via aviationweather.gov."""
     lat    = float(request.args.get('lat', 40.7))
     lng    = float(request.args.get('lng', -74.0))
-    radius = int(request.args.get('radius', 50))
-    
-    cache_key = f'metar_{lat:.1f}_{lng:.1f}_{radius}'
+    radius = int(request.args.get('radius', 80))
+    cache_key = f'metar_{lat:.1f}_{lng:.1f}'
     cached = cache_get(cache_key)
     if cached:
         return jsonify(cached)
-
     try:
         import requests as req
-        url = f'https://aviationweather.gov/api/data/metar?bbox={lat-radius/111},{lng-radius/111},{lat+radius/111},{lng+radius/111}&format=json'
+        deg = radius / 111.0
+        url = (f'https://aviationweather.gov/api/data/metar'
+               f'?bbox={lat-deg},{lng-deg},{lat+deg},{lng+deg}&format=json')
         r = req.get(url, timeout=8, headers={'User-Agent': 'StormSurgeWeather/14.0'})
         if r.ok:
             data = r.json()
-            result = {'metars': data[:20], 'count': len(data), 'lat': lat, 'lng': lng}
+            result = {'metars': data[:20], 'count': len(data)}
             cache_set(cache_key, result, 600)
             return jsonify(result)
-        return jsonify({'error': 'METAR unavailable'}), 502
+        return jsonify({'metars': [], 'error': 'aviationweather.gov unavailable'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/metar/station')
+def metar_station():
+    station = request.args.get('station', 'KJFK').upper()
+    cache_key = f'metar_sta_{station}'
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
+    try:
+        import requests as req
+        url = f'https://aviationweather.gov/api/data/metar?ids={station}&format=json'
+        r = req.get(url, timeout=8, headers={'User-Agent': 'StormSurgeWeather/14.0'})
+        if r.ok:
+            data = r.json()
+            result = {'metars': data, 'station': station}
+            cache_set(cache_key, result, 600)
+            return jsonify(result)
+        return jsonify({'metars': [], 'error': 'METAR unavailable'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/taf/station')
 def taf_station():
-    """Get TAF for a specific airport station."""
     station = request.args.get('station', 'KJFK').upper()
     cache_key = f'taf_{station}'
     cached = cache_get(cache_key)
@@ -526,51 +627,16 @@ def taf_station():
         url = f'https://aviationweather.gov/api/data/taf?ids={station}&format=json'
         r = req.get(url, timeout=8, headers={'User-Agent': 'StormSurgeWeather/14.0'})
         if r.ok:
-            data = r.json()
-            result = {'taf': data, 'station': station}
+            result = {'taf': r.json(), 'station': station}
             cache_set(cache_key, result, 1800)
             return jsonify(result)
-        return jsonify({'error': 'TAF unavailable'}), 502
+        return jsonify({'taf': [], 'error': 'TAF unavailable'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/lightning')
-def lightning():
-    """Get recent GLM lightning data from NOAA/GOES."""
-    lat = float(request.args.get('lat', 40.7))
-    lng = float(request.args.get('lng', -74.0))
-    minutes = int(request.args.get('minutes', 15))
-    
-    cache_key = f'lightning_{lat:.1f}_{lng:.1f}_{minutes}'
-    cached = cache_get(cache_key)
-    if cached:
-        return jsonify(cached)
-
-    try:
-        import requests as req
-        # Blitzortung global lightning network — free, real-time
-        now = int(time.time())
-        url = f'https://data.blitzortung.org/Data_1/strikes?a={lat-5}&b={lng-5}&c={lat+5}&d={lng+5}&time={now - minutes*60}'
-        r = req.get(url, timeout=6, headers={'User-Agent': 'StormSurgeWeather/14.0'})
-        if r.ok:
-            strikes = r.json()
-            result = {
-                'strikes': strikes[:500],
-                'count': len(strikes),
-                'lat': lat, 'lng': lng,
-                'minutes': minutes,
-            }
-            cache_set(cache_key, result, 60)
-            return jsonify(result)
-        return jsonify({'strikes': [], 'count': 0}), 200
-    except Exception as e:
-        return jsonify({'strikes': [], 'error': str(e)}), 200
-
-
 @app.route('/api/pollen')
 def pollen():
-    """Pollen count using Open-Meteo air quality (pollen fields)."""
     lat = float(request.args.get('lat', 40.7))
     lng = float(request.args.get('lng', -74.0))
     cache_key = f'pollen_{lat:.1f}_{lng:.1f}'
@@ -595,7 +661,6 @@ def pollen():
 
 @app.route('/api/tide')
 def tide():
-    """Tidal predictions from NOAA CO-OPS API."""
     lat = float(request.args.get('lat', 40.7))
     lng = float(request.args.get('lng', -74.0))
     cache_key = f'tide_{lat:.1f}_{lng:.1f}'
@@ -604,9 +669,7 @@ def tide():
         return jsonify(cached)
     try:
         import requests as req
-        # Find nearest tide station
-        stations_url = f'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions&units=english'
-        r = req.get(stations_url, timeout=8)
+        r = req.get('https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions&units=english', timeout=10)
         if r.ok:
             stations = r.json().get('stations', [])
             nearest = min(
@@ -615,64 +678,53 @@ def tide():
                 default=None
             )
             if nearest:
-                sid  = nearest['id']
+                sid = nearest['id']
                 today = datetime.datetime.utcnow().strftime('%Y%m%d')
-                tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=2)).strftime('%Y%m%d')
+                end   = (datetime.datetime.utcnow() + datetime.timedelta(days=2)).strftime('%Y%m%d')
                 pred_url = (f'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
-                           f'?begin_date={today}&end_date={tomorrow}'
-                           f'&station={sid}&product=predictions&datum=MLLW'
-                           f'&time_zone=lst_ldt&interval=hilo&units=english&application=StormSurge&format=json')
+                           f'?begin_date={today}&end_date={end}&station={sid}'
+                           f'&product=predictions&datum=MLLW&time_zone=lst_ldt'
+                           f'&interval=hilo&units=english&application=StormSurge&format=json')
                 r2 = req.get(pred_url, timeout=8)
                 if r2.ok:
-                    pred_data = r2.json()
-                    result = {
-                        'station': nearest,
-                        'predictions': pred_data.get('predictions', []),
-                    }
+                    result = {'station': nearest, 'predictions': r2.json().get('predictions', [])}
                     cache_set(cache_key, result, 3600)
                     return jsonify(result)
-        return jsonify({'error': 'Tide data unavailable'}), 502
+        return jsonify({'error': 'Tide data unavailable (inland location?)'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/gdd')
-def growing_degree_days():
-    """Growing Degree Days for agriculture — base 50°F, from Open-Meteo."""
+def gdd():
     lat  = float(request.args.get('lat', 40.7))
     lng  = float(request.args.get('lng', -74.0))
-    base = float(request.args.get('base', 50))  # base temp in °F
+    base = float(request.args.get('base', 50))
     cache_key = f'gdd_{lat:.1f}_{lng:.1f}_{base}'
     cached = cache_get(cache_key)
     if cached:
         return jsonify(cached)
     try:
         import requests as req
-        # Get last 30 days + 7-day forecast daily max/min temps
-        end = datetime.date.today()
+        end   = datetime.date.today()
         start = end - datetime.timedelta(days=30)
-        url = (f'https://api.open-meteo.com/v1/forecast'
-               f'?latitude={lat}&longitude={lng}'
+        url = (f'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}'
                f'&daily=temperature_2m_max,temperature_2m_min'
                f'&start_date={start}&end_date={end + datetime.timedelta(days=7)}'
                f'&temperature_unit=fahrenheit&timezone=auto')
         r = req.get(url, timeout=8)
         if r.ok:
             d = r.json()
-            days  = d['daily']['time']
-            tmax  = d['daily']['temperature_2m_max']
-            tmin  = d['daily']['temperature_2m_min']
-            # GDD = max(0, (Tmax + Tmin) / 2 - base)
-            gdd_vals = []
-            cumulative = 0
+            days, tmax, tmin = d['daily']['time'], d['daily']['temperature_2m_max'], d['daily']['temperature_2m_min']
+            gdd_vals, cum = [], 0
             for i, day in enumerate(days):
                 if tmax[i] is None or tmin[i] is None:
-                    gdd_vals.append({'date': day, 'gdd': 0, 'cumulative': cumulative})
+                    gdd_vals.append({'date': day, 'gdd': 0, 'cumulative': round(cum, 1)})
                     continue
-                daily_gdd = max(0, (tmax[i] + tmin[i]) / 2 - base)
-                cumulative += daily_gdd
-                gdd_vals.append({'date': day, 'gdd': round(daily_gdd, 1), 'cumulative': round(cumulative, 1)})
-            result = {'gdd': gdd_vals, 'base_temp': base, 'lat': lat, 'lng': lng}
+                dg = max(0, (tmax[i] + tmin[i]) / 2 - base)
+                cum += dg
+                gdd_vals.append({'date': day, 'gdd': round(dg, 1), 'cumulative': round(cum, 1)})
+            result = {'gdd': gdd_vals, 'base_temp': base}
             cache_set(cache_key, result, 3600)
             return jsonify(result)
         return jsonify({'error': 'GDD data unavailable'}), 502
@@ -681,8 +733,7 @@ def growing_degree_days():
 
 
 @app.route('/api/ensemble')
-def ensemble_models():
-    """Compare GFS vs ECMWF ensemble spread via Open-Meteo."""
+def ensemble():
     lat = float(request.args.get('lat', 40.7))
     lng = float(request.args.get('lng', -74.0))
     cache_key = f'ensemble_{lat:.1f}_{lng:.1f}'
@@ -692,18 +743,11 @@ def ensemble_models():
     try:
         import requests as req
         results = {}
-        models = {
-            'gfs': 'gfs_seamless',
-            'ecmwf': 'ecmwf_ifs025',
-            'icon': 'icon_seamless',
-            'gem': 'gem_seamless',
-        }
-        for name, model in models.items():
-            url = (f'https://api.open-meteo.com/v1/forecast'
-                   f'?latitude={lat}&longitude={lng}&models={model}'
-                   f'&hourly=temperature_2m,precipitation,wind_speed_10m'
-                   f'&forecast_days=7&timezone=auto')
+        for name, model in [('gfs','gfs_seamless'),('ecmwf','ecmwf_ifs025'),('icon','icon_seamless'),('gem','gem_seamless')]:
             try:
+                url = (f'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}'
+                       f'&models={model}&hourly=temperature_2m,precipitation,wind_speed_10m'
+                       f'&forecast_days=7&timezone=auto')
                 r = req.get(url, timeout=8)
                 if r.ok:
                     results[name] = r.json()
@@ -717,20 +761,16 @@ def ensemble_models():
 
 @app.route('/api/alerts/custom')
 def custom_alerts():
-    """Evaluate custom alert conditions against current weather."""
-    lat        = float(request.args.get('lat', 40.7))
-    lng        = float(request.args.get('lng', -74.0))
-    conditions = request.args.get('conditions', '')  # JSON-encoded list
-    
+    lat   = float(request.args.get('lat', 40.7))
+    lng   = float(request.args.get('lng', -74.0))
+    conds_raw = request.args.get('conditions', '[]')
     try:
-        conds = json.loads(conditions) if conditions else []
+        conds = json.loads(conds_raw)
     except Exception:
         conds = []
-
     try:
         import requests as req
-        url = (f'https://api.open-meteo.com/v1/forecast'
-               f'?latitude={lat}&longitude={lng}'
+        url = (f'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}'
                f'&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_gusts_10m,'
                f'precipitation,weather_code,relative_humidity_2m,visibility,surface_pressure'
                f'&timezone=auto')
@@ -738,42 +778,24 @@ def custom_alerts():
         if not r.ok:
             return jsonify({'error': 'Weather unavailable'}), 502
         wx = r.json()['current']
-        
         triggered = []
         for cond in conds:
             try:
-                field  = cond.get('field', '')
-                op     = cond.get('op', '>')
-                value  = float(cond.get('value', 0))
-                label  = cond.get('label', f'{field} {op} {value}')
-                
-                current_val = wx.get(field)
-                if current_val is None:
-                    continue
-                
-                match = False
-                if op == '>':  match = float(current_val) > value
-                elif op == '>=': match = float(current_val) >= value
-                elif op == '<':  match = float(current_val) < value
-                elif op == '<=': match = float(current_val) <= value
-                elif op == '==': match = float(current_val) == value
-                
+                field = cond.get('field', '')
+                op    = cond.get('op', '>')
+                val   = float(cond.get('value', 0))
+                label = cond.get('label', f'{field} {op} {val}')
+                cur   = wx.get(field)
+                if cur is None: continue
+                cur = float(cur)
+                match = (op=='>' and cur>val) or (op=='>=' and cur>=val) or \
+                        (op=='<' and cur<val) or (op=='<=' and cur<=val) or \
+                        (op=='==' and cur==val)
                 if match:
-                    triggered.append({
-                        'label': label,
-                        'field': field,
-                        'current': current_val,
-                        'op': op,
-                        'threshold': value,
-                    })
+                    triggered.append({'label': label, 'field': field, 'current': cur, 'op': op, 'threshold': val})
             except Exception:
                 pass
-        
-        return jsonify({
-            'triggered': triggered,
-            'current': wx,
-            'conditions_checked': len(conds),
-        })
+        return jsonify({'triggered': triggered, 'current': wx, 'conditions_checked': len(conds)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -783,13 +805,12 @@ def health():
     return jsonify({
         'status': 'ok',
         'nexradaws': NEXRAD_OK,
-        'pyart': PYART_OK,
-        'numpy': NUMPY_OK,
+        'matplotlib': PLOT_OK,
         'version': '14.0',
     })
 
 
 if __name__ == '__main__':
     port = int(os.environ.get('RADAR_PORT', 3002))
-    log.info(f'Starting radar microservice on port {port}')
+    log.info(f'Radar microservice v14.0 on :{port}')
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
