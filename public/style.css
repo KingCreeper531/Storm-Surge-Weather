@@ -1023,3 +1023,41 @@ input[type=range].thin::-webkit-slider-thumb{-webkit-appearance:none;width:10px;
   flex-wrap: wrap;
   align-items: flex-end;
 }
+
+/* ── ERROR LOG PANEL ── */
+#errorLog {
+  position: fixed;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  width: min(600px, 96vw);
+  max-height: 50vh;
+  background: var(--bg1, #111827);
+  border: 1px solid rgba(239,68,68,.3);
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  z-index: 9999;
+  display: flex; flex-direction: column;
+  box-shadow: 0 -8px 32px rgba(0,0,0,.6);
+  font-family: 'JetBrains Mono', monospace;
+  transition: transform .3s ease;
+}
+#errorLog.open { transform: translateX(-50%) translateY(0); }
+#errorLogHead {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(239,68,68,.2);
+  font-size: .82rem; font-weight: 700; color: #fca5a5;
+  flex-shrink: 0;
+}
+#errorLogBody {
+  overflow-y: auto; flex: 1; padding: 6px 0;
+}
+.el-entry {
+  padding: 6px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.el-ts  { font-size: .65rem; color: var(--t3, #4b5d73); }
+.el-msg { font-size: .75rem; color: #fca5a5; }
+.el-detail { font-size: .68rem; color: var(--t3, #4b5d73); word-break: break-all; }
+.err-badge { font-size: .62rem; }

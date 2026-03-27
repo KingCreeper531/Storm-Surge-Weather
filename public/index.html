@@ -5,348 +5,297 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Storm Surge Weather</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%88%3C/text%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- BG ANIMATION -->
-<div class="bg-anim" id="bgAnim"><div class="bg-l bg-l1"></div><div class="bg-l bg-l2"></div></div>
-
-<!-- LOADER BAR -->
-<div class="loader" id="loader"></div>
-
-<!-- UPDATE BANNER -->
-<div class="upd-banner" id="updBanner">
-  <div class="upd-icon" id="updIcon">🔄</div>
-  <div class="upd-text"><strong id="updTitle">Update Available</strong><span id="updDesc">A new version is ready</span></div>
-  <button class="upd-btn" id="updAction">Install</button>
-  <button class="upd-dismiss" id="updDismiss">✕</button>
+<!-- ERROR LOG PANEL -->
+<div id="errorLog">
+  <div id="errorLogHead">
+    <span>⚠ Error Log</span>
+    <div style="display:flex;gap:6px">
+      <button onclick="document.getElementById('errorLog').classList.remove('open')" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:.8rem">Hide</button>
+      <button onclick="SS.clearErrors()" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:.8rem">Clear</button>
+    </div>
+  </div>
+  <div id="errorLogBody"></div>
 </div>
 
-<!-- SHELL -->
-<div id="shell">
+<!-- ANIMATED BG -->
+<div id="bgAnim" aria-hidden="true"><div class="bg-l"></div><div class="bg-l"></div><div class="bg-l"></div></div>
 
-<!-- ── SIDEBAR ── -->
-<aside class="sidebar" id="sidebar">
-  <div class="sidebar-logo">
-    <span class="logo-icon">⛈</span>
-    <div class="logo-text">
-      <strong>StormSurge</strong>
-      <span>v13.9</span>
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div class="sb-logo">
+    <span class="sb-logo-icon">⛈</span>
+    <div>
+      <div class="sb-logo-name">StormSurge</div>
+      <div class="sb-logo-ver">v14.0</div>
     </div>
-    <button class="sidebar-toggle" id="sidebarToggle" title="Collapse">‹</button>
+    <button class="sb-x" id="sidebarX">✕</button>
   </div>
 
-  <div class="sidebar-loc">
-    <div class="sl-label">Location</div>
-    <div class="sl-name" id="sideLocName">—</div>
-    <div class="sl-coords" id="sideLocCoords">—</div>
+  <div class="sb-loc">
+    <div class="sb-loc-label">LOCATION</div>
+    <div class="sb-loc-name" id="locName">New York</div>
+    <div class="sb-loc-coords" id="locCoords">40.71° N  74.01° W</div>
   </div>
 
-  <div class="sidebar-snap" id="sideSnap">
-    <div class="snap-temp" id="snapTemp">—°</div>
-    <div class="snap-right">
-      <div class="snap-icon" id="snapIcon">🌡</div>
-      <div class="snap-desc" id="snapDesc">—</div>
-      <div class="snap-hl"><span id="snapHi">H:—</span><span id="snapLo">L:—</span></div>
+  <div class="sb-snap" id="sbSnap">
+    <div class="sb-snap-temp" id="snapTemp">--°</div>
+    <div>
+      <div class="sb-snap-icon" id="snapIcon">🌡</div>
+      <div class="sb-snap-desc" id="snapDesc">--</div>
+      <div class="sb-snap-hl">
+        <span id="snapHi" style="color:#f97316">H:--</span>
+        <span id="snapLo" style="color:#06b6d4">L:--</span>
+      </div>
     </div>
   </div>
 
-  <nav class="sidenav" id="sidenav">
-    <a class="sni active" data-p="home"><span class="sni-ico">⌂</span><span class="sni-lbl">Dashboard</span></a>
-    <a class="sni" data-p="alerts"><span class="sni-ico">◈</span><span class="sni-lbl">Alerts<em class="nav-badge" id="navBadge">0</em></span></a>
-    <a class="sni" data-p="nwssocial"><span class="sni-ico">🐦</span><span class="sni-lbl">NWS Feed</span></a>
-    <a class="sni" data-p="widgets"><span class="sni-ico">📊</span><span class="sni-lbl">Widgets</span></a>
-    <a class="sni" data-p="aqi"><span class="sni-ico">💨</span><span class="sni-lbl">Air Quality</span></a>
-    <a class="sni" data-p="marine"><span class="sni-ico">🌊</span><span class="sni-lbl">Marine</span></a>
-    <a class="sni" data-p="cameras"><span class="sni-ico">📷</span><span class="sni-lbl">Cameras</span></a>
-    <a class="sni" data-p="settings"><span class="sni-ico">⚙</span><span class="sni-lbl">Settings</span></a>
+  <nav class="sb-nav">
+    <button class="sni active" data-p="home">    <span class="sni-ico">⌂</span> Dashboard</button>
+    <button class="sni" data-p="alerts">         <span class="sni-ico">◈</span> Alerts <em class="nbadge" id="navAlertBadge"></em></button>
+    <button class="sni" data-p="nwssocial">      <span class="sni-ico">🐦</span> NWS Feed</button>
+    <button class="sni" data-p="widgets">        <span class="sni-ico">📊</span> Widgets</button>
+    <button class="sni" data-p="aqi">            <span class="sni-ico">💨</span> Air Quality</button>
+    <button class="sni" data-p="marine">         <span class="sni-ico">🌊</span> Marine</button>
+    <button class="sni" data-p="cameras">        <span class="sni-ico">📷</span> Cameras</button>
+    <button class="sni" data-p="errorlog">       <span class="sni-ico">🪲</span> Error Log <em class="nbadge err-badge" id="errBadge" style="background:#ef4444"></em></button>
+    <button class="sni" data-p="settings">       <span class="sni-ico">⚙</span> Settings</button>
   </nav>
 
-  <div class="sidebar-favs">
-    <div class="favs-head">
-      <span class="favs-label">Saved</span>
-      <button class="favs-add" id="favAddBtn" title="Save current location">＋</button>
+  <div class="sb-favs">
+    <div class="sb-favs-head">
+      <span>SAVED LOCATIONS</span>
+      <button id="favAddBtn" class="fav-add-btn">＋</button>
     </div>
     <div id="favList"><div class="fav-empty">No saved locations</div></div>
   </div>
 
-  <div class="sidebar-bottom">
-    <button class="theme-btn" id="themeBtn"><span id="themeIco">🌙</span><span id="themeLbl">Dark Mode</span></button>
-    <span class="ver-tag">Open-Meteo · RainViewer · NWS</span>
+  <div class="sb-bottom">
+    <button id="themeBtn" class="theme-btn">
+      <span id="themeIcon">🌙</span>
+      <span id="themeLabel">Dark Mode</span>
+      <div id="themeTog" class="tog-mini on"></div>
+    </button>
   </div>
 </aside>
 
-<!-- ── MAIN ── -->
-<div class="main-area">
-  <!-- TOPBAR -->
-  <header class="topbar">
-    <div class="tb-loc">
-      <div class="tb-loc-name" id="locName">New York</div>
-      <div class="tb-loc-sub" id="locDate">—</div>
+<!-- MAIN -->
+<main id="main">
+  <header id="topbar">
+    <div class="tb-left">
+      <button id="burger" class="burger"><span></span><span></span><span></span></button>
+      <div class="loc-chip">
+        <div class="loc-tag">LOCATION</div>
+        <div id="tbLocName" class="loc-val">New York</div>
+      </div>
     </div>
-
-    <div class="searchbox">
-      <span class="search-ico">⌕</span>
-      <input id="searchInput" type="text" placeholder="Search city, zip, coordinates…" autocomplete="off" spellcheck="false">
-      <div class="s-drop" id="searchDrop"></div>
+    <div class="tb-mid">
+      <div class="searchbox">
+        <span class="s-ico">⌕</span>
+        <input id="searchInput" type="text" placeholder="Search city, zip, coordinates…" autocomplete="off" spellcheck="false">
+        <div id="searchDrop" class="s-drop"></div>
+      </div>
     </div>
-
-    <div class="tb-pills">
+    <div class="tb-right">
       <div class="live-pill"><span class="live-dot"></span>LIVE</div>
-      <span class="date-pill" id="datePill">—</span>
-      <button class="tb-btn" id="geoBtn" title="My Location">◎</button>
-      <button class="tb-btn" id="drawBtn" title="Draw">✏</button>
-      <button class="tb-btn" id="shareBtn" title="Share">⤴</button>
-      <button class="tb-btn" id="refreshBtn" title="Refresh">↻</button>
-      <button class="tb-btn" id="rpanelToggle" title="Right panel">▣</button>
+      <div id="datePill" class="tb-pill"></div>
+      <button id="geoBtn" class="tb-btn" title="My location">◎</button>
+      <button id="shareBtn" class="tb-btn" title="Share">⤴</button>
+      <button id="drawBtn" class="tb-btn" title="Draw mode">✏</button>
+      <button id="refreshBtn" class="tb-btn" title="Refresh">↻</button>
     </div>
   </header>
 
-  <!-- CONTENT -->
-  <div class="content-area">
-    <!-- MAP ZONE -->
-    <div class="map-zone" id="mapzone">
-      <div id="map"></div>
-      <canvas id="radarCanvas" style="position:absolute;inset:0;pointer-events:none"></canvas>
-      <canvas id="drawCanvas" style="position:absolute;inset:0"></canvas>
+  <!-- LAYERBAR -->
+  <div id="layerbar">
+    <button class="lb active" data-layer="precipitation">🌧 Radar</button>
+    <button class="lb" data-layer="temperature">🌡 Temp</button>
+    <button class="lb" data-layer="wind">💨 Wind</button>
+    <button class="lb" data-layer="clouds">☁ Clouds</button>
+    <button class="lb" data-layer="pressure">📊 Pressure</button>
+    <div class="lb-sep"></div>
+    <button class="lb" id="nexradBtn" onclick="if(window.NexradPanel)NexradPanel.toggle()">📡 NEXRAD</button>
+    <button class="lb" id="spotterBtn">🌐 Spotter</button>
+    <button class="lb" id="severeBtn">⚡ Severe</button>
+    <button class="lb" id="nwsSocialBtn">🐦 NWS Feed</button>
+    <button class="lb" id="proPanelBtn">🔬 Pro Tools</button>
+    <button id="styleBtn" class="style-btn">◑ Style</button>
+  </div>
 
-      <!-- LAYER BAR -->
-      <div class="layerbar">
-        <button class="lb active" data-layer="precipitation">🌧 Radar</button>
-        <button class="lb" data-layer="temperature">🌡 Temp</button>
-        <button class="lb" data-layer="wind">💨 Wind</button>
-        <button class="lb" data-layer="clouds">☁ Clouds</button>
-        <button class="lb" data-layer="pressure">📊 Pressure</button>
-        <div class="lb sep"></div>
-        <button class="lb" id="nexradBtn">📡 NEXRAD</button>
-        <button class="lb" id="spotterBtn">🌐 Spotter</button>
-        <button class="lb" id="severeBtn">⚡ Severe</button>
-        <button class="lb" id="nwsSocialBtn">🐦 NWS Feed</button>
-        <button class="lb" id="proPanelBtn" style="background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(168,85,247,.15));border-color:rgba(168,85,247,.4);color:#c4b5fd;font-weight:700">🔬 Pro Tools</button>
-        <button class="lb" id="styleBtn">◑ Style</button>
-      </div>
-
-      <!-- WEATHER CARD -->
-      <div class="wcard tl" id="wcard">
-        <div class="wc-loc" id="wcLoc">—</div>
-        <div class="wc-time" id="wcTime">—</div>
-        <div class="wc-hero">
-          <div class="wc-icon" id="wcIcon">🌡</div>
-          <div>
-            <div class="wc-temp" id="wcTemp">--°</div>
-            <div class="wc-feels" id="wcFeels">Feels like --°</div>
-            <div class="wc-desc" id="wcDesc">—</div>
-            <div><span class="wc-hi" id="wcHi">H: --°</span><span class="wc-lo" id="wcLo">L: --°</span></div>
-          </div>
-        </div>
-        <div class="wc-uv">
-          <div class="uv-label">UV</div>
-          <div class="uv-bar"><div class="uv-dot" id="uvDot" style="left:0%"></div></div>
-          <div class="uv-val" id="wcUV">--</div>
-        </div>
-        <div class="wc-grid">
-          <div class="wcs"><div class="wcs-l">💧 Humidity</div><div class="wcs-v" id="wcHum">--</div></div>
-          <div class="wcs"><div class="wcs-l">🌫 Dew Point</div><div class="wcs-v" id="wcDew">--</div></div>
-          <div class="wcs"><div class="wcs-l">💨 Wind</div><div class="wcs-v" id="wcWind">--</div></div>
-          <div class="wcs"><div class="wcs-l">🌬 Gusts</div><div class="wcs-v" id="wcGust">--</div></div>
-          <div class="wcs"><div class="wcs-l">🌧 Precip</div><div class="wcs-v" id="wcRain">--</div></div>
-          <div class="wcs"><div class="wcs-l">👁 Visibility</div><div class="wcs-v" id="wcVis">--</div></div>
-          <div class="wcs"><div class="wcs-l">📊 Pressure</div><div class="wcs-v" id="wcPres">--</div></div>
-          <div class="wcs"><div class="wcs-l">☁ Cloud</div><div class="wcs-v" id="wcCloud">--</div></div>
-          <div class="wcs"><div class="wcs-l">🫁 AQI</div><div class="wcs-v" id="wcAQI">--</div></div>
-          <div class="wcs"><div class="wcs-l">🌡 Feels Like</div><div class="wcs-v" id="wcHeatIdx">--</div></div>
-        </div>
-        <div class="wc-sun">
-          <div class="sun-arc-wrap">
-            <svg viewBox="0 0 120 55" xmlns="http://www.w3.org/2000/svg">
-              <path d="M10,50 A50,50 0 0,1 110,50" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3"/>
-              <path id="sunArcProg" d="M10,50 A50,50 0 0,1 110,50" fill="none" stroke="#f59e0b" stroke-width="3" stroke-dasharray="0 157" stroke-linecap="round"/>
-              <circle id="sunDot" cx="10" cy="50" r="4" fill="#f59e0b"/>
-            </svg>
-          </div>
-          <div class="sun-times">
-            <span>🌅 <span id="wcSunrise">--:--</span></span>
-            <span id="wcDaylight">--h</span>
-            <span>🌇 <span id="wcSunset">--:--</span></span>
-          </div>
-        </div>
-        <div class="wc-moon" id="wcMoon">🌙 —</div>
-      </div>
-
-      <!-- LEGEND -->
-      <div class="legend" id="legend">
-        <div class="leg-title" id="legTitle">mm/h</div>
-        <div class="leg-bar" id="legBar" style="background:linear-gradient(to top,#555,#04e9e7,#019ff4,#02fd02,#fdf802,#fd9500,#fd0000)"></div>
-        <div class="leg-nums"><span>60+</span><span>10</span><span>1</span><span>0</span></div>
-      </div>
-
-      <!-- MAP BUTTONS -->
-      <div class="map-btns">
-        <button class="map-btn" id="zoomIn" title="Zoom in">＋</button>
-        <button class="map-btn" id="zoomOut" title="Zoom out">－</button>
-        <button class="map-btn" id="compassBtn" title="Reset north">⊕</button>
-      </div>
-
-      <!-- CROSSHAIR -->
-      <div class="crosshair" id="crosshair">
-        <div class="ch-h"></div><div class="ch-v"></div><div class="ch-ring"></div>
-      </div>
-
-      <!-- DRAW TOOLBAR -->
-      <div class="draw-toolbar" id="drawToolbar">
-        <span class="dt-label">Draw</span>
-        <div class="dt-colors">
-          <div class="dc active" data-c="#f59e0b" style="background:#f59e0b"></div>
-          <div class="dc" data-c="#ef4444" style="background:#ef4444"></div>
-          <div class="dc" data-c="#06b6d4" style="background:#06b6d4"></div>
-          <div class="dc" data-c="#22c55e" style="background:#22c55e"></div>
-          <div class="dc" data-c="#fff" style="background:#fff"></div>
-        </div>
-        <div class="dt-sizes">
-          <button class="ds active" data-s="3">S</button>
-          <button class="ds" data-s="6">M</button>
-          <button class="ds" data-s="12">L</button>
-        </div>
-        <button class="dt-btn" id="drawUndo">↩</button>
-        <button class="dt-btn" id="drawClear">🗑</button>
-        <button class="dt-btn danger" id="drawExit">✕</button>
-      </div>
-
-      <!-- FORECAST STRIP -->
-      <div class="fcast" id="fcast">
-        <div class="fcast-tabs">
-          <button class="fct active" data-ft="hourly">Hourly</button>
-          <button class="fct" data-ft="daily">14-Day</button>
-          <button class="fct" data-ft="precip">🌧 Rain</button>
-          <button class="fct" data-ft="wind">💨 Wind</button>
-          <button class="fct" data-ft="feels">🌡 Feels</button>
-        </div>
-        <div class="fc-scroll" id="fcScroll"></div>
-      </div>
-
-      <!-- TIMEBAR -->
-      <div class="timebar">
-        <button class="t-ctrl" id="tPrev">‹</button>
-        <div class="tslots" id="tSlots"></div>
-        <button class="t-ctrl" id="tNext">›</button>
-        <button class="playbtn" id="playBtn">▶</button>
-        <div class="nowcast-badge" id="nowcastBadge">NOWCAST</div>
-        <div class="opacity-wrap">
-          <label>Opacity</label>
-          <input type="range" class="thin" id="quickOpacity" min="10" max="100" value="75">
-        </div>
-      </div>
-    </div><!-- /map-zone -->
-
-    <!-- RIGHT PANEL -->
-    <aside class="rpanel" id="rpanel">
-      <div class="rp-tabs">
-        <button class="rp-tab active" data-rt="alerts">Alerts<span class="badge" id="alertBadge">0</span></button>
-        <button class="rp-tab" data-rt="info">Radar</button>
-        <button class="rp-tab" data-rt="severe">Reports</button>
-      </div>
-      <div class="rp-body" id="alertsBody">
-        <div class="empty-s"><div class="es-ico">⌛</div><div class="es-txt">Loading alerts…</div></div>
-      </div>
-    </aside>
-
-  </div><!-- /content-area -->
-</div><!-- /main-area -->
-</div><!-- /shell -->
-
-<!-- NWS SOCIAL PANEL -->
-<div id="nws-social-panel">
-  <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
-    <span>🐦</span>
-    <div style="flex:1">
-      <div style="font-weight:700;font-size:.88rem" id="nwsSocialTitle">NWS Updates</div>
-      <div style="font-size:.68rem;color:var(--t3)" id="nwsSocialSub">Finding nearest office…</div>
+  <!-- DRAW TOOLBAR -->
+  <div id="drawToolbar">
+    <span>✏ Draw</span>
+    <div class="dt-colors">
+      <button class="dc active" data-c="#f59e0b" style="background:#f59e0b"></button>
+      <button class="dc" data-c="#ef4444" style="background:#ef4444"></button>
+      <button class="dc" data-c="#06b6d4" style="background:#06b6d4"></button>
+      <button class="dc" data-c="#22c55e" style="background:#22c55e"></button>
+      <button class="dc" data-c="#ffffff" style="background:#ffffff"></button>
     </div>
-    <a id="nwsSocialXLink" href="#" target="_blank" rel="noopener" style="font-size:.7rem;color:#1d9bf0;border:1px solid rgba(29,155,240,.3);padding:2px 8px;border-radius:20px;text-decoration:none">X ↗</a>
-    <button id="nwsSocialClose" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:1rem">✕</button>
+    <button class="ds active" data-s="3">S</button>
+    <button class="ds" data-s="6">M</button>
+    <button class="ds" data-s="12">L</button>
+    <button class="dt-btn" id="drawUndo">↩</button>
+    <button class="dt-btn" id="drawClear">🗑</button>
+    <button class="dt-btn danger" id="drawExit">✕</button>
   </div>
-  <div id="nwsSocialFeed" style="overflow-y:auto;flex:1"></div>
-</div>
 
-<!-- WIDGETS PANEL -->
-<div id="widgets-panel">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border)">
-    <span style="font-weight:700;font-size:.85rem">📊 Widgets</span>
-    <button onclick="document.getElementById('widgets-panel').classList.remove('open')" style="background:none;border:none;color:var(--t3);cursor:pointer">✕</button>
-  </div>
-  <div class="wp-sec"><div class="wp-sec-title">Wind Rose (24h)</div><canvas id="windRoseCanvas" style="width:100%;display:block"></canvas></div>
-  <div class="wp-sec"><div class="wp-sec-title">Feels Like</div><canvas id="feelsGaugeCanvas" style="width:100%;display:block"></canvas></div>
-  <div class="wp-sec"><div class="wp-sec-title">Precip Calendar (14-day)</div><div id="precipCalendar"></div></div>
-  <div class="wp-sec"><div class="wp-sec-title">Humidity &amp; Dew</div><div id="humidityBar"></div></div>
-  <div class="wp-sec"><div class="wp-sec-title">Pressure Trend</div><canvas id="pressureTrendCanvas" style="width:100%;display:block"></canvas></div>
-  <div class="wp-sec"><div class="wp-sec-title">🎣 Solunar</div><div id="solunarTable"></div></div>
-</div>
+  <!-- MAP ZONE -->
+  <div id="mapzone">
+    <div id="map"></div>
+    <canvas id="radarCanvas" style="position:absolute;inset:0;pointer-events:none"></canvas>
+    <canvas id="drawCanvas"  style="position:absolute;inset:0;pointer-events:none"></canvas>
 
-<!-- AI PANEL -->
-<div id="ai-panel">
-  <div class="ai-head">
-    <div class="ai-dot"></div>
-    <div class="ai-title">⚡ Storm Surge AI</div>
-    <button class="ai-close" id="aiClose">✕</button>
+    <!-- WEATHER CARD -->
+    <div id="wcard" class="wcard pos-tl style-full">
+      <div class="wc-head">
+        <div id="wcLoc" class="wc-loc">--</div>
+        <div id="wcTime" class="wc-time">--</div>
+      </div>
+      <div class="wc-hero">
+        <div id="wcIcon" class="wc-icon">🌡</div>
+        <div>
+          <div id="wcTemp" class="wc-temp">--°</div>
+          <div id="wcFeels" class="wc-feels">Feels --°</div>
+          <div id="wcDesc" class="wc-desc">--</div>
+          <div class="wc-hilo"><span id="wcHi">H:--</span><span id="wcLo">L:--</span></div>
+        </div>
+      </div>
+      <div class="wc-uv">
+        <span class="wc-uv-lbl">UV</span>
+        <div class="wc-uv-track"><div id="wcUVDot" class="wc-uv-dot"></div></div>
+        <span id="wcUV" class="wc-uv-val">--</span>
+      </div>
+      <div class="wc-div"></div>
+      <div class="wc-grid">
+        <div class="wcs"><div class="wcs-l">💧 Humidity</div>  <div id="wcHum"   class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌫 Dew Pt</div>    <div id="wcDew"   class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">💨 Wind</div>      <div id="wcWind"  class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌬 Gusts</div>     <div id="wcGust"  class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌧 Precip</div>    <div id="wcRain"  class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">👁 Vis</div>       <div id="wcVis"   class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">📊 Pressure</div>  <div id="wcPres"  class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">☁ Cloud</div>      <div id="wcCloud" class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">🫁 AQI</div>       <div id="wcAQI"   class="wcs-v">--</div></div>
+        <div class="wcs"><div class="wcs-l">🌡 Feels</div>     <div id="wcHeat"  class="wcs-v">--</div></div>
+      </div>
+      <div class="wc-div"></div>
+      <div class="wc-sun">
+        <svg viewBox="0 0 120 60" style="width:100%;height:50px">
+          <path class="arc-track" d="M10,55 A50,50 0 0,1 110,55"/>
+          <path class="arc-prog" id="arcProg" d="M10,55 A50,50 0 0,1 110,55" stroke-dasharray="0 157"/>
+          <circle class="arc-dot" id="arcDot" cx="10" cy="55" r="4"/>
+        </svg>
+        <div class="wc-sun-row">
+          <span>🌅 <span id="wcSunrise">--</span></span>
+          <span id="wcDaylight" style="color:var(--t3)">--h</span>
+          <span>🌇 <span id="wcSunset">--</span></span>
+        </div>
+      </div>
+      <div id="wcMoon" class="wc-moon">🌙 --</div>
+    </div>
+
+    <!-- LEGEND -->
+    <div id="legend">
+      <div id="legTitle" class="leg-title">mm/h</div>
+      <div id="legBar" class="leg-bar"></div>
+      <div class="leg-nums"><span>60+</span><span>10</span><span>0</span></div>
+    </div>
+
+    <!-- MAP BUTTONS -->
+    <div id="mapbtns">
+      <button id="zoomIn">＋</button>
+      <button id="zoomOut">－</button>
+    </div>
+
+    <!-- CROSSHAIR -->
+    <div id="crosshair"><div class="ch-h"></div><div class="ch-v"></div><div class="ch-ring"></div></div>
+
+    <!-- FORECAST BAR -->
+    <div id="fcast">
+      <div class="fcast-tabs">
+        <button class="fct active" data-ft="hourly">Hourly</button>
+        <button class="fct" data-ft="daily">10-Day</button>
+        <button class="fct" data-ft="precip">🌧 Rain</button>
+        <button class="fct" data-ft="wind">💨 Wind</button>
+        <button class="fct" data-ft="feels">🌡 Feels</button>
+      </div>
+      <div id="fcScroll" class="fc-scroll"></div>
+    </div>
+
+    <!-- TIMEBAR -->
+    <div id="timebar">
+      <button id="tPrev" class="t-arr">‹</button>
+      <div id="tSlots" class="tslots"></div>
+      <input id="tRange" type="range" min="0" max="0" value="0">
+      <button id="tNext" class="t-arr">›</button>
+      <button id="playBtn" class="playbtn">▶</button>
+      <div id="nowcastBadge" style="display:none" class="ncbadge">NOWCAST</div>
+      <label class="quick-op">Opacity <input id="quickOpacity" type="range" min="10" max="100" value="75"></label>
+    </div>
+  </div><!-- /mapzone -->
+</main>
+
+<!-- RIGHT PANEL -->
+<aside id="rpanel">
+  <div class="rp-head">
+    <button class="rpt active" data-rt="alerts">Alerts <span id="alertBadge" class="rpt-badge">0</span></button>
+    <button class="rpt" data-rt="info">Radar</button>
+    <button class="rpt" data-rt="severe">Reports</button>
   </div>
-  <div class="ai-feed" id="aiFeed">
-    <div class="ai-msg bot"><div class="ai-bubble">Hi! I'm Storm Surge AI. Ask me anything about the weather at your current location.</div></div>
+  <div id="alertsBody" class="rp-body">
+    <div class="empty-s"><div class="es-ico">⌛</div><div>Loading…</div></div>
   </div>
-  <div class="ai-quick">
-    <button class="ai-qbtn" data-q="What's the tornado risk today?">🌪 Tornado risk</button>
-    <button class="ai-qbtn" data-q="Is it safe to go outside?">☀ Go outside?</button>
-    <button class="ai-qbtn" data-q="Summarize active alerts">⚠ Alerts</button>
-    <button class="ai-qbtn" data-q="Flood or heavy rain risk?">🌊 Flood risk</button>
-  </div>
-  <div class="ai-input-row">
-    <input class="ai-input" id="aiInput" type="text" placeholder="Ask about the weather…">
-    <button class="ai-send" id="aiSend">Send</button>
-  </div>
-</div>
+</aside>
 
 <!-- MODALS -->
 <div class="modal" id="alertModal">
   <div class="mbox large">
-    <div class="mbox-head"><div class="mbox-title" id="mTitle">Alert</div><button class="mbox-x" id="mClose">✕</button></div>
-    <div class="mbox-body" id="mBody"></div>
+    <div class="mbox-head"><div id="mTitle" class="mbox-title">Alert</div><button id="mClose" class="mbox-x">✕</button></div>
+    <div id="mBody" class="mbox-body"></div>
   </div>
 </div>
+
 <div class="modal" id="aqiModal">
   <div class="mbox wide">
-    <div class="mbox-head"><div class="mbox-title">💨 Air Quality</div><button class="mbox-x" id="aqiClose">✕</button></div>
-    <div class="mbox-body" id="aqiBody"></div>
+    <div class="mbox-head"><div class="mbox-title">💨 Air Quality</div><button id="aqiClose" class="mbox-x">✕</button></div>
+    <div id="aqiBody" class="mbox-body"></div>
   </div>
 </div>
+
 <div class="modal" id="marineModal">
   <div class="mbox wide">
-    <div class="mbox-head"><div class="mbox-title">🌊 Marine</div><button class="mbox-x" id="marineClose">✕</button></div>
-    <div class="mbox-body" id="marineBody"></div>
+    <div class="mbox-head"><div class="mbox-title">🌊 Marine</div><button id="marineClose" class="mbox-x">✕</button></div>
+    <div id="marineBody" class="mbox-body"></div>
   </div>
 </div>
+
 <div class="modal" id="cameraModal">
   <div class="mbox large">
-    <div class="mbox-head"><div class="mbox-title">📷 Live Cameras</div><button class="mbox-x" id="camClose">✕</button></div>
+    <div class="mbox-head"><div class="mbox-title">📷 Live Cameras</div><button id="camClose" class="mbox-x">✕</button></div>
     <div class="mbox-body">
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input id="camSearch" type="text" placeholder="Search city, highway…" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--t1);border-radius:7px;padding:6px 10px;font-size:.8rem;outline:none">
-        <button class="modal-btn" id="camSearchBtn">Search</button>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="camSearch" class="modal-input" type="text" placeholder="Search city, highway…">
+        <button id="camSearchBtn" class="modal-btn">Search</button>
       </div>
-      <div id="camGrid"><div class="empty-s"><div class="es-ico">📷</div><div class="es-txt">Enter a location to find cameras</div></div></div>
+      <div id="camGrid" class="tc-grid"><div class="empty-s"><div class="es-ico">📷</div><div>Enter a location</div></div></div>
     </div>
   </div>
 </div>
+
 <div class="modal" id="shareModal">
   <div class="mbox">
-    <div class="mbox-head"><div class="mbox-title">⤴ Share</div><button class="mbox-x" id="shareClose">✕</button></div>
+    <div class="mbox-head"><div class="mbox-title">⤴ Share</div><button id="shareClose" class="mbox-x">✕</button></div>
     <div class="mbox-body">
-      <canvas id="shareCanvas"></canvas>
-      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center">
-        <button class="modal-btn" id="shareDownload">⬇ Download</button>
-        <button class="modal-btn secondary" id="shareCopy">📋 Copy Link</button>
+      <canvas id="shareCanvas" style="width:100%;border-radius:10px;display:block"></canvas>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
+        <button id="shareDL" class="modal-btn">⬇ Download</button>
+        <button id="shareCopy" class="modal-btn secondary">📋 Copy Link</button>
       </div>
     </div>
   </div>
@@ -355,68 +304,72 @@
 <!-- SETTINGS MODAL -->
 <div class="modal" id="settingsModal">
   <div class="mbox wide">
-    <div class="mbox-head"><div class="mbox-title">⚙ Settings</div><button class="mbox-x" id="settClose">✕</button></div>
+    <div class="mbox-head"><div class="mbox-title">⚙ Settings</div><button id="sClose" class="mbox-x">✕</button></div>
     <div class="mbox-body">
       <div class="s-sec">
         <div class="s-sec-title">Units</div>
         <div class="s-row"><span>Temperature</span><div class="seg" id="sTempUnit"><button class="sb active" data-v="C">°C</button><button class="sb" data-v="F">°F</button></div></div>
-        <div class="s-row"><span>Wind Speed</span><div class="seg" id="sWindUnit"><button class="sb active" data-v="ms">m/s</button><button class="sb" data-v="kmh">km/h</button><button class="sb" data-v="mph">mph</button><button class="sb" data-v="kts">kts</button></div></div>
+        <div class="s-row"><span>Wind</span><div class="seg" id="sWindUnit"><button class="sb active" data-v="ms">m/s</button><button class="sb" data-v="kmh">km/h</button><button class="sb" data-v="mph">mph</button><button class="sb" data-v="kts">kts</button></div></div>
         <div class="s-row"><span>Distance</span><div class="seg" id="sDistUnit"><button class="sb active" data-v="km">km</button><button class="sb" data-v="mi">mi</button></div></div>
-        <div class="s-row"><span>Time Format</span><div class="seg" id="sTimeFmt"><button class="sb active" data-v="12">12h</button><button class="sb" data-v="24">24h</button></div></div>
+        <div class="s-row"><span>Time</span><div class="seg" id="sTimeFormat"><button class="sb active" data-v="12">12h</button><button class="sb" data-v="24">24h</button></div></div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">Radar</div>
-        <div class="s-row"><span>Opacity</span><div class="slider-row"><input type="range" id="sOpacity" min="10" max="100" value="75"><span id="sOpacityVal">75%</span></div></div>
+        <div class="s-row"><span>Opacity</span><div class="slider-row"><input id="sOpacity" type="range" min="10" max="100" value="75"><span id="sOpacityVal">75%</span></div></div>
         <div class="s-row"><span>Speed</span><div class="seg" id="sSpeed"><button class="sb" data-v="300">Fast</button><button class="sb active" data-v="600">Normal</button><button class="sb" data-v="1000">Slow</button></div></div>
-        <div class="s-row"><span>Color Scheme</span><div class="seg" id="sRadarColor"><button class="sb" data-v="1">Classic</button><button class="sb" data-v="2">Universal</button><button class="sb" data-v="4">Rainbow</button><button class="sb active" data-v="6">NOAA</button><button class="sb" data-v="7">Dark Sky</button></div></div>
-        <div class="s-row"><span>Nowcast</span><label class="tog"><input type="checkbox" id="sNowcast" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Auto-play</span><label class="tog"><input type="checkbox" id="sAutoPlay"><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Color</span><div class="seg" id="sRadarColor"><button class="sb" data-v="1">Classic</button><button class="sb" data-v="2">Universal</button><button class="sb" data-v="4">Rainbow</button><button class="sb active" data-v="6">NOAA</button><button class="sb" data-v="7">Dark Sky</button></div></div>
+        <div class="s-row"><span>Nowcast</span><label class="tog"><input id="sNowcast" type="checkbox" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Auto-play</span><label class="tog"><input id="sAutoPlay" type="checkbox"><span class="tog-t"></span></label></div>
       </div>
       <div class="s-sec">
-        <div class="s-sec-title">Map &amp; Display</div>
-        <div class="s-row"><span>Alert Zones on Map</span><label class="tog"><input type="checkbox" id="sAlertZones" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Show Crosshair</span><label class="tog"><input type="checkbox" id="sCrosshair" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Click → NWS Forecast</span><label class="tog"><input type="checkbox" id="sClickNWS" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Animated Background</span><label class="tog"><input type="checkbox" id="sAnimBg" checked><span class="tog-t"></span></label></div>
-        <div class="s-row"><span>Weather Card Position</span><div class="seg" id="sCardPos"><button class="sb active" data-v="tl">↖</button><button class="sb" data-v="tr">↗</button><button class="sb" data-v="bl">↙</button><button class="sb" data-v="br">↘</button></div></div>
-      </div>
-      <div class="s-sec">
-        <div class="s-sec-title">AI Assistant</div>
-        <div class="s-row"><span>Enable AI Panel</span><label class="tog"><input type="checkbox" id="sAI" checked><span class="tog-t"></span></label></div>
-        <div style="font-size:.72rem;color:var(--t3)">Requires ANTHROPIC_API_KEY in .env</div>
+        <div class="s-sec-title">Display</div>
+        <div class="s-row"><span>Alert zones on map</span><label class="tog"><input id="sAlertZones" type="checkbox" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Crosshair</span><label class="tog"><input id="sCrosshair" type="checkbox" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Map click → NWS forecast</span><label class="tog"><input id="sClickNWS" type="checkbox" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Animated background</span><label class="tog"><input id="sAnimBg" type="checkbox" checked><span class="tog-t"></span></label></div>
+        <div class="s-row"><span>Card position</span><div class="seg" id="sCardPos"><button class="sb active" data-v="tl">↖ TL</button><button class="sb" data-v="tr">↗ TR</button><button class="sb" data-v="bl">↙ BL</button></div></div>
+        <div class="s-row"><span>Card style</span><div class="seg" id="sCardStyle"><button class="sb active" data-v="full">Full</button><button class="sb" data-v="compact">Compact</button><button class="sb" data-v="minimal">Minimal</button></div></div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">Updates</div>
-        <div class="s-row"><span>Version</span><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--t3)" id="sVersion">v13.9.0</span></div>
+        <div class="s-row"><span>Version</span><span id="sVerLabel" style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--t3)">v14.0.0</span></div>
         <div class="s-row">
           <span>Check for updates</span>
-          <div style="display:flex;align-items:center;gap:8px">
-            <button class="modal-btn" id="checkUpdateBtn" style="padding:4px 12px;font-size:.75rem">🔄 Check</button>
-            <span class="upd-status" id="updStatus">—</span>
-          </div>
-        </div>
-        <div id="updDlRow" style="display:none">
-          <div class="s-row"><span id="updLatestLbl">Update ready</span><button class="modal-btn" id="updDlBtn" style="padding:4px 12px;font-size:.75rem;background:#5865f2">⬇ Install</button></div>
-          <div class="upd-no-asset" id="updNoAsset" style="display:none">⚠ No installer attached to this release. Build with <code>npx electron-builder</code> and attach to a GitHub release.</div>
+          <button id="checkUpdateBtn" class="modal-btn" style="padding:5px 12px">🔄 Check</button>
+          <span id="updStatus" class="upd-status">—</span>
         </div>
       </div>
       <div class="s-sec">
         <div class="s-sec-title">About</div>
         <div class="about-box">
-          <strong>Storm Surge Weather v13.9</strong><br>
-          Radar: RainViewer + NEXRAD/IEM · Weather: Open-Meteo<br>
-          Alerts: NWS · AQI: Open-Meteo · Marine: Open-Meteo<br>
-          Spotter: mPing (NSSL) + SPC LSR · AI: Anthropic Claude<br>
-          Maps: Mapbox · NWS Feed: Nitter RSS
+          <div><strong>Storm Surge Weather v14.0</strong></div>
+          <div>Radar: RainViewer + NEXRAD (IEM/AWS) · Weather: Open-Meteo</div>
+          <div>Alerts: NWS · Spotter: mPing + SPC · Maps: Mapbox</div>
+          <div>Pro: Level II radar, Skew-T, METAR/TAF, Ensemble, Tides</div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- WIDGETS PANEL -->
+<div id="widgets-panel">
+  <div class="wp-head">
+    <span>📊 Widgets</span>
+    <button onclick="document.getElementById('widgets-panel').classList.remove('open')" style="background:none;border:none;color:var(--t3);cursor:pointer">✕</button>
+  </div>
+  <div class="wp-section"><div class="wp-title">Wind Rose (24h)</div><canvas id="windRoseCanvas" style="width:100%;display:block"></canvas></div>
+  <div class="wp-section"><div class="wp-title">Feels Like Gauge</div><canvas id="feelsGaugeCanvas" style="width:100%;display:block"></canvas></div>
+  <div class="wp-section"><div class="wp-title">14-Day Precipitation</div><div id="precipCalendar"></div></div>
+  <div class="wp-section"><div class="wp-title">Humidity & Dew</div><div id="humidityBar"></div></div>
+  <div class="wp-section"><div class="wp-title">Pressure Trend</div><canvas id="pressureTrendCanvas" style="width:100%;display:block"></canvas></div>
+  <div class="wp-section"><div class="wp-title">🎣 Solunar</div><div id="solunarTable"></div></div>
+</div>
 
-<!-- SCRIPTS -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="loader" id="loader"><div class="spin"></div></div>
+
+<!-- SCRIPTS — NO AI PANEL -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="token.js"></script>
 <script src="radar.js"></script>
@@ -424,45 +377,31 @@
 <script src="nexrad-panel.js"></script>
 <script src="spotter.js"></script>
 <script src="severe-panel.js"></script>
-<script src="ai-panel.js"></script>
 <script src="nws-social.js"></script>
 <script src="widgets.js"></script>
 <script src="pro-panel.js"></script>
 <script src="app.js"></script>
 <script>
-// ── IN-APP UPDATER ────────────────────────────────────────────────
+// ── IN-APP UPDATER ──────────────────────────────────────────────
 (function(){
-  const $=id=>document.getElementById(id);
-  const banner=$('updBanner'),statusEl=$('updStatus'),dlRow=$('updDlRow'),dlBtn=$('updDlBtn');
-  const lblEl=$('updLatestLbl'),noAssetEl=$('updNoAsset');
-  function setStatus(t,c){if(statusEl){statusEl.textContent=t;statusEl.className='upd-status'+(c?' '+c:'');}}
-  function dispatch(d){
-    switch(d.event){
-      case'checking':setStatus('Checking…');break;
-      case'available':setStatus('v'+d.version+' available','has-update');if(dlRow)dlRow.style.display='';if(lblEl)lblEl.textContent='v'+d.version+' ready';if(noAssetEl&&!d.assetUrl)noAssetEl.style.display='';break;
-      case'ready':setStatus('✓ Update ready','up-to-date');if(dlRow)dlRow.style.display='';if(dlBtn){dlBtn.textContent='🔁 Restart & Install';dlBtn.onclick=()=>window.electronUpdater?.installNow();}if(banner){banner.querySelector('#updTitle').textContent='Update Ready';banner.querySelector('#updDesc').textContent='Restart to install';$('updAction').textContent='Restart';$('updAction').onclick=()=>window.electronUpdater?.installNow();banner.classList.add('show');}break;
-      case'up-to-date':setStatus('✓ Up to date','up-to-date');if(dlRow)dlRow.style.display='none';break;
-      case'error':setStatus('⚠ Check failed');break;
-    }
-  }
+  const statusEl = document.getElementById('updStatus');
+  function setStatus(t,cls){ if(statusEl){ statusEl.textContent=t; statusEl.className='upd-status'+(cls?' '+cls:''); } }
   if(window.electronUpdater?.onUpdaterEvent){
-    window.electronUpdater.onUpdaterEvent(dispatch);
-    $('checkUpdateBtn')?.addEventListener('click',()=>{setStatus('Checking…');window.electronUpdater.checkUpdate();});
+    window.electronUpdater.onUpdaterEvent(d=>{
+      if(d.event==='ready') setStatus('✓ Update ready — restart to install','up-to-date');
+      else if(d.event==='up-to-date') setStatus('✓ Up to date','up-to-date');
+      else if(d.event==='error') setStatus('⚠ Check failed','');
+    });
+    document.getElementById('checkUpdateBtn')?.addEventListener('click',()=>{ setStatus('Checking…'); window.electronUpdater.checkUpdate(); });
   } else {
-    async function check(silent){
+    document.getElementById('checkUpdateBtn')?.addEventListener('click', async()=>{
       setStatus('Checking…');
       try{
-        const r=await fetch('/api/app-version');if(!r.ok)throw new Error();
-        const d=await r.json();
-        if(d.hasUpdate){dispatch({event:'available',version:d.latest,assetUrl:d.assetUrl});}
-        else{dispatch({event:'up-to-date'});if(!silent)alert('Up to date ✓ (v'+d.current+')');}
-      }catch(e){dispatch({event:'error'});}
-    }
-    $('checkUpdateBtn')?.addEventListener('click',()=>check(false));
-    setTimeout(()=>check(true),5000);
-    setInterval(()=>check(true),30*60*1000);
+        const r=await fetch('/api/app-version'); const d=await r.json();
+        setStatus(d.hasUpdate?`Update v${d.latest} available`:'✓ Up to date', d.hasUpdate?'has-update':'up-to-date');
+      }catch(e){ setStatus('⚠ Failed'); }
+    });
   }
-  $('updDismiss')?.addEventListener('click',()=>{banner?.classList.remove('show');sessionStorage.setItem('upd_dismissed','1');});
 })();
 </script>
 </body>
