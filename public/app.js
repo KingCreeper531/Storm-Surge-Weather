@@ -164,23 +164,37 @@ function initMap() {
 
   if (!window.MAPBOX_TOKEN) {
     SS.log('Mapbox token missing', 'Set MAPBOX_TOKEN in .env or check token.js');
-    showMapErr('Mapbox token missing — check .env file');
+    showMapErr('Mapbox token missing');
     loadWeather(); loadAlerts(); return;
   }
 
+  // Set a timeout — if map hasn't loaded in 10s, show a helpful error
+  const mapTimeout = setTimeout(() => {
+    if (!S.map || !S.mapLoaded) {
+      SS.log('Map load timeout', 'Mapbox took >10s. Token may have URL restrictions. Go to mapbox.com → Tokens → allow http://localhost:3001');
+      showMapErr('Map timed out — token may have URL restrictions.\n\nFix: mapbox.com → Tokens → add http://localhost:3001 to allowed URLs');
+      loadWeather(); loadAlerts();
+    }
+  }, 10000);
+
   try {
     mapboxgl.accessToken = window.MAPBOX_TOKEN;
+    console.log('Initialising Mapbox with token:', window.MAPBOX_TOKEN.slice(0,30)+'…');
+
     S.map = new mapboxgl.Map({
       container: 'map',
       style: MAP_STYLES[S.cfg.theme==='light'?'light':'dark'],
       center: [S.lng, S.lat], zoom: 6,
       minZoom:2, maxZoom:14,
       attributionControl:false, logoPosition:'bottom-left',
-      failIfMajorPerformanceCaveat:false, renderWorldCopies:false, antialias:true
+      failIfMajorPerformanceCaveat:false, renderWorldCopies:false, antialias:true,
+      trackResize: true,
     });
 
     S.map.on('load', () => {
-      console.log('✓ Map loaded');
+      clearTimeout(mapTimeout);
+      S.mapLoaded = true;
+      console.log('✓ Map loaded successfully');
       S.map.resize(); resizeCanvas();
 
       if (window.RadarAnimator) {
@@ -199,22 +213,16 @@ function initMap() {
           const pb=$('playBtn'); if(pb){pb.textContent=p?'⏸':'▶';pb.classList.toggle('playing',p);}
         };
       } else {
-        SS.log('RadarAnimator not loaded', 'radar.js may have an error');
+        SS.log('RadarAnimator not loaded', 'Check radar.js for errors');
       }
 
       if (window.NexradRadar) NexradRadar.init(S.map, API);
-      else SS.log('NexradRadar not loaded');
-
       if (window.NexradPanel) { NexradPanel.init(API); NexradPanel.preloadNearby(S.lat,S.lng); }
-      else SS.log('NexradPanel not loaded');
-
       if (window.SpotterNetwork) {
         SpotterNetwork.init(S.map, API);
         SpotterNetwork.onUpdate = r => { S.spotterReports=r; };
-      } else SS.log('SpotterNetwork not loaded');
-
+      }
       if (window.SeverePanel) SeverePanel.init(API);
-      else SS.log('SeverePanel not loaded');
 
       loadRadar();
       loadWeather();
@@ -223,22 +231,45 @@ function initMap() {
 
     S.map.on('error', e => {
       const msg = e?.error?.message || String(e);
-      SS.log('Mapbox error', msg);
-      console.warn('Mapbox non-fatal:', msg);
+      // Token/URL restriction errors are the most common
+      if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('access token')) {
+        clearTimeout(mapTimeout);
+        SS.log('Mapbox token rejected (401)', 'Go to mapbox.com → Tokens and allow http://localhost:3001 in URL restrictions, OR remove all URL restrictions from your token');
+        showMapErr('Mapbox token rejected.\n\nFix at mapbox.com → Tokens:\nAdd http://localhost:3001 to allowed URLs\n— OR —\nRemove all URL restrictions from your token');
+        loadWeather(); loadAlerts();
+      } else {
+        SS.log('Mapbox error (non-fatal)', msg);
+        console.warn('Mapbox:', msg);
+      }
     });
 
     S.map.on('click', e => { if (!S.drawMode) handleClick(e); });
 
   } catch(e) {
-    SS.log('Map init failed', e.message);
-    showMapErr('Map failed: '+e.message);
+    clearTimeout(mapTimeout);
+    SS.log('Map init exception', e.message);
+    showMapErr('Map failed to init: ' + e.message);
     loadWeather(); loadAlerts();
   }
 }
 
 function showMapErr(msg) {
   const el=$('map'); if(!el)return;
-  el.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#f59e0b;text-align:center;padding:24px"><div style="font-size:3rem">⛈</div><div style="font-size:.9rem;font-weight:600">${_esc(msg)}</div><div style="font-size:.75rem;color:var(--t3)">Check the Error Log in the sidebar for details</div></div>`;
+  const lines = msg.split('\n');
+  el.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:10px;padding:32px;text-align:center;max-width:500px;margin:0 auto">
+      <div style="font-size:2.5rem">🗺️</div>
+      <div style="font-size:.95rem;font-weight:700;color:#f59e0b">${_esc(lines[0])}</div>
+      ${lines.slice(1).filter(l=>l.trim()).map(l=>`<div style="font-size:.8rem;color:var(--t2)">${_esc(l)}</div>`).join('')}
+      <div style="margin-top:8px;padding:10px 16px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);border-radius:8px;font-size:.78rem;color:#93c5fd;line-height:1.6">
+        <strong>Quick fix:</strong><br>
+        1. Go to <a href="https://account.mapbox.com/access-tokens/" target="_blank" style="color:#60a5fa">account.mapbox.com/access-tokens</a><br>
+        2. Click your token → <strong>Edit</strong><br>
+        3. Under <em>Allowed URLs</em> add: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:3px">http://localhost:3001</code><br>
+        4. Save → restart the app
+      </div>
+      <div style="font-size:.72rem;color:var(--t3)">Weather data still loads without the map — check the sidebar</div>
+    </div>`;
 }
 
 function cycleStyle() {
