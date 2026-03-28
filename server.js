@@ -460,6 +460,10 @@ const PROXY_ROUTES = [
   '/api/ensemble',
   '/api/alerts/custom',
   '/api/lightning',
+  '/api/spc',
+  '/api/watches',
+  '/api/goes',
+  '/api/freezing_level',
 ];
 
 // Generic proxy handler

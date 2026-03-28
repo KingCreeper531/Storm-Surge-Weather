@@ -814,3 +814,113 @@ if __name__ == '__main__':
     port = int(os.environ.get('RADAR_PORT', 3002))
     log.info(f'Radar microservice v14.0 on :{port}')
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+
+
+@app.route('/api/spc/outlooks')
+def spc_outlooks():
+    """SPC Convective Outlook polygons (Day 1-3) via NOAA SPC."""
+    day = int(request.args.get('day', 1))
+    cache_key = f'spc_outlook_day{day}'
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
+    try:
+        import requests as req
+        day_str = {1: 'day1otlk', 2: 'day2otlk', 3: 'day3otlk'}.get(day, 'day1otlk')
+        url = f'https://www.spc.noaa.gov/products/outlook/archive/2024/{day_str}_20240101_1200.lyr.geojson'
+        # Use today's real URL format
+        from datetime import datetime
+        now = datetime.utcnow()
+        date_str = now.strftime('%Y%m%d')
+        url = f'https://www.spc.noaa.gov/products/outlook/{day_str}_{date_str}_1200.lyr.geojson'
+        r = req.get(url, timeout=8, headers={'User-Agent': 'StormSurgeWeather/14.0'})
+        if r.ok:
+            data = r.json()
+            cache_set(cache_key, data, 1800)
+            return jsonify(data)
+        # Try latest
+        url2 = f'https://www.spc.noaa.gov/products/outlook/{day_str}_latest.lyr.geojson'
+        r2 = req.get(url2, timeout=8, headers={'User-Agent': 'StormSurgeWeather/14.0'})
+        if r2.ok:
+            data = r2.json()
+            cache_set(cache_key, data, 1800)
+            return jsonify(data)
+        return jsonify({'type': 'FeatureCollection', 'features': []}), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'type': 'FeatureCollection', 'features': []}), 200
+
+
+@app.route('/api/watches')
+def active_watches():
+    """Active tornado/severe thunderstorm watches from SPC."""
+    cache_key = 'spc_watches'
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
+    try:
+        import requests as req
+        url = 'https://www.spc.noaa.gov/products/watch/ActiveWW.geojson'
+        r = req.get(url, timeout=8, headers={'User-Agent': 'StormSurgeWeather/14.0'})
+        if r.ok:
+            data = r.json()
+            cache_set(cache_key, data, 300)
+            return jsonify(data)
+        return jsonify({'type': 'FeatureCollection', 'features': []}), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'type': 'FeatureCollection', 'features': []}), 200
+
+
+@app.route('/api/goes/latest')
+def goes_latest():
+    """Latest GOES-16 satellite imagery URLs from NOAA."""
+    sector = request.args.get('sector', 'CONUS')  # CONUS, FULL, AK, HI
+    band   = request.args.get('band', 'GEOCOLOR')  # GEOCOLOR, Band02, Band13
+    cache_key = f'goes_{sector}_{band}'
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
+    try:
+        # NOAA GOES imagery is available via star.nesdis.noaa.gov
+        base = 'https://cdn.star.nesdis.noaa.gov/GOES16/ABI'
+        sector_map = {'CONUS': 'CONUS', 'FULL': 'FD', 'AK': 'MESOSCALE-1', 'HI': 'MESOSCALE-2'}
+        s = sector_map.get(sector, 'CONUS')
+        # Return the latest image URL (these are updated every 5-10 min)
+        urls = {
+            'latest_1km':  f'{base}/{s}/{band}/latest.jpg',
+            'latest_2km':  f'{base}/{s}/{band}/20241001/latest.jpg',
+            'sector': sector,
+            'band': band,
+            'source': 'NOAA GOES-16',
+            'note': 'Images update every 5-10 minutes',
+        }
+        cache_set(cache_key, urls, 300)
+        return jsonify(urls)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/freezing_level')
+def freezing_level():
+    """Estimate freezing level altitude from sounding data."""
+    lat = float(request.args.get('lat', 40.7))
+    lng = float(request.args.get('lng', -74.0))
+    try:
+        import requests as req
+        url = (f'https://api.open-meteo.com/v1/forecast'
+               f'?latitude={lat}&longitude={lng}'
+               f'&hourly=freezinglevel_height,temperature_2m,snowfall_height'
+               f'&forecast_days=3&timezone=auto')
+        r = req.get(url, timeout=8)
+        if r.ok:
+            d = r.json()
+            h = d.get('hourly', {})
+            result = {
+                'time': h.get('time', [])[:12],
+                'freezing_level_m': h.get('freezinglevel_height', [])[:12],
+                'snowfall_height_m': h.get('snowfall_height', [])[:12],
+                'temp_2m': h.get('temperature_2m', [])[:12],
+            }
+            return jsonify(result)
+        return jsonify({'error': 'Freezing level unavailable'}), 502
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
